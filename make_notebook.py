@@ -23,7 +23,7 @@ for name, kw in A.VARIANTS.items():
 '''
 
 CODE_RUN = '''SEEDS = [0, 1, 2, 3, 4]
-N_STEPS = 8000
+N_STEPS = 10000
 
 # ~2.5 min per run single-threaded.  7 conditions x 5 seeds = 35 runs.
 # Faster, out of process, using all cores:

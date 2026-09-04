@@ -32,29 +32,44 @@ mutation (`fixed`) or within life (`H`). The scaffold is identical in every cond
 | `fixed + B (ceiling)` | v2's hand-wired private memory: exact per-pair credit. A reference level, **not** a matched comparison — it acts through navigation preference and a veto, not through the network's output. |
 | `fixed, no flip` / `plastic (W2), no flip` | interference pair. With the food reversal removed the recipe is the only moving target. The fixed arm absorbs "a no-flip world is simply richer". |
 
-## The world was tuned before the run, on `fixed` and the ceiling only
+## The world was tuned before the run — nine passes, never on a plastic condition's hit rate
 
 v2.9b's settings gave **~1 tool attempt per agent lifetime** and a hand-wired ceiling at chance —
-a null by construction. Five tuning passes (seed 0, short runs) moved four quantities, each judged
-against `fixed` and the hand-wired ceiling, **never against a plastic condition**:
+a null by construction. Every tuning decision was judged against `fixed`, the hand-wired ceiling,
+or the **positive control** (the v3.1 food effect), never against a plastic condition's recipe hit.
 
 | change | why | effect |
 |---|---|---|
-| `items_per_step` 1.5 → 8, `stations_per_type` 20 → 60 | an agent must meet the conjunction more than once | attempts/life 1.0 → **6.6** |
-| `nuts_uniform` 0 → 8 (nuts outside the food patches) | at a 57–190 step bridge the answer is trace arithmetic (λ²^gap ≈ 0.03), not conjunctive learning | station→nut bridge → **7.5 steps**, λ²^gap ≈ 0.12, so λ2 *decides* |
-| `repro_threshold` 3.0 → 4.5 (cost 2.25, max_energy 8) | at a hard population cap births are a queue, not differential fecundity | population **225–411 of 600**, no injections |
+| `items_per_step` 1.5 → 8, `stations_per_type` 20 → 60 | an agent must meet the conjunction more than once | attempts/life 1.0 → **4.4** |
+| `nuts_uniform` 0 → 8 | at a 57–190 step bridge the answer is trace arithmetic (λ²^gap ≈ 0.03), not conjunctive learning | bridge → **~8 steps**, so λ2 *decides* |
+| `repro_threshold` 3.0 → 4.5 (cost 2.25, max_energy 8) | at a hard population cap births are a queue, not fecundity | population **379–467 of 600**, no injections |
+| `spawn_per_patch` 1.0 → 3.0 | nuts were 65% of energy income, so most modulator events were an uninformative `+1` | nut share → **0.40** |
+| `innate_scale` 0.1 applied to the **scaffold's 10 units only** | v2.9b scaled the whole network by 0.1. Right there — its discrimination came from the hand-wired `B` path — but it leaves H2 **no basis to read**: free features sit at ~0.06 while the nav units saturate at 1.0. It killed the v3.1 food effect outright. Applying no scaling instead killed navigation and the population. | positive control alive |
 
-Acceptance, met at seed 0 / 2500 steps: `fixed` **0.172** (chance 0.167), ceiling **0.230**
-(v2: 0.23–0.36), attempts/life 6.6, bridge_first 7.5, populations off the cap, zero injections.
+`fail_cost` stays **0** (pure delayed credit). v2's STAKES value of 0.3 was tested and collapses
+every population that does not already know the recipe — 5 of 6 attempts fail — leaving only the
+hand-wired ceiling standing. It changes *which agents survive*, not just what they learn.
 
-**Alternative explanations this leaves open, before any result:** (a) the innate scaffold is strong
-(nav weights 4.0, innate W scaled ×0.1) while H is clipped at ±2 per synapse, so plasticity can
-override the scaffold where mutation moves slowly — `scrambled` is what separates that from
-learning; (b) the ceiling acts through a different channel than the learner, so it bounds *what the
-world pays for*, not *what this rule could reach*; (c) generation ≈ 260 steps, so 10000 steps is
-~38 generations, fewer than v3's ~40.
+### What the pre-run checks did not clear — say it now, not after
 
----
+Two acceptance criteria are **not** met, and both are pre-registered as table rows rather than
+discovered afterwards:
+
+- **`eta2` is selected DOWN** in every plastic run (0.036 vs `fixed`'s dead-gene drift 0.111).
+  This is the *opposite* of v3.1, where selection retained informative plasticity (established
+  finding #10). Candidate mechanism: the recipe task supplies a **positive-only** modulator —
+  `+1` at a nut, nothing at a failed attempt — that is frequent and whose credit lands on
+  whatever the agent was doing, mostly navigation. A frequent sign-positive modulator is
+  uninformative, so plasticity is a net cost.
+- **The food advantage does not reach the fitness level**: `probe_adv` (food) is 0.125 — positive,
+  so the learner *does* change its own policy within life — but `safe_rate` is +0.003 against
+  `fixed`, where v3.1 got +0.08. The innate approach instinct commits the agent to interacting
+  with whatever it stands on, which caps how much a changed policy can matter.
+
+So the positive control is alive **at the within-agent probe, not at the fitness level**, and the
+table below uses the probe for it. If `eta2` goes to drift-floor in the real run, the plastic
+conditions are effectively `fixed` and a recipe null is attributable to *plasticity having been
+selected off*, which is a different (and reportable) finding from *the rule failing to bridge*.
 
 ## Stopping rule (agreed before the run)
 
@@ -77,6 +92,8 @@ Rows are checked in order. Every row names the condition that attributes it — 
 | **8** | on a null: λ²^gap < 0.02 **and** λ2 not above `fixed`'s drift in 4/5 | the null is about trace *length*, not about the conjunction. The rule-form change to spend is the longer trace specifically, and it must be tested where λ2 matters. | `bridge_first`, λ2 per seed vs `fixed`'s dead-gene drift |
 | **9** | (`plastic no flip` − `fixed no flip`) − (`plastic` − `fixed`) ≥ +0.03 in 4/5 | the food reversal crowds the recipe out: one H2 and one trace cannot serve a 300-step reversal and a 2000-step conjunction at once. The remedy is separating the tasks, **not** changing the rule. | the `fixed, no flip` arm, which absorbs "a no-flip world is richer" |
 | **10** | `plastic (W2)` < `fixed` by ≥ 0.03 in 4/5 | plasticity is a net cost here. If `scrambled` is equally below → the cost is the machinery perturbing a scaffolded policy (the v3.5 non-stationary-input mechanism again). If `plastic` < `scrambled` → the informative modulator is actively *misleading*: credit lands on navigation, not on the conjunction. That is a positive finding about the failure mode. | `scrambled` vs `plastic`, and `h_norm` |
+| **10b** | `eta2` in the plastic conditions is inside `fixed`'s dead-gene drift range in ≥ 4/5 | **plasticity was selected off before the question was reached.** Then rows 3–6 are not about whether the rule can bridge station → nut; they are about a modulator stream in which plasticity does not pay. The reportable finding is the reversal of v3.1's finding #10, and the rule-form change to spend is the modulator one (timing / per-synapse coefficients), not the trace. | `eta2` per seed against `fixed`'s and `fixed + B`'s drift, measured in this world; `h_norm`; `nut_share` |
+| **10c** | `probe_adv` (food) ≤ 0 in ≥ 2/5 in `plastic (W2)` | the within-agent positive control has failed too, so row 7 applies and nothing about the recipe can be read | `probe_adv` (food) per seed |
 | **11** | `plastic (both)` − `plastic (W2)` ≥ +0.03 in 4/5 **and** `eta1` above `fixed`'s drift in 4/5 | W1 plasticity builds the conjunction; the first world where `eta1` is selected up. If `both` ≤ `W2` and `eta1` sits in drift range → as in every previous world, no new information, not rerun. | `eta1` vs `fixed`'s dead-gene drift, measured in this world |
 
 **Not claimed either way by this run:** anything about culture, records or symbols (v3.7); anything

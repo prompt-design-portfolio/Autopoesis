@@ -107,6 +107,19 @@ class Config:
     eta_max: float = 0.5
     h_max: float = 2.0
     scramble: bool = False         # control: random-sign modulator, same magnitude, no information
+    nav_dir: float = 4.0           # innate APPROACH wiring, on the directional sums.  Those inputs are
+                                   # normalised by v*(2v+1) = 10, so this needs to be ~10x nav_here to
+                                   # produce a comparable activation.
+    nav_here: float = 4.0          # innate INTERACT wiring, on the 'here' values
+    innate_scale: float = 0.1      # multiplier on the random weights OF THE SCAFFOLD UNITS ONLY.
+                                   # v2.9b applied 0.1 to the whole network; that was right there,
+                                   # because its discrimination came from the hand-wired B path, but
+                                   # it leaves the grown learner's H2 no basis to read -- every free
+                                   # feature is crushed to ~0 while the nav units saturate.  Applying
+                                   # it globally killed the v3.1 food effect; applying it to nothing
+                                   # killed navigation and the population.  See the notebook.
+    n_scaffold: int = 10           # hidden units the instinct occupies; the rest keep full-scale
+                                   # random weights and are the basis H2 reads.
     eta_scale: float = 1.0         # v3.2 knockout hook: multiplies eta at learn time
     # the hand-wired ceiling (v2's private memory B; OFF except in that one condition)
     private_mem: bool = False      # exact per-pair credit, steering navigation and a soft veto
@@ -245,7 +258,7 @@ class Agent:
         self.b1 = np.zeros(h)
         self.W2 = rng.normal(0, 0.3, (h, N_ACTIONS))
         self.b2 = np.zeros(N_ACTIONS)
-        innate_nav(self.W1, self.W2)
+        innate_nav(self.W1, self.W2, cfg.nav_dir, cfg.nav_here, cfg.innate_scale, cfg.n_scaffold)
         self.H1 = np.zeros_like(self.W1); self.H2 = np.zeros_like(self.W2)
         self.e1 = np.zeros_like(self.W1); self.e2 = np.zeros_like(self.W2)
         self.eta1 = rng.uniform(0, cfg.eta_init); self.eta2 = rng.uniform(0, cfg.eta_init)
@@ -318,22 +331,25 @@ class Agent:
             self.H2 = np.clip(self.H2 + cfg.eta_scale * self.eta2 * m * self.e2, -cfg.h_max, cfg.h_max)
 
 
-def innate_nav(W1, W2):
+def innate_nav(W1, W2, nav_dir=4.0, nav_here=4.0, scale=0.1, n_scaffold=10):
     """v2.9b's forager instinct, ported to this observation layout.  Approach whatever the
     current stage of the chain wants ('goal') and approach food ('food_any'); interact when
     standing on either.  It says nothing about WHICH item, station or food type -- that is
     the experiment.  Identical in every condition."""
-    W1 *= 0.1
-    W2 *= 0.1
+    W1[:, :n_scaffold] *= scale       # the instinct's own units are kept clean...
+    W2[:n_scaffold, :] *= scale
+    # ... and every other hidden unit keeps full-scale random weights: they are the basis the
+    # output layer reads, and a conjunction can only be expressed by a unit that responds to
+    # item AND station jointly.  Nothing here says which item, station or food type is good.
     for d in range(4):
-        W1[APPETITE_CH * 4 + d, d] = 4.0
-        W1[GOAL_CH * 4 + d, 4 + d] = 4.0
-        W2[d, d] = 4.0
-        W2[4 + d, d] = 4.0
-    W1[HERE + APPETITE_CH, 8] = 4.0
-    W1[HERE + GOAL_CH, 9] = 4.0
-    W2[8, 4] = 4.0
-    W2[9, 4] = 4.0
+        W1[APPETITE_CH * 4 + d, d] = nav_dir
+        W1[GOAL_CH * 4 + d, 4 + d] = nav_dir
+        W2[d, d] = nav_here
+        W2[4 + d, d] = nav_here
+    W1[HERE + APPETITE_CH, 8] = nav_here
+    W1[HERE + GOAL_CH, 9] = nav_here
+    W2[8, 4] = nav_here
+    W2[9, 4] = nav_here
 
 
 GENOME = ("W1", "b1", "W2", "b2", "eta1", "eta2", "lam1", "lam2", "repair")

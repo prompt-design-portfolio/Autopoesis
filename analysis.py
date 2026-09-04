@@ -15,21 +15,28 @@ from sim import Config, run
 
 NO_FLIP = 10 ** 9                                  # the safe food never changes
 
-# The world.  These are NOT v2.9b's numbers: the first smoke test on v2.9b's settings gave
-# ~1 tool attempt per agent lifetime and a hand-wired ceiling at chance -- a null by
-# construction.  Five tuning passes moved four quantities, and each was checked against
-# `fixed` and the hand-wired ceiling ONLY, never against a plastic condition:
-#   items_per_step 1.5 -> 8, stations_per_type 20 -> 60   (attempts/life 1.0 -> 6.6)
-#   nuts_uniform 0 -> 8                                   (station->nut bridge 57 -> 7.5 steps,
-#                                                          so lam2 decides the outcome instead
-#                                                          of trace arithmetic deciding it)
-#   repro_threshold 3.0 -> 4.5 (birth cost 2.25, max_energy 8)
-#                                                         (population off the cap: at a hard cap
-#                                                          births are a queue, not fecundity)
-# Acceptance before the run: fixed at chance, ceiling >= 0.23, attempts/life >= 5,
-# bridge_first ~ 5-15, population well below max_pop, no injections.
+# The world.  These are NOT v2.9b's numbers.  Nine tuning passes, every one judged against
+# `fixed`, the hand-wired ceiling, or the POSITIVE CONTROL (the v3.1 food effect) -- never
+# against a plastic condition's recipe hit rate:
+#   items_per_step 1.5 -> 8, stations_per_type 20 -> 60   attempts/life 1.0 -> 4.4
+#   nuts_uniform 0 -> 8                                   station->nut bridge 57 -> 8 steps, so
+#                                                         lam2 decides rather than trace arithmetic
+#   repro_threshold 3.0 -> 4.5 (cost 2.25, max_energy 8)  population off the cap
+#   spawn_per_patch 1.0 -> 3.0                            nuts down to ~40% of energy income, so the
+#                                                         balanced +/-1 food modulator is not swamped
+#   innate_scale applied to the SCAFFOLD UNITS ONLY       v2.9b scaled the whole network by 0.1;
+#     (sim.Config.n_scaffold = 10)                        that leaves H2 no basis to read and killed
+#                                                         the v3.1 food effect outright.  Applying it
+#                                                         to nothing killed navigation instead.
+# fail_cost stays 0 (pure delayed credit).  fail_cost = 0.3, v2's STAKES value, collapses every
+# population that does not already know the recipe (5 of 6 attempts fail) and leaves only the
+# hand-wired ceiling standing -- it changes which agents survive, not just what they learn.
+# Acceptance met at seed 0 / 5000 steps: fixed 0.172 (chance 0.167), ceiling 0.226,
+# attempts/life 4.4, bridge_first ~8, pop 379-467 of 600, zero injections, probe_adv (food) 0.125.
+# NOT met: eta2 is selected DOWN (0.036 vs fixed's drift 0.111) and the food advantage does not
+# reach the fitness level (safe_rate +0.003).  Both are pre-registered in the decision table.
 WORLD = dict(
-    items_per_step=8.0, stations_per_type=60, nuts_uniform=8.0, spawn_per_patch=1.0,
+    items_per_step=8.0, stations_per_type=60, nuts_uniform=8.0, spawn_per_patch=3.0,
     nut_value=1.0, max_pop=600, repro_threshold=4.5, repro_cost=2.25, max_energy=8.0,
 )
 
