@@ -37,16 +37,23 @@ NO_FLIP = 10 ** 9                                  # the safe food never changes
 # reach the fitness level (safe_rate +0.003).  Both are pre-registered in the decision table.
 WORLD = dict(
     items_per_step=8.0, stations_per_type=60, nuts_uniform=8.0, spawn_per_patch=3.0,
-    nut_value=1.0, max_pop=600, repro_threshold=4.5, repro_cost=2.25, max_energy=8.0,
+    nut_value=1.3, tool_break=0.4, max_pop=600, repro_threshold=4.5, repro_cost=2.25, max_energy=8.0,
 )
 
 NO_FLIP = 10 ** 9                                  # the safe food never changes
 
+FAIL_COST = 0.05      # small enough not to change who survives (0.3 collapsed every population
+                      # that did not already know the recipe); large enough that a wrong attempt
+                      # produces m = -1 at the station.  This makes the conjunction partly
+                      # learnable BY ELIMINATION, which is a different and easier question than
+                      # pure delayed credit -- hence a separate condition, never the default.
+
 VARIANTS = {
-    # baseline: what the genome alone does with a recipe that changes every ~8 generations
+    # baseline and gate: what the genome alone does with a recipe that changes every ~8 generations.
+    # Also the reference for eta1/eta2/lam2 drift and for the scaffold genes, measured in this world.
     "fixed":                  dict(mode="fixed", **WORLD),
-    # same plasticity machinery, same H magnitudes, random-sign modulator.  Controls for
-    # "H can override the innate scaffold, and mutation cannot" independently of information.
+    # same plasticity machinery, same H magnitudes, same power to override the innate scaffold;
+    # random-sign modulator, no information.  This control carries the claim, not `fixed`.
     "scrambled":              dict(mode="plastic", plastic_layers="W2", scramble=True, **WORLD),
     # the result condition
     "plastic (W2)":           dict(mode="plastic", plastic_layers="W2", **WORLD),
@@ -56,15 +63,15 @@ VARIANTS = {
     # It acts through a DIFFERENT channel from the learner (navigation preference and a veto,
     # not the network's output), so it is a reference level, not a matched comparison.
     "fixed + B (ceiling)":    dict(mode="fixed", private_mem=True, pref_gain=8.0, veto_p=0.9, **WORLD),
-    # interference pair: with the food reversal removed, the recipe is the only moving target.
-    # The fixed arm is what makes the plastic arm attributable (a no-flip world is simply richer).
-    "fixed, no flip":         dict(mode="fixed", flip_every=NO_FLIP, **WORLD),
-    "plastic (W2), no flip":  dict(mode="plastic", plastic_layers="W2", flip_every=NO_FLIP, **WORLD),
+    # the elimination pair.  The fixed arm is not optional: without it, any gain in
+    # `plastic + fail cost` could be the 0.05 energy change rather than the -1 at the station.
+    "fixed + fail cost":      dict(mode="fixed", fail_cost=FAIL_COST, **WORLD),
+    "plastic (W2) + fail cost": dict(mode="plastic", plastic_layers="W2", fail_cost=FAIL_COST, **WORLD),
 }
 
 COLORS = {"fixed": "tab:red", "scrambled": "black", "plastic (W2)": "tab:blue",
           "plastic (both)": "tab:green", "fixed + B (ceiling)": "tab:purple",
-          "fixed, no flip": "tab:pink", "plastic (W2), no flip": "tab:cyan"}
+          "fixed + fail cost": "tab:pink", "plastic (W2) + fail cost": "tab:cyan"}
 
 CHANCE = 1.0 / 6.0
 MARGIN = 0.03          # the project's standard margin
@@ -73,12 +80,25 @@ SEED_RULE = 4          # ... in 4 of 5 seeds
 
 # ---------------------------------------------------------------- running
 
-def run_experiment(seeds, n_steps, variants=VARIANTS, verbose=True, **overrides):
+def run_experiment(seeds, n_steps, variants=VARIANTS, verbose=False, save_path=None, **overrides):
+    """Sequential, single-process: this has to run on a Colab CPU runtime, so no multiprocessing.
+    If save_path is given the results are pickled after every run, so a dropped session loses one
+    run rather than the lot -- reload with  pickle.load(open(save_path, 'rb'))."""
+    import pickle, time
     results = {v: [] for v in variants}
+    total = len(seeds) * len(variants)
+    done, t0 = 0, time.time()
     for seed in seeds:
         for name, kw in variants.items():
-            print(f"--- {name}  seed={seed}", flush=True)
+            t1 = time.time()
             results[name].append(run(Config(n_steps=n_steps, seed=seed, **kw, **overrides), verbose=verbose))
+            done += 1
+            el = time.time() - t0
+            print(f"[{done}/{total}] {name} seed={seed}  {time.time()-t1:.0f}s   "
+                  f"elapsed {el/60:.1f} min, est. total {el/done*total/60:.0f} min", flush=True)
+            if save_path:
+                with open(save_path, "wb") as f:
+                    pickle.dump(results, f)
     return results
 
 
@@ -253,72 +273,98 @@ def summary(results):
 
 def _decision_numbers(results):
     names = list(results)
-    H = {n: np.array(per_seed(results, n, hit)) for n in names}
-    S = {n: np.array(per_seed(results, n, safe)) for n in names}
-    A = {n: np.array(per_seed(results, n, lambda L: per_1k(L, "n_attempts_raw"))) for n in names}
-    P = {n: np.array(per_seed(results, n, lambda L: half(L, "probe_adv"))) for n in names}
-    PF = {n: np.array(per_seed(results, n, lambda L: half(L, "probe_adv_food"))) for n in names}
-    nseed = len(H[names[0]])
+    def ps(n, f):
+        return np.array(per_seed(results, n, f), dtype=float)
 
-    def line(label, a, b=None):
-        d = H[a] - (H[b] if b else 0)
-        tag = f"{a} - {b}" if b else a
-        k = n_seeds_above(H[a], H[b] if b else np.zeros(nseed), MARGIN) if b else ""
-        print(f"  {tag:<42} {np.round(d, 3).tolist()}" + (f"   >= +{MARGIN} in {k}/{nseed}" if b else ""))
+    H = {n: ps(n, hit) for n in names}
+    S = {n: ps(n, safe) for n in names}
+    A_ = {n: ps(n, lambda L: per_1k(L, "n_attempts_raw")) for n in names}
+    P = {n: ps(n, lambda L: half(L, "probe_adv")) for n in names}
+    PF = {n: ps(n, lambda L: half(L, "probe_adv_food")) for n in names}
+    OY = {n: ps(n, lambda L: half(L, "hit_old") - half(L, "hit_young")) for n in names}
+    AG = {n: ps(n, lambda L: float(curve(L, "att")[0][-1] - curve(L, "att")[0][0])) for n in names}
+    nseed = len(H[names[0]])
+    rule = min(SEED_RULE, nseed)          # so a QUICK 1-seed smoke run does not print "4/1"
+    ok = lambda a, b: int(np.sum(np.asarray(a) - np.asarray(b) >= MARGIN))
+
+    def diff(a, b):
+        print(f"  {a + ' - ' + b:<44} {np.round(H[a] - H[b], 3).tolist()}   >= +{MARGIN} in {ok(H[a], H[b])}/{nseed}")
 
     print("\n" + "-" * 78)
-    print("DECISION NUMBERS (rule: a difference counts when it is >= "
-          f"{MARGIN} in {SEED_RULE}/{nseed} seeds)")
+    print(f"DECISION NUMBERS (a difference counts when it is >= {MARGIN} in {rule}/{nseed} seeds)")
     print("-" * 78)
+
+    print("\nrow 0  is any condition uninterpretable?")
+    for n in names:
+        pop, inj = ps(n, lambda L: half(L, "pop")), ps(n, lambda L: half(L, "injections"))
+        flag = "  <-- EXCLUDE" if (pop.min() < 80 or inj.max() > 0 or A_[n].min() < 5.0) else ""
+        print(f"  {n:<26} pop {np.round(pop, 0).tolist()}  inj {np.round(inj, 1).tolist()}  att/1k {np.round(A_[n], 1).tolist()}{flag}")
+
     print("\nrow 1  gate -- can the genome track the recipe on its own?")
-    print(f"  fixed, recipe_hit per seed:                {np.round(H['fixed'], 3).tolist()}   (chance {CHANCE:.3f}; gate fires at >= 0.35 in {SEED_RULE}/{nseed})")
-    print(f"  fixed, pair_gain innate:                   {np.round(np.array(per_seed(results, 'fixed', lambda L: half(L, 'pair_gain_innate'))), 3).tolist()}")
+    print(f"  fixed recipe_hit:               {np.round(H['fixed'], 3).tolist()}   (chance {CHANCE:.3f}; gate fires at >= 0.25 in {rule}/{nseed})")
+    print(f"  fixed pair_gain innate:         {np.round(ps('fixed', lambda L: half(L, 'pair_gain_innate')), 3).tolist()}")
 
-    print("\nrow 2/3  is there a within-life effect, and is it the information in m?")
-    line("plastic (W2)", "fixed")
-    line("plastic (W2)", "scrambled")
-    line("scrambled", "fixed")
-    print(f"  plastic (W2) probe_adv (recipe) per seed:   {np.round(P['plastic (W2)'], 3).tolist()}   (> 0 in {int(np.sum(P['plastic (W2)'] > 0))}/{nseed})")
-    print(f"  scrambled    probe_adv (recipe) per seed:   {np.round(P['scrambled'], 3).tolist()}")
-    print(f"  plastic (W2) attempts/1k vs fixed:          {np.round(A['plastic (W2)'] - A['fixed'], 2).tolist()}   (a hit rate bought by attempting less is not knowledge)")
+    print("\nrow 2  ceiling -- does exact pair credit pay, and is there headroom to detect a learner?")
+    print(f"  fixed + B (ceiling):            {np.round(H['fixed + B (ceiling)'], 3).tolist()}   (v2: 0.23-0.36)")
+    diff("fixed + B (ceiling)", "fixed")
+    gap = H['fixed + B (ceiling)'] - H['fixed']
+    print(f"  headroom (target >= 0.10 in {rule}/{nseed}): mean {np.nanmean(gap):.3f}; "
+          f"a learner must capture {MARGIN / max(np.nanmean(gap), 1e-9) * 100:.0f}% of the ceiling to clear the margin")
+    print(f"  attempts/life:                  {np.round(ps('fixed', lambda L: half(L, 'attempts_per_life')), 2).tolist()} (fixed)  "
+          f"{np.round(ps('fixed + B (ceiling)', lambda L: half(L, 'attempts_per_life')), 2).tolist()} (ceiling)")
+    print(f"    elimination predicts a ceiling of mean_k 1/(7-k) over k = 1..attempts/life")
 
-    print("\nrow 4  positive control -- is the learner working in this world at all?")
-    print(f"  safe_rate  plastic (W2) - fixed:           {np.round(S['plastic (W2)'] - S['fixed'], 3).tolist()}   >= +{MARGIN} in {n_seeds_above(S['plastic (W2)'], S['fixed'], MARGIN)}/{nseed}")
-    print(f"  probe_adv (food) plastic (W2):             {np.round(PF['plastic (W2)'], 3).tolist()}")
+    print("\nrow 3  acquisition.  ALL FOUR lines must hold, plus one within-life signature.")
+    diff("plastic (W2)", "fixed")
+    diff("plastic (W2)", "scrambled")
+    print(f"  probe_adv (recipe) plastic (W2): {np.round(P['plastic (W2)'], 3).tolist()}   (> 0 in {int(np.sum(P['plastic (W2)'] > 0))}/{nseed})")
+    print(f"  probe_adv (recipe) scrambled:    {np.round(P['scrambled'], 3).tolist()}")
+    print(f"  attempts/1k vs fixed (ratio):    {np.round(A_['plastic (W2)'] / np.maximum(A_['fixed'], 1e-9), 2).tolist()}   (must be >= 0.8: abstention is not knowledge)")
+    print("  REQUIRED within-life signature -- at least one of these, in 4/5:")
+    print(f"    hit_old - hit_young:           {np.round(OY['plastic (W2)'], 3).tolist()}   (> 0 in {int(np.sum(OY['plastic (W2)'] > 0))}/{nseed});  fixed: {np.round(OY['fixed'], 3).tolist()}")
+    print(f"    attempt-in-life curve gain:    {np.round(AG['plastic (W2)'], 3).tolist()}   (> 0 in {int(np.sum(AG['plastic (W2)'] > 0))}/{nseed});  fixed: {np.round(AG['fixed'], 3).tolist()}")
+    print("    (the ceiling shows what a real one looks like:"
+          f" {np.round(AG['fixed + B (ceiling)'], 3).tolist()})")
 
-    print("\nrow 5  ceiling -- does exact pair credit pay in this world?")
-    print(f"  fixed + B (ceiling) recipe_hit per seed:    {np.round(H['fixed + B (ceiling)'], 3).tolist()}   (v2: 0.23-0.36)")
-    line("fixed + B (ceiling)", "fixed")
+    print("\nrows 4/5  plasticity without information, and abstention")
+    diff("scrambled", "fixed")
 
-    print("\nrow 6  interference -- does the food reversal crowd the recipe out of one learner?")
-    line("plastic (W2), no flip", "fixed, no flip")
-    line("plastic (W2), no flip", "plastic (W2)")
-    print(f"  difference of differences  (no-flip advantage) - (flip advantage):")
-    dd = (H['plastic (W2), no flip'] - H['fixed, no flip']) - (H['plastic (W2)'] - H['fixed'])
-    print(f"    {np.round(dd, 3).tolist()}   >= +{MARGIN} in {int(np.sum(dd >= MARGIN))}/{nseed}")
+    print("\nrows 6/7  positive control -- does the learner work in this world at all?")
+    print(f"  safe_rate plastic (W2) - fixed: {np.round(S['plastic (W2)'] - S['fixed'], 3).tolist()}   >= +{MARGIN} in {ok(S['plastic (W2)'], S['fixed'])}/{nseed}   (v3.1: +0.08)")
+    print(f"  probe_adv (food) plastic (W2):  {np.round(PF['plastic (W2)'], 3).tolist()}   (v3.1: ~2.3; acceptance >= 0.5)")
+    print(f"  probe_adv (food) scrambled:     {np.round(PF['scrambled'], 3).tolist()}")
 
-    print("\nrow 7  does W1 plasticity build the conjunction?")
-    line("plastic (both)", "plastic (W2)")
-    print(f"  eta1  plastic (both):                      {np.round(np.array(per_seed(results, 'plastic (both)', lambda L: half(L, 'eta1'))), 3).tolist()}")
-    print(f"  eta1  fixed (dead-gene drift, this world): {np.round(np.array(per_seed(results, 'fixed', lambda L: half(L, 'eta1'))), 3).tolist()}")
-    print(f"  eta2  plastic (W2):                        {np.round(np.array(per_seed(results, 'plastic (W2)', lambda L: half(L, 'eta2'))), 3).tolist()}")
-    print(f"  eta2  fixed (dead-gene drift, this world): {np.round(np.array(per_seed(results, 'fixed', lambda L: half(L, 'eta2'))), 3).tolist()}")
-    print(f"  lam2  plastic (W2):                        {np.round(np.array(per_seed(results, 'plastic (W2)', lambda L: half(L, 'lam2'))), 3).tolist()}")
-    print(f"  lam2  fixed (dead-gene drift, this world): {np.round(np.array(per_seed(results, 'fixed', lambda L: half(L, 'lam2'))), 3).tolist()}")
-
-    print("\nrow 9  is any condition uninterpretable?")
+    print("\nrow 8  bridge feasibility -- is a null about trace length rather than the conjunction?")
     for n in names:
-        pop = np.array(per_seed(results, n, lambda L: half(L, "pop")))
-        inj = np.array(per_seed(results, n, lambda L: half(L, "injections")))
-        att = A[n]
-        flag = " <-- CHECK" if (pop.min() < 60 or att.min() < 1.0) else ""
-        print(f"  {n:<24} pop {np.round(pop, 0).tolist()}  injections/window {np.round(inj, 1).tolist()}  attempts/1k {np.round(att, 2).tolist()}{flag}")
+        b, w = ps(n, lambda L: half(L, "bridge_first")), ps(n, lambda L: half(L, "trace_weight"))
+        print(f"  {n:<26} bridge_first {np.round(b, 1).tolist()}  lam2^gap {np.round(w, 3).tolist()}")
 
-    print("\nfeasibility of the bridge (station attempt -> nut, and what is left of its trace):")
-    for n in names:
-        b = np.array(per_seed(results, n, lambda L: half(L, "bridge_steps")))
-        w = np.array(per_seed(results, n, lambda L: half(L, "trace_weight")))
-        print(f"  {n:<24} bridge_steps {np.round(b, 1).tolist()}  lam2^gap {np.round(w, 4).tolist()}")
+    print("\nrow 10b  was plasticity selected off before the question was reached?")
+    for g in ("eta2", "eta1", "lam2"):
+        print(f"  {g}")
+        for n in names:
+            print(f"    {n:<26} {np.round(ps(n, lambda L: half(L, g)), 3).tolist()}")
+    print("  read the plastic rows against `fixed` and `fixed + B`, whose eta/lam are dead genes in this world")
+
+    print("\nrow 11  does W1 plasticity build the conjunction?")
+    diff("plastic (both)", "plastic (W2)")
+
+    print("\nrow 12  the scaffold genes -- what balance did evolution set between instinct and override?")
+    for g in ("nav_dir", "nav_here"):
+        print(f"  {g}")
+        for n in names:
+            print(f"    {n:<26} {np.round(ps(n, lambda L: half(L, g)), 2).tolist()}")
+    print("  these are NOT dead genes in any condition -- they set behaviour everywhere -- so the")
+    print("  reference is `fixed`'s value, not a drift range: a plastic condition evolving a LOWER")
+    print("  instinct than `fixed` is evolution buying room for the override, which is the")
+    print("  mechanism row 3 needs; equal values mean the instinct/override balance did not move.")
+
+    print("\nrow 13  elimination -- does an immediate -1 on a wrong attempt change the answer?")
+    diff("plastic (W2) + fail cost", "fixed + fail cost")
+    diff("plastic (W2) + fail cost", "plastic (W2)")
+    diff("fixed + fail cost", "fixed")
+    print("  the third line is the control: if the fixed arm moves too, the 0.05 energy cost")
+    print("  changed the world rather than the signal, and the first line cannot be read as learning.")
     print("-" * 78)
 
 

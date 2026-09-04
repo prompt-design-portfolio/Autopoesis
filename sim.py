@@ -107,10 +107,21 @@ class Config:
     eta_max: float = 0.5
     h_max: float = 2.0
     scramble: bool = False         # control: random-sign modulator, same magnitude, no information
-    nav_dir: float = 4.0           # innate APPROACH wiring, on the directional sums.  Those inputs are
-                                   # normalised by v*(2v+1) = 10, so this needs to be ~10x nav_here to
-                                   # produce a comparable activation.
-    nav_here: float = 4.0          # innate INTERACT wiring, on the 'here' values
+    # v3.6b: the instinct's strength is heritable.  The pre-run positive control failed because
+    # the scaffold's logit-4 push swamps anything the output layer learns; rather than pick a
+    # balance by hand, evolution sets it per condition, the same move as the handoff's input-gain
+    # gene.  Founder values bracket the hand-set 4.0 that the earlier passes used.
+    nav_dir_init: tuple = (2.0, 6.0)    # founders' approach gene ~ U(...)
+    nav_here_init: tuple = (2.0, 6.0)   # founders' interact gene ~ U(...)
+    nav_sigma: float = 0.2              # per-generation mutation, ~2% of nav_max, as eta's 0.01 is of 0.5
+    nav_max: float = 12.0
+    scaffold_food: bool = True     # whether the instinct also approaches and eats food.  The chain
+                                   # (item -> station -> nut) must be scaffolded or nothing happens
+                                   # and no condition is readable.  Food need not be: it is the
+                                   # POSITIVE CONTROL, and scaffolding it forces the agent to eat
+                                   # whatever it stands on, so selectivity has to fight a ~5-logit
+                                   # push.  With this False the food task is unscaffolded exactly as
+                                   # in v3.1, while the chain keeps its instinct.
     innate_scale: float = 0.1      # multiplier on the random weights OF THE SCAFFOLD UNITS ONLY.
                                    # v2.9b applied 0.1 to the whole network; that was right there,
                                    # because its discrimination came from the hand-wired B path, but
@@ -118,8 +129,15 @@ class Config:
                                    # feature is crushed to ~0 while the nav units saturate.  Applying
                                    # it globally killed the v3.1 food effect; applying it to nothing
                                    # killed navigation and the population.  See the notebook.
-    n_scaffold: int = 10           # hidden units the instinct occupies; the rest keep full-scale
-                                   # random weights and are the basis H2 reads.
+    n_scaffold: int = 10           # hidden units the instinct occupies; the rest are the free basis
+                                   # H2 reads.
+    free_scale: float = 1.0        # weight scale of the FREE units, relative to the 0.3 init.  The
+                                   # scaffold's nav units saturate and are type-blind, so whatever
+                                   # discriminative signal the output layer can use lives entirely in
+                                   # the free units; at 0.3 their response to a type channel is
+                                   # tanh(0.3) ~ 0.29 against the instinct's ~1.0, which is why a
+                                   # learned preference of ~0.4 logits moves behaviour almost not at
+                                   # all.  Raising this scales the basis, not the instinct.
     eta_scale: float = 1.0         # v3.2 knockout hook: multiplies eta at learn time
     # the hand-wired ceiling (v2's private memory B; OFF except in that one condition)
     private_mem: bool = False      # exact per-pair credit, steering navigation and a soft veto
@@ -247,7 +265,7 @@ class Agent:
     """
 
     __slots__ = ("W1", "b1", "W2", "b2", "H1", "H2", "e1", "e2", "eta1", "eta2", "lam1", "lam2",
-                 "integrity", "repair", "energy", "y", "x", "item", "tool", "B",
+                 "integrity", "repair", "nav_dir", "nav_here", "energy", "y", "x", "item", "tool", "B",
                  "lineage", "gen", "born", "injected",
                  "attempts", "successes", "eats", "safe_eats", "cracks",
                  "since_recipe", "tool_made_t", "used_tool", "age_bins")
@@ -258,7 +276,13 @@ class Agent:
         self.b1 = np.zeros(h)
         self.W2 = rng.normal(0, 0.3, (h, N_ACTIONS))
         self.b2 = np.zeros(N_ACTIONS)
-        innate_nav(self.W1, self.W2, cfg.nav_dir, cfg.nav_here, cfg.innate_scale, cfg.n_scaffold)
+        scaffold_scale(self.W1, self.W2, cfg.innate_scale, cfg.n_scaffold)
+        if cfg.free_scale != 1.0:
+            self.W1[:, cfg.n_scaffold:] *= cfg.free_scale
+            self.W2[cfg.n_scaffold:, :] *= cfg.free_scale
+        self.nav_dir = float(rng.uniform(*cfg.nav_dir_init))
+        self.nav_here = float(rng.uniform(*cfg.nav_here_init))
+        wire_nav(self.W1, self.W2, self.nav_dir, self.nav_here, cfg.scaffold_food)
         self.H1 = np.zeros_like(self.W1); self.H2 = np.zeros_like(self.W2)
         self.e1 = np.zeros_like(self.W1); self.e2 = np.zeros_like(self.W2)
         self.eta1 = rng.uniform(0, cfg.eta_init); self.eta2 = rng.uniform(0, cfg.eta_init)
@@ -293,6 +317,9 @@ class Agent:
         c.lam2 = float(np.clip(self.lam2 + rng.normal(0, 0.03), 0, 0.99))
         c.integrity = np.ones(cfg.hidden)
         c.repair = float(np.clip(self.repair + rng.normal(0, cfg.gene_sigma), 0, 1))
+        c.nav_dir = float(np.clip(self.nav_dir + rng.normal(0, cfg.nav_sigma), 0, cfg.nav_max))
+        c.nav_here = float(np.clip(self.nav_here + rng.normal(0, cfg.nav_sigma), 0, cfg.nav_max))
+        wire_nav(c.W1, c.W2, c.nav_dir, c.nav_here, cfg.scaffold_food)   # the instinct comes from the gene, not from mutated synapses
         c.energy = cfg.start_energy
         c.y, c.x = self.y, self.x
         c.item, c.tool = -1, False           # nothing carried is inherited
@@ -331,28 +358,41 @@ class Agent:
             self.H2 = np.clip(self.H2 + cfg.eta_scale * self.eta2 * m * self.e2, -cfg.h_max, cfg.h_max)
 
 
-def innate_nav(W1, W2, nav_dir=4.0, nav_here=4.0, scale=0.1, n_scaffold=10):
-    """v2.9b's forager instinct, ported to this observation layout.  Approach whatever the
-    current stage of the chain wants ('goal') and approach food ('food_any'); interact when
-    standing on either.  It says nothing about WHICH item, station or food type -- that is
-    the experiment.  Identical in every condition."""
-    W1[:, :n_scaffold] *= scale       # the instinct's own units are kept clean...
+def scaffold_scale(W1, W2, scale, n_scaffold):
+    """Shrink the RANDOM weights of the instinct's own hidden units, once, at founder creation.
+    v2.9b scaled the whole network; that leaves the grown learner's output layer no basis to
+    read (see the notebook).  Every other hidden unit keeps full-scale random weights: they are
+    that basis, and a conjunction can only be expressed by a unit responding to item AND
+    station jointly.  Note this is an initialisation, not a constraint -- mutation erodes it
+    over ~30 generations, by which point the scaffold units carry ordinary random weights too."""
+    W1[:, :n_scaffold] *= scale
     W2[:n_scaffold, :] *= scale
-    # ... and every other hidden unit keeps full-scale random weights: they are the basis the
-    # output layer reads, and a conjunction can only be expressed by a unit that responds to
-    # item AND station jointly.  Nothing here says which item, station or food type is good.
+
+
+def wire_nav(W1, W2, nav_dir, nav_here, scaffold_food=True):
+    """v2.9b's forager instinct: approach whatever the current stage of the chain wants ('goal')
+    and approach food ('food_any'); interact when standing on either.  It says nothing about
+    WHICH item, station or food type -- that is the experiment.
+
+    nav_dir and nav_here are GENES (v3.6b).  The scaffold's synapses are written from them at
+    every birth, so mutation of W1/W2 does not touch the instinct: its strength is inherited as
+    a scalar and selection can raise or lower it, exactly as it does eta.  The directional
+    inputs are normalised by v*(2v+1) = 10, so nav_dir buys ~10x less activation than nav_here
+    at the same value; the two are separate genes for that reason."""
     for d in range(4):
-        W1[APPETITE_CH * 4 + d, d] = nav_dir
         W1[GOAL_CH * 4 + d, 4 + d] = nav_dir
-        W2[d, d] = nav_here
         W2[4 + d, d] = nav_here
-    W1[HERE + APPETITE_CH, 8] = nav_here
     W1[HERE + GOAL_CH, 9] = nav_here
-    W2[8, 4] = nav_here
     W2[9, 4] = nav_here
+    if scaffold_food:
+        for d in range(4):
+            W1[APPETITE_CH * 4 + d, d] = nav_dir
+            W2[d, d] = nav_here
+        W1[HERE + APPETITE_CH, 8] = nav_here
+        W2[8, 4] = nav_here
 
 
-GENOME = ("W1", "b1", "W2", "b2", "eta1", "eta2", "lam1", "lam2", "repair")
+GENOME = ("W1", "b1", "W2", "b2", "eta1", "eta2", "lam1", "lam2", "repair", "nav_dir", "nav_here")
 
 
 def snapshot(agents):
@@ -371,6 +411,7 @@ def restore(d, cfg, rng, lineage, y, x):
         v = d[k]
         setattr(a, k, v.copy() if isinstance(v, np.ndarray) else float(v))
     a.energy = float(d["energy"])
+    wire_nav(a.W1, a.W2, a.nav_dir, a.nav_here)
     return a
 
 
@@ -548,6 +589,12 @@ def run(cfg, verbose=True, init_genomes=None):
                         a.successes += 1; W["correct"] += 1
                     else:
                         a.energy -= cfg.fail_cost
+                        if cfg.fail_cost > 0:
+                            m = -1.0      # the modulator is the sign of the agent's own energy change,
+                                          # so a fail_cost is exactly what signals a wrong attempt AT the
+                                          # station.  At fail_cost = 0 a wrong attempt is silent and the
+                                          # credit is purely delayed.  A SUCCESSFUL attempt is silent
+                                          # either way: making a tool yields no energy, the nut does.
                     a.item = -1
                     if cfg.private_mem:
                         a.B[p] = 0.7 * a.B[p] + 0.3 * (1.0 if ok else -1.0)   # exact pair credit, hand-wired
@@ -637,6 +684,8 @@ def run(cfg, verbose=True, init_genomes=None):
                 lam1=float(np.mean([a.lam1 for a in agents])), lam2=float(np.mean([a.lam2 for a in agents])),
                 h_norm=float(np.mean([np.abs(a.H1).mean() + np.abs(a.H2).mean() for a in agents])),
                 repair=float(np.mean([a.repair for a in agents])),
+                nav_dir=float(np.mean([a.nav_dir for a in agents])),
+                nav_here=float(np.mean([a.nav_here for a in agents])),
                 max_gen=max(a.gen for a in agents),
                 deaths=W["deaths"], births=W["births"], injections=W["inject"],
                 # raw counts, so second-half aggregates can be event-weighted rather than
