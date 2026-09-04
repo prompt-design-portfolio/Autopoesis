@@ -87,23 +87,22 @@ class Config:
     # the tool task (v2.9b)
     n_items: int = 3
     n_stations: int = 2
-    stations_per_type: int = 30       # v3.9: station cover ~2.6%, target <= 3%
-    items_per_step: float = 0.8      # v3.9: solved to item cover <= 8%
-    nuts_per_patch: float = 0.12     # v3.9: solved to nut cover <= 8%
-    nuts_uniform: float = 0.0     # nuts spawned anywhere, not only in the food patches.  This sets
-                                  # the length of the station -> nut bridge, i.e. the difficulty of
-                                  # the delayed credit; see the tuning note in the notebook.
+    stations_per_type: int = 85       # v3.9 amendment 2: station cover 6-8%
+    items_per_step: float = 3.0      # v3.9 amendment 2: solved to a READABILITY target, item cover
+                                     # 20-25%, because co-occupancy only mattered while one action
+                                     # did both jobs -- fix A already solved that.
+    nuts_per_patch: float = 0.0      # v3.9 amendment 2: no nuts in this build.  The chain is
+    nuts_uniform_unused: float = 0.0 # pickup -> carry -> attempt, and the attempt pays.  The
+                                     # station -> nut bridge returns in v3.11 as its own change.
+    nuts_uniform: float = 0.0     # retained at 0; nuts return in v3.11 with the bridge.
     item_rot: float = 0.005
-    nut_value: float = 1.0            # v2.9b's value; v3.6's tuned 1.3 was for a saturated world
-    tool_break: float = 0.25          # v2.9b's value
+    tool_value: float = 1.5           # a CORRECT attempt pays this immediately, m = +1, and the
+                                      # item is consumed.  Nothing is carried afterwards: there is
+                                      # no tool state in this build.
     pickup_cost: float = 0.02
-    fail_cost: float = 0.0        # a wrong attempt costs this and fires m = -1.  0 = silent.
-    tool_bonus: float = 0.0       # a CORRECT attempt pays this and fires m = +1.  0 = silent.
-                                  # Both are 0 in the world's default: the recipe then has no
-                                  # immediate signal at all and credit is purely delayed (row 4).
-                                  # The oracle arms set both to 0.05, making the fixture two-sided:
-                                  # a one-sided negative signal would teach abstention, and with
-                                  # `declined` now a policy that would be misread as knowledge.
+    fail_cost: float = 0.05       # a WRONG attempt costs this and fires m = -1, and the item is
+                                  # lost.  With tool_value this makes the signal two-sided AND
+                                  # part of the world, in every arm -- not an oracle fixture.
     recipe_every: int = 2000      # ~8-13 generations per era
     # mutation
     mut_sigma: float = 0.15
@@ -262,12 +261,11 @@ class World:
             changed_recipe = True
         # rot
         self.food &= rng.random(self.food.shape) > cfg.food_rot
-        if not self.chain_on:                       # phase 1: no items, no nuts, chain channels zero
+        if not self.chain_on:                       # phase 1: no items, chain channels zero
             self.items[:] = -1
-            self.nuts[:] = False
         else:
             self.items[rng.random(self.items.shape) < cfg.item_rot] = -1
-            self.nuts &= rng.random(self.nuts.shape) > cfg.item_rot
+        self.nuts[:] = False                        # no nuts in v3.9; the channel stays, always zero
         # food and nuts grow in the drifting patches
         r = cfg.patch_radius
         for (py, px) in self.patches:
@@ -276,13 +274,7 @@ class World:
                 y, x = (py + dy) % g, (px + dx) % g
                 if not self.food[:, y, x].any():
                     self.food[rng.integers(2), y, x] = True
-            if self.chain_on:
-                k = rng.poisson(cfg.nuts_per_patch)
-                for dy, dx in rng.integers(-r, r + 1, size=(k, 2)):
-                    self.nuts[(py + dy) % g, (px + dx) % g] = True
         if self.chain_on:
-            for _ in range(rng.poisson(cfg.nuts_uniform)):
-                self.nuts[tuple(rng.integers(0, g, 2))] = True
             # items anywhere
             for _ in range(rng.poisson(cfg.items_per_step)):
                 y, x = rng.integers(0, g, 2)
@@ -377,15 +369,22 @@ class Agent:
         c.age_bins = np.zeros((2, 2))
         return c
 
-    def act(self, obs, cfg, rng):
+    def act(self, obs, cfg, rng, chain_on=True):
+        # `interact` is masked while the chain is off, so phase 1 is EXACTLY v3.1's five actions
+        # and the gate applies unchanged.  The sixth action goes live at the switch, alongside the
+        # 39 observation inputs.  The null is masked too, so its per-action share is 1/5 in phase 1
+        # and 1/6 in phase 2 -- the conditional nulls differ by phase for that reason.
+        n_av = N_ACTIONS if chain_on else N_ACTIONS - 1
         if cfg.mode == "random":
-            return int(rng.integers(0, N_ACTIONS))     # the behavioural null: no policy, no learning
+            return int(rng.integers(0, n_av))          # the behavioural null: no policy, no learning
         alive = self.integrity >= cfg.integrity_threshold
         plastic = cfg.mode == "plastic"
         W1 = self.W1 + self.H1 if plastic and cfg.plastic_layers in ("both", "W1") else self.W1
         W2 = self.W2 + self.H2 if plastic and cfg.plastic_layers in ("both", "W2") else self.W2
         h = np.tanh(obs @ W1 + self.b1) * alive
         logits = h @ W2 + self.b2 + rng.normal(0, cfg.action_noise, N_ACTIONS)
+        if not chain_on:
+            logits[INTERACT] = -np.inf
         a = int(np.argmax(logits))
         if plastic:
             out = np.zeros(N_ACTIONS); out[a] = 1.0
@@ -561,21 +560,22 @@ def probe_advantage_food(agents, cfg, safe, n_sample=40):
 # --------------------------------------------------------------------------
 
 def resolve_action(a, action, world, cfg, rng, t=0):
-    """Apply `action` for agent `a`.  Mutates a.energy / a.item / a.tool and the world.
+    """Apply `action` for agent `a`.  Mutates a.energy / a.item and the world.
     Returns (m, event, info).
 
     Modulator events, complete:
-        eat safe food                          m = +1
-        eat poison                             m = -1
-        crack a nut                            m = +1
-        correct attempt, iff tool_bonus > 0    m = +1
-        wrong attempt,   iff fail_cost  > 0    m = -1
-        everything else                        m =  0
-    "Everything else" is: pickup, carrying, moving, any no-op, base metabolism, repair,
-    and -- when tool_bonus is 0 -- a successful attempt.  The modulator is NOT the agent's
+        eat safe food                     m = +1   energy +food_value
+        eat poison                        m = -1   energy -poison_value
+        correct attempt                   m = +1   energy +tool_value, item consumed
+        wrong attempt                     m = -1   energy -fail_cost,  item lost
+        everything else                   m =  0
+    "Everything else" is: pickup (-pickup_cost), carrying (-carry_cost/step), moving and any
+    no-op (-move_cost / -noop_cost), base metabolism, repair.  The modulator is NOT the agent's
     own energy change in general; it is this table.
 
-    A no-op costs move_cost, so there is no free waiting action.
+    v3.9 amendment 2: there are no nuts and no tool state.  A correct attempt pays immediately
+    and consumes the item, so the recipe's credit is immediate and two-sided IN THE WORLD, in
+    every arm -- not an oracle fixture.  The station -> nut bridge returns in v3.11.
     """
     y, x = a.y, a.x
     g = cfg.grid
@@ -597,37 +597,22 @@ def resolve_action(a, action, world, cfg, rng, t=0):
         a.energy -= cfg.noop_cost
         return 0.0, "noop", {}
 
-    # ---- INTERACT.  Priority: attempt -> crack -> pickup.
+    # ---- INTERACT.  Priority: attempt -> pickup.
     st = int(world.stations[y, x])
     vetoed_pair = (cfg.private_mem and a.item >= 0 and st >= 0
                    and a.B[pair_id(a.item, st)] <= -0.3 and rng.random() <= cfg.veto_p)
-    if st >= 0 and a.item >= 0 and not a.tool and not vetoed_pair:
+    if st >= 0 and a.item >= 0 and not vetoed_pair:
         ok = (a.item, st) == world.recipe
         info = {"pair": pair_id(a.item, st), "ok": ok, "item": a.item, "station": st}
-        a.item = -1
+        a.item = -1                                   # consumed either way
         if ok:
-            a.tool = True
-            a.tool_made_t = t
-            a.used_tool = False
-            a.energy += cfg.tool_bonus
-            return (1.0 if cfg.tool_bonus > 0 else 0.0), "attempt_ok", info
+            a.energy += cfg.tool_value
+            return 1.0, "attempt_ok", info
         a.energy -= cfg.fail_cost
-        return (-1.0 if cfg.fail_cost > 0 else 0.0), "attempt_bad", info
-
-    if world.nuts[y, x] and a.tool:
-        world.nuts[y, x] = False
-        a.energy += cfg.nut_value
-        broke = rng.random() < cfg.tool_break
-        gap = (t - a.tool_made_t) if a.tool_made_t >= 0 else None
-        first = not a.used_tool
-        a.used_tool = True
-        if broke:
-            a.tool = False
-            a.tool_made_t = -1
-        return 1.0, "crack", {"broke": broke, "gap": gap, "first": first}
+        return -1.0, "attempt_bad", info
 
     it = int(world.items[y, x])
-    if it >= 0 and a.item < 0 and not a.tool:
+    if it >= 0 and a.item < 0:
         pb = a.B.reshape(cfg.n_items, cfg.n_stations) if cfg.private_mem else None
         if not (cfg.private_mem and pb[it].max() <= -0.3 and rng.random() <= cfg.veto_p):
             a.item = it
@@ -675,7 +660,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              nuts=0, pickups=0, e_food=0.0, e_nut=0.0, e_fail=0.0, bridge_sum=0.0, bridge_n=0,
              trace_w=0.0, bridge1_sum=0.0, bridge1_n=0, rec_sum=0.0, rec_n=0,
              e_bonus=0.0, noops=0, declined=0, decline_opps=0,
-             on_food=0, on_food_eat=0, on_food_int=0, on_item=0, on_item_eat=0, on_item_int=0)
+             on_food=0, on_food_eat=0, on_food_int=0, on_item=0, on_item_eat=0, on_item_int=0,
+             int_at_station=0)
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
     ATT_R = np.zeros((cfg.n_attempts + 1, 2))   # attempts since the last recipe change
     MEALS = np.zeros((cfg.n_meals + 1, 2))      # meal number in an agent's life (the v3 curve)
@@ -751,7 +737,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             obs = np.concatenate([dirsum(c, v) for c in chans]
                                  + [[c[v, v] for c in chans], [a.energy / cfg.max_energy], inv,
                                     [1.0 if a.tool else 0.0]])
-            action = a.act(obs, cfg, rng)
+            action = a.act(obs, cfg, rng, world.chain_on)
             if track_recency and not world.chain_on:
                 a.e2_hist.append(a.e2.copy())          # phase 1 only: the chain would confound it
                 if len(a.e2_hist) > cfg.recency_k + 1:
@@ -763,8 +749,9 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 a.energy -= cfg.carry_cost
 
             on_food = bool(world.food[0, y, x] or world.food[1, y, x])
-            on_item = world.items[y, x] >= 0
-            at_station_carrying = world.stations[y, x] >= 0 and a.item >= 0 and not a.tool
+            on_item = world.items[y, x] >= 0 and a.item < 0      # a pickup is only available when
+                                                                 # empty-handed, so condition on it
+            at_station_carrying = world.stations[y, x] >= 0 and a.item >= 0
 
             m, event, info = resolve_action(a, action, world, cfg, rng, t)
 
@@ -778,6 +765,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             # ---- declining is now a policy (audit E), so it can be measured
             if at_station_carrying:
                 W["decline_opps"] += 1
+                W["int_at_station"] += (action == INTERACT)
                 if action != INTERACT:
                     W["declined"] += 1
 
@@ -797,7 +785,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 ok = info["ok"]
                 a.attempts += 1; W["attempts"] += 1
                 if ok:
-                    a.successes += 1; W["correct"] += 1; W["e_bonus"] += cfg.tool_bonus
+                    a.successes += 1; W["correct"] += 1; W["e_bonus"] += cfg.tool_value
                 else:
                     W["e_fail"] += cfg.fail_cost
                 if cfg.private_mem:
@@ -812,13 +800,6 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 kr = a.since_recipe
                 if kr <= cfg.n_attempts:
                     ATT_R[kr, 0] += 1; ATT_R[kr, 1] += ok
-            elif event == "crack":
-                a.cracks += 1; W["nuts"] += 1; W["e_nut"] += cfg.nut_value
-                if info["gap"] is not None:
-                    W["bridge_sum"] += info["gap"]; W["bridge_n"] += 1
-                    W["trace_w"] += a.lam2 ** info["gap"]
-                    if info["first"]:
-                        W["bridge1_sum"] += info["gap"]; W["bridge1_n"] += 1
             elif event == "pickup":
                 W["pickups"] += 1
             elif event == "noop":
@@ -891,6 +872,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 eat_on_food=(W["on_food_eat"] / W["on_food"]) if W["on_food"] else np.nan,
                 int_on_food=(W["on_food_int"] / W["on_food"]) if W["on_food"] else np.nan,
                 eat_on_item=(W["on_item_eat"] / W["on_item"]) if W["on_item"] else np.nan,
+                int_at_station=(W["int_at_station"] / W["decline_opps"]) if W["decline_opps"] else np.nan,
                 int_on_item=(W["on_item_int"] / W["on_item"]) if W["on_item"] else np.nan,
                 noops_per_1k=1000.0 * W["noops"] / max(W["steps"], 1),
                 e_bonus_per_1k=1000.0 * W["e_bonus"] / max(W["steps"], 1),     # share of energy income from nuts
@@ -948,82 +930,87 @@ def learning_rule_selftest(seed=0, verbose=True):
 
 def world_semantics_selftest(verbose=True):
     """Addition 1: every (action, cell content, inventory state) row of the action x cell table,
-    constructed cell by cell, one resolve_action call each, energy delta and m asserted against
-    the table.  This is the test that would have caught the shared interact action."""
-    cfg = Config(mode="fixed", scaffold_food=False, scaffold_chain=False,
-                 fail_cost=0.05, tool_bonus=0.05, tool_break=0.0)   # break 0 so `crack` is deterministic
+    constructed cell by cell, one resolve_action call each, energy delta / m / event asserted
+    against the table.  This is the test that would have caught the shared interact action."""
+    cfg = Config(mode="fixed", scaffold_food=False, scaffold_chain=False)
     rng = np.random.default_rng(0)
 
-    def fresh(item=-1, tool=False, food=None, cell_item=None, station=None, nut=False, recipe=(0, 0)):
+    def fresh(item=-1, food=None, cell_item=None, station=None, recipe=(0, 0)):
         w = World(cfg, np.random.default_rng(0))
         w.food[:] = False; w.items[:] = -1; w.nuts[:] = False; w.stations[:] = -1
         w.safe = 0
         w.recipe = recipe
         a = Agent(cfg, np.random.default_rng(1), 0, 5, 5)
-        a.energy = 3.0
-        a.item, a.tool = item, tool
+        a.energy, a.item = 3.0, item
         if food is not None:
             w.food[food, 5, 5] = True
         if cell_item is not None:
             w.items[5, 5] = cell_item
         if station is not None:
             w.stations[5, 5] = station
-        w.nuts[5, 5] = nut
         return a, w
 
-    MOVE, EATC, INT = 0, EAT, INTERACT
     cases = [
-        # (label, action, cell/inventory kwargs, expected energy delta, expected m, expected event)
-        ("move",                         MOVE, {},                                          -cfg.move_cost,   0.0, "move"),
-        ("eat on safe food",             EATC, dict(food=0),                                +cfg.food_value,  1.0, "eat_safe"),
-        ("eat on poison",                EATC, dict(food=1),                                -cfg.poison_value, -1.0, "eat_poison"),
-        ("eat on empty",                 EATC, {},                                          -cfg.move_cost,   0.0, "noop"),
-        ("eat on item cell",             EATC, dict(cell_item=0),                           -cfg.move_cost,   0.0, "noop"),
-        ("eat on station, carrying",     EATC, dict(station=0, item=0),                     -cfg.move_cost,   0.0, "noop"),
-        ("eat on nut, tooled",           EATC, dict(nut=True, tool=True),                   -cfg.move_cost,   0.0, "noop"),
-        ("interact on empty",            INT,  {},                                          -cfg.move_cost,   0.0, "noop"),
-        ("interact on food",             INT,  dict(food=0),                                -cfg.move_cost,   0.0, "noop"),
-        ("interact: pickup",             INT,  dict(cell_item=2),                           -cfg.pickup_cost, 0.0, "pickup"),
-        ("interact: pickup blocked (carrying)", INT, dict(cell_item=2, item=1),             -cfg.move_cost,   0.0, "noop"),
-        ("interact: pickup blocked (tooled)",   INT, dict(cell_item=2, tool=True),          -cfg.move_cost,   0.0, "noop"),
-        ("interact: correct attempt",    INT,  dict(station=0, item=0, recipe=(0, 0)),      +cfg.tool_bonus,  1.0, "attempt_ok"),
-        ("interact: wrong attempt",      INT,  dict(station=1, item=0, recipe=(0, 0)),      -cfg.fail_cost,  -1.0, "attempt_bad"),
-        ("interact: station, empty-handed", INT, dict(station=0),                           -cfg.move_cost,   0.0, "noop"),
-        ("interact: crack",              INT,  dict(nut=True, tool=True),                   +cfg.nut_value,   1.0, "crack"),
-        ("interact: nut, no tool",       INT,  dict(nut=True),                              -cfg.move_cost,   0.0, "noop"),
-        ("priority: attempt before crack", INT, dict(station=0, item=0, nut=True, recipe=(0, 0)),
-                                                                                            +cfg.tool_bonus,  1.0, "attempt_ok"),
-        ("priority: crack before pickup", INT, dict(nut=True, tool=True, cell_item=1),      +cfg.nut_value,   1.0, "crack"),
+        ("move",                             0,        {},                                    -cfg.move_cost,   0.0, "move"),
+        ("eat on safe food",                 EAT,      dict(food=0),                          +cfg.food_value,  1.0, "eat_safe"),
+        ("eat on poison",                    EAT,      dict(food=1),                          -cfg.poison_value, -1.0, "eat_poison"),
+        ("eat on empty",                     EAT,      {},                                    -cfg.noop_cost,   0.0, "noop"),
+        ("eat on item cell",                 EAT,      dict(cell_item=0),                     -cfg.noop_cost,   0.0, "noop"),
+        ("eat at station, carrying",         EAT,      dict(station=0, item=0),               -cfg.noop_cost,   0.0, "noop"),
+        ("interact on empty",                INTERACT, {},                                    -cfg.noop_cost,   0.0, "noop"),
+        ("interact on food",                 INTERACT, dict(food=0),                          -cfg.noop_cost,   0.0, "noop"),
+        ("interact: pickup",                 INTERACT, dict(cell_item=2),                     -cfg.pickup_cost, 0.0, "pickup"),
+        ("interact: pickup blocked, carrying", INTERACT, dict(cell_item=2, item=1),           -cfg.noop_cost,   0.0, "noop"),
+        ("interact: CORRECT attempt pays",   INTERACT, dict(station=0, item=0, recipe=(0, 0)), +cfg.tool_value,  1.0, "attempt_ok"),
+        ("interact: WRONG attempt costs",    INTERACT, dict(station=1, item=0, recipe=(0, 0)), -cfg.fail_cost,  -1.0, "attempt_bad"),
+        ("interact: station, empty-handed",  INTERACT, dict(station=0),                       -cfg.noop_cost,   0.0, "noop"),
+        ("priority: attempt before pickup",  INTERACT, dict(station=0, item=0, cell_item=1, recipe=(0, 0)),
+                                                                                              +cfg.tool_value,  1.0, "attempt_ok"),
     ]
     fails = []
     for label, action, kw, d_exp, m_exp, ev_exp in cases:
         a, w = fresh(**kw)
-        e0 = a.energy
+        e0, i0 = a.energy, a.item
         m, ev, _ = resolve_action(a, action, w, cfg, rng, t=0)
         d = a.energy - e0
         ok = abs(d - d_exp) < 1e-9 and m == m_exp and ev == ev_exp
+        if ev in ("attempt_ok", "attempt_bad") and a.item != -1:
+            ok = False                                   # the item is consumed either way
         if not ok:
-            fails.append(f"{label}: got dE {d:+.4f} m {m:+.1f} {ev}, expected dE {d_exp:+.4f} m {m_exp:+.1f} {ev_exp}")
+            fails.append(f"{label}: got dE {d:+.4f} m {m:+.1f} {ev} item {a.item}, "
+                         f"expected dE {d_exp:+.4f} m {m_exp:+.1f} {ev_exp}")
         if verbose:
             print(f"  {label:<38} dE {d:+.4f}  m {m:+.0f}  {ev:<12} {'OK' if ok else 'FAIL'}")
-    # silent-by-default: with tool_bonus and fail_cost at 0, both attempt outcomes fire m = 0
-    silent = Config(mode="fixed", scaffold_food=False, scaffold_chain=False, fail_cost=0.0, tool_bonus=0.0)
-    for lab, station, m_exp in [("correct attempt, default world", 0, 0.0), ("wrong attempt, default world", 1, 0.0)]:
-        a, w = fresh(station=station, item=0, recipe=(0, 0))
-        m, ev, _ = resolve_action(a, INTERACT, w, silent, rng, t=0)
-        ok = m == m_exp
-        if not ok:
-            fails.append(f"{lab}: m {m} expected {m_exp}")
-        if verbose:
-            print(f"  {lab:<38} m {m:+.0f}  {ev:<12} {'OK' if ok else 'FAIL'}")
+
+    # no nuts, and no tool is ever carried
+    a, w = fresh(station=0, item=0, recipe=(0, 0))
+    resolve_action(a, INTERACT, w, cfg, rng)
+    no_tool = (getattr(a, "tool", False) is False)
+    if not no_tool:
+        fails.append("a correct attempt left a tool carried; there is no tool state in v3.9")
     if verbose:
+        print(f"  {'correct attempt carries nothing':<38} {'OK' if no_tool else 'FAIL'}")
+
+    # `interact` is masked while the chain is off, so phase 1 is exactly five actions
+    cfgm = Config(mode="fixed", action_noise=0.0, scaffold_food=False, scaffold_chain=False)
+    am = Agent(cfgm, np.random.default_rng(3), 0, 0, 0)
+    obs = np.zeros(N_IN); obs[ENERGY] = 0.5
+    chosen_off = {am.act(obs, cfgm, np.random.default_rng(k), chain_on=False) for k in range(50)}
+    masked = INTERACT not in chosen_off
+    if not masked:
+        fails.append("`interact` was chosen with the chain off; it must be masked in phase 1")
+    if verbose:
+        print(f"  {'interact masked while chain is off':<38} {'OK' if masked else 'FAIL'}")
         print(f"  world-semantics self-test: {'PASS' if not fails else 'FAIL'}  ({len(cases) + 2} rows)")
         for f in fails:
             print("   ", f)
     return not fails
 
 
-COVER_TARGETS = dict(items=0.08, nuts=0.08, stations=0.03, food_with_item=0.10)
+
+# v3.9 amendment 2: densities go to a READABILITY target, not a co-occupancy ceiling -- fix A
+# already solved co-occupancy.  Bands, not ceilings; food_with_item is printed, not constrained.
+COVER_BANDS = dict(items=(0.20, 0.25), stations=(0.06, 0.08))
 
 
 def standing_cover(cfg=None, steps=1000, seeds=(0, 1, 2, 3)):
@@ -1052,15 +1039,20 @@ def assert_cover(cfg=None, steps=1000, verbose=True):
     mean, worst = standing_cover(cfg, steps)
     fails = []
     if verbose:
-        print(f"  standing cover, no agents, {steps} steps, mean over 4 seeds (worst in brackets):")
-    for k, tgt in COVER_TARGETS.items():
-        ok = worst[k] <= tgt
+        print(f"  standing cover, no agents, {steps} steps, mean over 4 seeds:")
+    for k, (lo, hi) in COVER_BANDS.items():
+        ok = lo <= mean[k] <= hi
         if not ok:
-            fails.append(f"{k} {worst[k]*100:.1f}% > target {tgt*100:.0f}%")
+            fails.append(f"{k} {mean[k]*100:.1f}% outside band {lo*100:.0f}-{hi*100:.0f}%")
         if verbose:
-            print(f"    {k:<16} {mean[k]*100:5.1f}%  [{worst[k]*100:5.1f}%]   target <= {tgt*100:.0f}%   "
+            print(f"    {k:<16} {mean[k]*100:5.1f}%   band {lo*100:.0f}-{hi*100:.0f}%   "
                   f"{'OK' if ok else 'FAIL'}")
     if verbose:
-        print(f"    {'food':<16} {mean['food']*100:5.1f}%  [{worst['food']*100:5.1f}%]   (v3.1, not a target)")
-        print(f"  cover targets: {'PASS' if not fails else 'FAIL -- ' + '; '.join(fails)}")
+        print(f"    {'food':<16} {mean['food']*100:5.1f}%   (v3.1, not a target)")
+        print(f"    {'food_with_item':<16} {mean['food_with_item']*100:5.1f}%   (printed, unconstrained "
+              f"-- fix A made co-occupancy harmless)")
+        print(f"    {'nuts':<16} {mean['nuts']*100:5.1f}%   (must be 0: no nuts in v3.9)")
+        print(f"  cover bands: {'PASS' if not fails else 'FAIL -- ' + '; '.join(fails)}")
+    if mean["nuts"] > 0:
+        fails.append("nuts present; v3.9 has none")
     return not fails

@@ -1,7 +1,14 @@
 # v3.9 world spec
 
-*Agreed 4 September 2026. The three DECISION points are resolved below and the two additions are
-folded in. This is the spec the code implements.*
+*Agreed 4 September 2026, **amended 2** after the first pre-checks. The chain is shortened to what
+v3.9 tests; the oracle arms are gone because the two-sided signal is now part of the world; densities
+go to a readability target. This is the spec the code implements.*
+
+> **Amendment 2's readability criterion is NOT met, and is not reachable by the levers it allows.**
+> `random policy` attempts/life is 0.96 at the agreed band, 2.16 at **three times** the station band
+> (23% cover), and *falls* as `tool_value` rises (0.96 → 0.85 at 8.0). It is pinned by the null arm
+> living at the injection floor, so it measures the floor rather than the world's affordances —
+> the same class of defect as the row 2(c) confound. Reported, not tuned past.
 
 **What this build is.** v3.8 rerun on a rig that can show learning if it is there. Rig fixes A, B,
 D, F from the audit, each with its own acceptance check. No new mechanism. `goal_channel` stays on;
@@ -27,17 +34,21 @@ Agents do not block each other; occupancy is an observation channel only.
 
 `0–3` move N/S/E/W · `4` **eat** · `5` **interact**
 
-| action | food cell | item cell, empty-handed, no tool | station, carrying item | nut cell, carrying tool | otherwise |
+| action | food cell | item cell, empty-handed | station, carrying item | ~~nut~~ | otherwise |
 |---|---|---|---|---|---|
-| **eat** | eat it. safe → energy **+`food_value`**, **m = +1**; poison → energy **−`poison_value`**, **m = −1** | no-op, `move_cost` | no-op, `move_cost` | no-op, `move_cost` | no-op, `move_cost` |
-| **interact** | no-op, `move_cost` | pick up, **−`pickup_cost`**, **m = 0** | attempt. correct → tool, **+`tool_bonus`**, **m = +1 iff `tool_bonus` > 0**; wrong → item lost, **−`fail_cost`**, **m = −1 iff `fail_cost` > 0** | crack, **+`nut_value`**, **m = +1**, tool breaks w.p. `tool_break` | no-op, `move_cost` |
+| **eat** | eat it. safe → **+`food_value`**, **m = +1**; poison → **−`poison_value`**, **m = −1** | no-op | no-op | — | no-op |
+| **interact** | no-op | pick up, **−`pickup_cost`**, **m = 0** | attempt. correct → **+`tool_value` = 1.5**, **m = +1**, item consumed; wrong → item lost, **−`fail_cost` = 0.05**, **m = −1** | — | no-op |
 
-`interact` keeps v3.8's priority when a cell affords more than one: **attempt → crack → pickup**.
+`interact` priority when a cell affords more than one: **attempt → pickup**. **There are no nuts
+and no tool state in v3.9**: a correct attempt pays immediately and consumes the item, so nothing is
+carried afterwards. The station→nut bridge returns in v3.11 as one change.
 A successful action pays its own cost only; a **no-op costs `move_cost`**, so there is no free
 waiting action any more — a behavioural change from v3.8, where "stay" on an empty cell was free.
 
-In **phase 1** there are no items, stations or nuts, so `interact` is a permanent no-op and the
-live action set is effectively five.
+In **phase 1** `interact`'s logit is forced to −∞, so phase 1 is **exactly five actions** and
+v3.1's gate applies unchanged. The sixth action goes live at the switch, alongside the 39 inputs.
+The null is masked too, so its per-action share is **1/5 in phase 1 and 1/6 in phase 2** — the
+conditional nulls differ by phase, and the summary prints the measured null as well as the analytic.
 
 ## Modulator events — the complete list
 
@@ -45,9 +56,8 @@ live action set is effectively five.
 |---|---|
 | eat safe food | **+1** |
 | eat poison | **−1** |
-| crack a nut | **+1** |
-| correct attempt, and only if `tool_bonus` > 0 | **+1** |
-| wrong attempt, and only if `fail_cost` > 0 | **−1** |
+| correct attempt (**+`tool_value`**, item consumed) | **+1** |
+| wrong attempt (**−`fail_cost`**, item lost) | **−1** |
 | everything else | **0** |
 
 "Everything else" is: pickup (`pickup_cost`), carrying (`carry_cost`/step), moving (`move_cost`),
@@ -55,22 +65,9 @@ any no-op (`move_cost`), base metabolism, repair, **and a successful attempt**. 
 `sim.py` currently says "the agent's own energy change", which is not what the code does; it will
 be corrected to this table (audit D, no behaviour change).
 
-**In the world's default** (`fail_cost = 0`, `tool_bonus = 0`) both attempt outcomes are silent, so
-the recipe has **no immediate signal at all** and the only credit is the nut, some steps later.
-That is exactly what row 4 tests. **In the oracle arms** both fire, so the signal is immediate and
-two-sided.
-
-**RESOLVED — the oracle is two-sided.** In the **oracle arms only**, a correct attempt pays
-`tool_bonus = 0.05` and fires **m = +1**; a wrong attempt costs `fail_cost = 0.05` and fires
-**m = −1**. The world's default stays silent on both, so pure delayed credit remains what row 4
-asks. A negative-only fixture would teach the arm to *abstain* — and with `declined` now a policy,
-abstention would read as knowledge. The fixture's job is the cleanest possible signal, so that a
-null is about the rule and nothing else. **Elimination (negative-only) becomes a later condition,
-not the fixture.**
-
-Oracle controls: **`fixed + oracle`** (identical energy events, no learning) and
-**`scrambled + oracle`** (identical events, random-sign `m`). All three oracle arms see the same
-energy world, so a move in `fixed + oracle` against `fixed` is the world changing, not the signal.
+**The signal is immediate and two-sided, in the world, in every arm.** There is no oracle fixture
+any more — `scrambled` is the control for "a modulator at stations changes behaviour". Delayed
+credit is no longer tested in v3.9; it returns in v3.11 with the bridge.
 
 ## Observation — 60 inputs, unchanged
 
@@ -89,7 +86,13 @@ remain in the genome, reach nothing, and serve as the dead-gene drift scale.
 
 ## Standing densities — measured with no agents, after 1000 steps
 
-**RESOLVED — densities accepted as proposed.** v2.9b's stated values miss two of three targets;
+**SUPERSEDED by amendment 2 — densities go to a READABILITY target, not a co-occupancy ceiling.**
+Co-occupancy only mattered while one action did both jobs, and fix A solved that. Item cover
+**20–25%** (`items_per_step` 3.0 → 22.4%), station cover **6–8%** (`stations_per_type` 85 → 7.1%),
+food-with-item printed but unconstrained (21.2%). The earlier ceiling reasoning is kept below for
+the record.
+
+**Superseded:** v2.9b's stated values miss two of three targets;
 the targets govern, so these solve to them. Cover is asserted in the setup cell and
 food-cells-with-item is printed.
 
@@ -141,10 +144,12 @@ the two fail-cost arms) · `recipe_every` 2000.
 `nut_value` **1.0** and `tool_break` **0.25** — v2.9b's, accepted; v3.6's tuned 1.3 / 0.4 were for a
 scaffolded, saturated world.
 
-## Arms — eight, three seeds
+## Arms — five, three seeds
 
-`random policy` · `fixed` · `scrambled` · `plastic (W2)` · **`fixed + oracle`** ·
-**`scrambled + oracle`** · **`plastic (W2) + oracle`** · `fixed + B (ceiling)`
+**Five arms:** `random policy` · `fixed` · `scrambled` · `plastic (W2)` · `fixed + B (ceiling)`
+
+The oracle arms are removed: the two-sided signal is the world now, in every arm. `scrambled` is
+the control for "a modulator at stations changes behaviour".
 
 **`random policy`** draws uniformly over the six actions. No plasticity, no learning; a behavioural
 null only. **It is expected to sit near the population floor with injections, and that must not

@@ -55,7 +55,7 @@ CODE_RUN = '''# QUICK = True   exercises every cell below: 1 seed, 1500-step pha
 #                recipe_every dropped to 500 so recipe changes actually occur in phase 2.
 #                A smoke test, NOT a result -- 1500 steps is only a handful of generations,
 #                so row 0 will flag conditions as uninterpretable and row 1 will not reproduce.
-# QUICK = False  the real experiment: 8 arms x 3 seeds, 8000-step phases (16000 total).
+# QUICK = False  the real experiment: 5 arms x 3 seeds, 8000-step phases (16000 total).
 QUICK = True
 
 if QUICK:
@@ -93,7 +93,7 @@ nb = {
         code(CODE_SETUP),
         md("## 2. Run\n\n**Runtime.** A staged run is 16000 steps — twice a v3.6 run — but populations "
            "here are 170–260 rather than 300–450. Measured on a 4-core box: **3–6 min per run**, "
-           "so the grid of 8 × 3 = **24 runs**; see the pre-check timings. Colab CPU may be slower.\n\nThe cell checkpoints to `results_v3_9.pkl` after every run, so a dropped "
+           "so the grid of 5 × 3 = **15 runs**; see the pre-check timings. Colab CPU may be slower.\n\nThe cell checkpoints to `results_v3_9.pkl` after every run, so a dropped "
            "session costs one run. To resume, reload the pickle and re-run only the missing "
            "seeds, then merge.\n\n**Seeds 3–4 are held in reserve.** A positive on any row gets "
            "them before it is called. To append them later, with the same three files present:"

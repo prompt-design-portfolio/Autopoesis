@@ -1,5 +1,5 @@
 """
-v3.9 analysis -- the rig fixed.
+v3.9 analysis -- the rig fixed, and the chain shortened to what v3.9 tests.
 
 v3.8's row 4 is void as a test of the learner: one action did attempt / crack / pickup / eat, the
 chain was ambient (items on 40% of cells, nuts on 47%), declining was not a policy, and there was
@@ -17,7 +17,7 @@ try:
 except Exception:
     plt = None
 
-from sim import Config, run, COVER_TARGETS
+from sim import Config, run, COVER_BANDS
 
 # ---------------------------------------------------------------------------
 # the world -- v3.1 metabolism throughout, the chain at the agreed cover targets
@@ -27,18 +27,14 @@ WORLD = dict(
     flip_every=300, eta_init=0.2, hidden=24,
     spawn_per_patch=3.0, food_value=0.7, poison_value=0.5,
     repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=400, init_pop=300,
-    # the chain, solved to the cover targets (items <= 8%, nuts <= 8%, stations <= 3%)
-    items_per_step=0.8, nuts_per_patch=0.12, nuts_uniform=0.0, stations_per_type=30,
-    nut_value=1.0, tool_break=0.25, recipe_every=2000,
-    fail_cost=0.0, tool_bonus=0.0,        # the world is silent on both attempt outcomes
-    # no instinct of any kind
+    # the SHORTENED chain (amendment 2): pickup -> carry -> attempt, and the attempt pays.
+    # No nuts, no tool state.  The station -> nut bridge returns in v3.11 as one change.
+    items_per_step=3.0, stations_per_type=85, nuts_per_patch=0.0, nuts_uniform=0.0,
+    tool_value=1.5, fail_cost=0.05, recipe_every=2000,
+    # densities go to a READABILITY target now, not a co-occupancy ceiling -- fix A already
+    # solved co-occupancy.  item cover 20-25%, station cover 6-8%.
     scaffold_food=False, scaffold_chain=False,
 )
-
-ORACLE = dict(fail_cost=0.05, tool_bonus=0.05)   # two-sided: a correct attempt pays and fires m=+1,
-                                                 # a wrong one costs and fires m=-1.  A one-sided
-                                                 # negative fixture would teach abstention, and with
-                                                 # `declined` a policy that reads as knowledge.
 
 PHASE_STEPS = 8000
 STAGED = [dict(n_steps=PHASE_STEPS, chain=False), dict(n_steps=PHASE_STEPS, chain=True)]
@@ -47,28 +43,25 @@ def _v(**kw):
     return dict(kw=dict(**dict(WORLD, **kw)), phases=STAGED)
 
 VARIANTS = {
-    # the behavioural null for every contact rate.  Expected at the population floor with
-    # injections; that does NOT exclude it under row 0 -- it is a rate null, not an outcome arm.
-    "random policy":            _v(mode="random"),
-    "fixed":                    _v(mode="fixed"),
-    "scrambled":                _v(mode="plastic", plastic_layers="W2", scramble=True),
-    "plastic (W2)":             _v(mode="plastic", plastic_layers="W2"),
-    # the learner-oracle fixture and its two controls
-    "fixed + oracle":           _v(mode="fixed", **ORACLE),
-    "scrambled + oracle":       _v(mode="plastic", plastic_layers="W2", scramble=True, **ORACLE),
-    "plastic (W2) + oracle":    _v(mode="plastic", plastic_layers="W2", **ORACLE),
-    # reference level.  Weaker than v2's: its steering route is now only an observation channel
-    # nothing is wired to, so its live route is the veto.  Not a matched comparison.
-    "fixed + B (ceiling)":      _v(mode="fixed", private_mem=True, pref_gain=8.0, veto_p=0.9),
+    # the behavioural null.  Uniform over the AVAILABLE actions -- five in phase 1 (`interact` is
+    # masked while the chain is off), six in phase 2 -- so the conditional null is 1/5 then 1/6.
+    # Exempt from row 0: a random walker belongs at the population floor.
+    "random policy":       _v(mode="random"),
+    "fixed":               _v(mode="fixed"),
+    # the control for "a modulator at stations changes behaviour": same plasticity, same H
+    # magnitudes, random-sign m.
+    "scrambled":           _v(mode="plastic", plastic_layers="W2", scramble=True),
+    "plastic (W2)":        _v(mode="plastic", plastic_layers="W2"),
+    # reference level, not a matched comparison: its steering route is only an observation
+    # channel nothing is wired to, so its live route is the veto.
+    "fixed + B (ceiling)": _v(mode="fixed", private_mem=True, pref_gain=8.0, veto_p=0.9),
 }
 
 NULL = "random policy"
 OUTCOME_ARMS = [n for n in VARIANTS if n != NULL]
 
 COLORS = {"random policy": "tab:grey", "fixed": "tab:red", "scrambled": "black",
-          "plastic (W2)": "tab:blue", "fixed + oracle": "tab:pink",
-          "scrambled + oracle": "tab:brown", "plastic (W2) + oracle": "tab:green",
-          "fixed + B (ceiling)": "tab:purple"}
+          "plastic (W2)": "tab:blue", "fixed + B (ceiling)": "tab:purple"}
 
 CHANCE = 1.0 / 6.0
 MARGIN = 0.03
@@ -209,8 +202,6 @@ ROWS = [
     ("safe_rate",          safe),
     ("recipe_hit",         hit),
     ("attempts/1k",        lambda L: per_1k(L, "n_attempts_raw")),
-    ("nuts/1k",            lambda L: per_1k(L, "n_nuts")),
-    ("has_tool",           lambda L: half(L, "has_tool")),
     ("holding_item",       lambda L: half(L, "holding_item")),
     ("pop",                lambda L: half(L, "pop")),
     ("injections",         lambda L: half(L, "injections")),
@@ -224,19 +215,18 @@ ROWS = [
     ("h_norm",             lambda L: half(L, "h_norm")),
     ("nav_dir",            lambda L: half(L, "nav_dir")),
     ("nav_here",           lambda L: half(L, "nav_here")),
-    ("bridge_first",       lambda L: half(L, "bridge_first")),
     ("crop_safe",          lambda L: half(L, "crop_safe")),
-    ("nut_share",          lambda L: half(L, "nut_share")),
     ("trace_recency",      lambda L: half(L, "trace_recency")),
     ("e_fail/1k",          lambda L: half(L, "e_fail_per_1k")),
-    ("e_bonus/1k",         lambda L: half(L, "e_bonus_per_1k")),
+    ("e_tool/1k",          lambda L: half(L, "e_bonus_per_1k")),
     ("pickups/1k",         lambda L: half(L, "pickups_per_1k")),
     ("declined/1k",        lambda L: half(L, "declined_per_1k")),
     ("decline_frac",       lambda L: half(L, "decline_frac")),
     ("eat on food",        lambda L: half(L, "eat_on_food")),
     ("interact on food",   lambda L: half(L, "int_on_food")),
     ("eat on item",        lambda L: half(L, "eat_on_item")),
-    ("interact on item",   lambda L: half(L, "int_on_item")),
+    ("P(int | on item)",   lambda L: half(L, "int_on_item")),
+    ("P(int | at station)", lambda L: half(L, "int_at_station")),
     ("noops/1k",           lambda L: half(L, "noops_per_1k")),
     ("attempts/life",      lambda L: half(L, "attempts_per_life")),
     ("meal gain",          lambda L: float(curve(L, "meal")[-1] - curve(L, "meal")[0])),
@@ -287,151 +277,113 @@ def _decision_numbers(results):
     rule = min(SEED_RULE, nseed)
     P1 = lambda r: phase_half(r, 0)
     P2 = lambda r: phase_half(r, 1)
-    F, S, PL = "fixed", "scrambled", "plastic (W2)"
-    FO, SO, PO = "fixed + oracle", "scrambled + oracle", "plastic (W2) + oracle"
-    CEIL = "fixed + B (ceiling)"
+    F, S, PL, CEIL = "fixed", "scrambled", "plastic (W2)", "fixed + B (ceiling)"
     v = lambda n, sel, f: ps(results, n, sel, f)
     n_ok = lambda a, b: int(np.sum(np.asarray(a) - np.asarray(b) >= MARGIN))
     have = lambda n: n in results
 
     print("\n" + "-" * 78)
     print(f"DECISION NUMBERS (a difference counts when it is >= {MARGIN} in {rule}/{nseed} seeds)")
+    print("  PRE-REGISTERED PREDICTION: `plastic (W2)` clears row 3, and abstention does not occur")
+    print("  under a two-sided signal.  Recorded before the run.")
     print("-" * 78)
 
-    print("\nrow 0  uninterpretable?  Per phase.  `random policy` is EXEMPT -- it is a rate null,")
-    print("       expected at the floor with injections, and is never read as an outcome.")
+    print("\nrow 0  uninterpretable?  Per phase.  `random policy` is EXEMPT.")
     for lab, sel in [("phase 1", P1), ("phase 2", P2)]:
         for n in names:
             pop, inj = v(n, sel, lambda L: half(L, "pop")), v(n, sel, lambda L: half(L, "injections"))
             bad = (np.nanmin(pop) < 80 or np.nanmax(inj) > 0)
             flag = "  (null arm, exempt)" if n == NULL else ("  <-- EXCLUDE" if bad else "")
-            print(f"  {lab}  {n:<24} pop {np.round(pop,0).tolist()}  inj {np.round(inj,1).tolist()}{flag}")
+            print(f"  {lab}  {n:<22} pop {np.round(pop,0).tolist()}  inj {np.round(inj,1).tolist()}{flag}")
 
-    print("\nrow 1  PHASE-1 GATE -- is this v3.1, with 60 inputs and 24 hidden?")
-    sp, sf = v(PL, P1, safe), v(F, P1, safe)
-    pf = v(PL, P1, lambda L: half(L, "probe_adv_food"))
-    fpop, finj = v(F, P1, lambda L: half(L, "pop")), v(F, P1, lambda L: half(L, "injections"))
-    excluded = (fpop < 80) | (finj > 0)
-    V31_HI = 0.56
-    print(f"  safe_rate  plastic {np.round(sp,3).tolist()}   fixed {np.round(sf,3).tolist()}   (v3.1: 0.60-0.66 vs 0.51-0.56)")
-    if excluded.any():
-        print(f"  ROW-0 FALLBACK in seed(s) {np.where(excluded)[0].tolist()}: `fixed` phase 1 excluded"
-              f" (pop {np.round(fpop[excluded],0).tolist()}), so those seeds read against v3.1's")
-        print(f"  published range, conservative end {V31_HI}.")
-    passes = []
-    for i in range(nseed):
-        d = sp[i] - (V31_HI if excluded[i] else sf[i])
-        passes.append(d >= MARGIN)
-        print(f"    seed {i}: {d:+.3f} ({'published' if excluded[i] else 'measured'})   {'PASS' if d >= MARGIN else 'FAIL'}")
-    print(f"    >= +{MARGIN} in {sum(passes)}/{nseed}")
-    print(f"  probe_adv (food) plastic {np.round(pf,3).tolist()}   (target >= 1.0; v3.1: 1.4-2.7)")
-    print("  If this fails, the finding is about observation size and everything below is void.")
+    print("\nrow 1  GATE -- can the genome track the recipe now that it pays?")
+    hf = v(F, P2, hit)
+    print(f"  fixed recipe_hit {np.round(hf,3).tolist()}   (chance {CHANCE:.3f}; gate FIRES at > 0.25 in {rule}/{nseed})")
+    print(f"  fixed pair_gain innate {np.round(v(F,P2,lambda L: half(L,'pair_gain_innate')),3).tolist()}")
+    fired = int(np.sum(hf > 0.25))
+    print(f"  above 0.25 in {fired}/{nseed}" + ("   <-- GATE FIRES: shorten recipe_every toward the flip"
+          " period, judged against `fixed` only, before reading anything below."
+          if fired >= rule else "   gate clear."))
 
-    print("\nrow 2  RIG CHECKS -- does the rig work?  Nothing below is read until these are clean.")
-    print("  (a) food learning SURVIVES phase 2:  safe >= 0.58 and probe_adv (food) >= 1.0, in phase 2")
-    for n in (PL, PO, S, F):
+    print("\nrow 2  RIG CHECKS -- nothing below is read until these are clean.")
+    print("  (a) food learning SURVIVES phase 2:  safe >= 0.58 and probe_adv (food) >= 1.0")
+    for n in (PL, S, F):
         if not have(n):
             continue
         s2, p2 = v(n, P2, safe), v(n, P2, lambda L: half(L, "probe_adv_food"))
-        mark = ""
-        if n in (PL, PO):
-            mark = "   PASS" if (np.all(s2 >= 0.58) and np.all(p2 >= 1.0)) else "   FAIL"
-        print(f"    {n:<24} safe {np.round(s2,3).tolist()}  probe_adv (food) {np.round(p2,3).tolist()}{mark}")
-    print("    v3.8 saw safe fall to 0.500 in phase 2 in every arm; that is what fix A targets.")
-    print("  (b) the ORACLE survives:  pop >= 80, no injections, phase 2")
-    for n in (PO, FO, SO):
-        if not have(n):
-            continue
-        pop, inj = v(n, P2, lambda L: half(L, "pop")), v(n, P2, lambda L: half(L, "injections"))
-        mark = "   PASS" if (np.all(pop >= 80) and np.all(inj == 0)) else "   FAIL"
-        print(f"    {n:<24} pop {np.round(pop,0).tolist()}  inj {np.round(inj,1).tolist()}{mark}")
-    print("  (c) CONTACT RATES vs the `random policy` null (ratio; > 1 means the arm seeks contact)")
+        mark = ("   PASS" if (np.all(s2 >= 0.58) and np.all(p2 >= 1.0)) else "   FAIL") if n == PL else ""
+        print(f"    {n:<22} safe {np.round(s2,3).tolist()}  probe_adv (food) {np.round(p2,3).tolist()}{mark}")
+    print("    the phase-1 baseline this rests on (v3.1: plastic 0.60-0.66, fixed 0.51-0.56;")
+    print("    probe_adv 1.4-2.7).  No longer its own stop row, but a failure here voids phase 2:")
+    for n in (PL, F):
+        print(f"    {n:<22} P1 safe {np.round(v(n,P1,safe),3).tolist()}  "
+              f"P1 probe_adv (food) {np.round(v(n,P1,lambda L: half(L,'probe_adv_food')),3).tolist()}  "
+              f"P1 pop {np.round(v(n,P1,lambda L: half(L,'pop')),0).tolist()}")
+    print("  (b) READABILITY:  attempts/life >= 3 in `random policy`")
     if have(NULL):
-        print(f"    {'arm':<24}{'pickups/1k':>22}{'attempts/1k':>22}{'cracks/1k':>22}")
-        base = {k: np.nanmean(v(NULL, P2, lambda L, kk=k: per_1k(L, kk)))
-                for k in ("n_attempts_raw", "n_nuts")}
-        bn = np.nanmean(v(NULL, P2, lambda L: half(L, "pickups_per_1k")))
+        al = v(NULL, P2, lambda L: half(L, "attempts_per_life"))
+        print(f"    {NULL:<22} attempts/life {np.round(al,2).tolist()}   "
+              f"{'PASS' if np.all(al >= 3.0) else 'FAIL -- raise densities, judged against the null only'}")
+        for n in OUTCOME_ARMS:
+            print(f"    {n:<22} attempts/life {np.round(v(n,P2,lambda L: half(L,'attempts_per_life')),2).tolist()}")
+    print("  (c) CONDITIONAL APPROACH -- the unconfounded test.  A per-1k rate compares action")
+    print("      budgets, not approach; these condition on the opportunity.  The null is the")
+    print("      `random policy` arm, whose analytic share is 1/5 in phase 1 (interact masked)")
+    print("      and 1/6 in phase 2.")
+    conds = [("P(interact | on item, empty-handed)", "int_on_item"),
+             ("P(interact | at station, carrying)", "int_at_station"),
+             ("P(eat | on food)", "eat_on_food")]
+    for lab, key in conds:
+        base = np.nanmean(v(NULL, P2, lambda L: half(L, key))) if have(NULL) else np.nan
+        print(f"    {lab}   null (measured) {base:.3f}, analytic {1/6:.3f}")
         for n in names:
-            pk = np.nanmean(v(n, P2, lambda L: half(L, "pickups_per_1k")))
-            at = np.nanmean(v(n, P2, lambda L: per_1k(L, "n_attempts_raw")))
-            cr = np.nanmean(v(n, P2, lambda L: per_1k(L, "n_nuts")))
-            r = lambda x, b: (x / b) if b and np.isfinite(b) and b > 0 else np.nan
-            print(f"    {n:<24}{pk:8.2f} ({r(pk,bn):5.2f}x){at:8.2f} ({r(at,base['n_attempts_raw']):5.2f}x)"
-                  f"{cr:8.2f} ({r(cr,base['n_nuts']):5.2f}x)")
-        print("    CAVEAT, found in the v3.9 pre-checks: a per-1k rate is CONFOUNDED as a null test.")
-        print("    An arm that learns to `eat` necessarily spends fewer actions on `interact` than a")
-        print("    random walker, so it can fall below the null while approaching better.  The")
-        print("    unconfounded measure is conditional, and its null is exactly 1/6:")
-        print(f"    {'arm':<24}{'P(interact | on item)':>24}{'P(eat | on food)':>20}")
-        for n in names:
-            ii = np.nanmean(v(n, P2, lambda L: half(L, "int_on_item")))
-            ef = np.nanmean(v(n, P2, lambda L: half(L, "eat_on_food")))
-            print(f"    {n:<24}{ii:>24.3f}{ef:>20.3f}")
-        print(f"    null = {1/6:.3f} for both.  'approach evolved' = P(interact | on item) above the")
-        print("    null by margin in 3/3.")
+            x = v(n, P2, lambda L: half(L, key))
+            mk = "" if n == NULL else ("  above null" if np.nanmean(x) >= base + MARGIN else "")
+            print(f"      {n:<22} {np.round(x,3).tolist()}{mk}")
 
     print("\n" + "=" * 78)
-    print("row 3  LEARNER-ORACLE -- does the rule hold a conjunction under IMMEDIATE credit?")
-    print("  Two-sided: a correct attempt pays and fires m=+1, a wrong one costs and fires m=-1.")
+    print("row 3  THE CONJUNCTION -- immediate, two-sided credit, in the world, in every arm")
     print("=" * 78)
-    if have(PO) and have(FO):
-        ho, hfo, hso = v(PO, P2, hit), v(FO, P2, hit), (v(SO, P2, hit) if have(SO) else None)
-        ao, afo = (v(PO, P2, lambda L: per_1k(L, "n_attempts_raw")),
-                   v(FO, P2, lambda L: per_1k(L, "n_attempts_raw")))
-        do, dfo = v(PO, P2, lambda L: half(L, "decline_frac")), v(FO, P2, lambda L: half(L, "decline_frac"))
-        print("  ABSTENTION CHECK FIRST -- pre-registered.  With a two-sided signal abstention should")
-        print("  NOT occur; attempts below 0.8x `fixed + oracle` with `declined` rising is abstention,")
-        print("  not knowledge, and if it happens that is a finding about the rule under mixed signals.")
-        print(f"    attempts/1k  {PO} {np.round(ao,2).tolist()}   {FO} {np.round(afo,2).tolist()}")
-        print(f"    ratio {np.round(ao / np.maximum(afo, 1e-9), 2).tolist()}   (abstention if < 0.80)")
-        print(f"    decline_frac {PO} {np.round(do,3).tolist()}   {FO} {np.round(dfo,3).tolist()}")
-        d1 = v(PO, lambda r: window(r, r["chain_start"], r["chain_start"] + (r["n_steps"] - r["chain_start"]) // 4),
-               lambda L: half(L, "decline_frac"))
-        print(f"    declined rising within phase 2?  early {np.round(d1,3).tolist()} -> late {np.round(do,3).tolist()}")
-        print("  the result line:")
-        print(f"    {PO} - {FO}:  {np.round(ho - hfo,3).tolist()}   >= +{MARGIN} in {n_ok(ho, hfo)}/{nseed}")
-        if hso is not None:
-            print(f"    {PO} - {SO}:  {np.round(ho - hso,3).tolist()}   >= +{MARGIN} in {n_ok(ho, hso)}/{nseed}")
-        print("  the control line -- the energy events are identical in all three oracle arms, so a")
-        print("  move in `fixed + oracle` against `fixed` is the world changing, not the signal:")
-        print(f"    {FO} - fixed: {np.round(hfo - v(F,P2,hit),3).tolist()}")
-        print(f"    e_fail/1k {np.round(v(PO,P2,lambda L: half(L,'e_fail_per_1k')),3).tolist()}"
-              f"   e_bonus/1k {np.round(v(PO,P2,lambda L: half(L,'e_bonus_per_1k')),3).tolist()}")
-        pr = v(PO, P2, lambda L: half(L, "probe_adv"))
-        ao2, ay2 = v(PO, P2, lambda L: half(L, "hit_old")), v(PO, P2, lambda L: half(L, "hit_young"))
-        ag2 = v(PO, P2, lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0]))
-        print(f"  probe_adv (recipe) {np.round(pr,3).tolist()}   (> 0 in {int(np.sum(pr > 0))}/{nseed})")
-        print(f"  within-life signature -- at least one, in {rule}/{nseed}:")
-        print(f"    hit_old - hit_young {np.round(ao2 - ay2,3).tolist()}   attempt-curve gain {np.round(ag2,3).tolist()}")
-        print(f"  recipe_hit {PO} {np.round(ho,3).tolist()}  {FO} {np.round(hfo,3).tolist()}   (chance {CHANCE:.3f})")
-
-    print("\nrow 4  DELAYED CREDIT -- the world's default, silent on both attempt outcomes")
-    hp, hs, hf = v(PL, P2, hit), v(S, P2, hit), v(F, P2, hit)
-    print(f"  plastic - scrambled: {np.round(hp - hs,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hs)}/{nseed}   <- scrambled carries it")
-    print(f"  plastic - fixed:     {np.round(hp - hf,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hf)}/{nseed}")
-    print(f"  recipe_hit  plastic {np.round(hp,3).tolist()}  scrambled {np.round(hs,3).tolist()}  fixed {np.round(hf,3).tolist()}")
-    b, tw = v(PL, P2, lambda L: half(L, "bridge_first")), v(PL, P2, lambda L: half(L, "trace_weight"))
-    print(f"  bridge_first {np.round(b,1).tolist()}   lam2^gap {np.round(tw,3).tolist()}   trace_recency (phase 1) {np.round(v(PL,P1,lambda L: half(L,'trace_recency')),3).tolist()}")
+    hp, hs = v(PL, P2, hit), v(S, P2, hit)
+    ap, af = v(PL, P2, lambda L: per_1k(L, "n_attempts_raw")), v(F, P2, lambda L: per_1k(L, "n_attempts_raw"))
+    print("  ABSTENTION CHECK FIRST -- pre-registered: with a two-sided signal it should NOT occur.")
+    print(f"    attempts/1k  plastic {np.round(ap,2).tolist()}   fixed {np.round(af,2).tolist()}")
+    print(f"    ratio {np.round(ap / np.maximum(af, 1e-9), 2).tolist()}   (abstention if < 0.80)")
+    dp = v(PL, P2, lambda L: half(L, "decline_frac"))
+    de = v(PL, lambda r: window(r, r["chain_start"], r["chain_start"] + (r["n_steps"] - r["chain_start"]) // 4),
+           lambda L: half(L, "decline_frac"))
+    print(f"    decline_frac early {np.round(de,3).tolist()} -> late {np.round(dp,3).tolist()}"
+          f"   (rising in {int(np.sum(dp > de))}/{nseed})")
+    print("  the result lines:")
+    print(f"    plastic - fixed:     {np.round(hp - hf,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hf)}/{nseed}")
+    print(f"    plastic - scrambled: {np.round(hp - hs,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hs)}/{nseed}   <- scrambled carries it")
+    print(f"    recipe_hit  plastic {np.round(hp,3).tolist()}  fixed {np.round(hf,3).tolist()}  "
+          f"scrambled {np.round(hs,3).tolist()}   (chance {CHANCE:.3f})")
+    pr = v(PL, P2, lambda L: half(L, "probe_adv"))
+    ao, ay = v(PL, P2, lambda L: half(L, "hit_old")), v(PL, P2, lambda L: half(L, "hit_young"))
+    ag = v(PL, P2, lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0]))
+    print(f"  probe_adv (recipe) {np.round(pr,3).tolist()}   (> 0 in {int(np.sum(pr > 0))}/{nseed})")
+    print(f"  within-life signature -- at least one, in {rule}/{nseed}:")
+    print(f"    hit-in-life curve gain {np.round(ag,3).tolist()}   (> 0 in {int(np.sum(ag > 0))}/{nseed})")
+    print(f"    hit_old - hit_young    {np.round(ao - ay,3).tolist()}   (> 0 in {int(np.sum(ao > ay))}/{nseed})")
     if have(CEIL):
         hc = v(CEIL, P2, hit)
-        print(f"  ceiling {np.round(hc,3).tolist()}   ceiling - fixed {np.round(hc - hf,3).tolist()}   (reference level, not matched)")
+        print(f"  ceiling {np.round(hc,3).tolist()}   ceiling - fixed {np.round(hc - hf,3).tolist()}   (reference, not matched)")
 
-    print("\nrow 5  GENE ROWS (corroborating only)")
+    print("\nrow 4  GENE ROWS (corroborating only)")
     for g in ("eta2", "lam2", "eta1"):
         print(f"  {g}   phase 1 -> phase 2")
         for n in OUTCOME_ARMS:
-            if not have(n):
-                continue
-            print(f"    {n:<24} {np.round(v(n,P1,lambda L: half(L,g)),3).tolist()} -> {np.round(v(n,P2,lambda L: half(L,g)),3).tolist()}")
-    print("  unwired scaffold genes -- the drift scale for a heritable scalar (nothing is wired to them):")
+            print(f"    {n:<22} {np.round(v(n,P1,lambda L: half(L,g)),3).tolist()} -> {np.round(v(n,P2,lambda L: half(L,g)),3).tolist()}")
+    print("  unwired scaffold genes -- drift scale for a heritable scalar (nothing is wired to them):")
     for g in ("nav_dir", "nav_here"):
-        print(f"    {g:<12} " + "  ".join(f"{n}: {np.nanmean(v(n,P2,lambda L: half(L,g))):.2f}" for n in (F, PL, PO)))
+        print(f"    {g:<12} " + "  ".join(f"{n}: {np.nanmean(v(n,P2,lambda L: half(L,g))):.2f}" for n in (F, PL)))
+    print(f"  trace_recency (phase 1) plastic {np.round(v(PL,P1,lambda L: half(L,'trace_recency')),3).tolist()}")
 
-    print("\nrow 6  if row 3 is NULL with rows 1-2 clean, this is the first earned statement about")
-    print("       the learner's limit: the rule does not hold a conjunction even under immediate,")
-    print("       two-sided credit, on a rig with a separate interact action, an unsaturated world,")
-    print("       declining as a policy and a random-walk null.  Spend the one rule-form change")
-    print("       here, targeted at whatever row 3's probes and the abstention check say.")
+    print("\nrow 5  if row 3 is NULL with rows 1-2 clean, that is the first earned statement about")
+    print("       the learner's limit: the rule does not hold a conjunction even with immediate,")
+    print("       two-sided credit, a separate interact action, a readable world, declining as a")
+    print("       policy and a random-walk null.  Spend the one rule-form change there.")
     print("-" * 78)
 
 
