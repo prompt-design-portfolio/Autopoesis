@@ -65,6 +65,10 @@ class Config:
     # metabolism
     base_cost: float = 0.006
     move_cost: float = 0.002
+    noop_cost: float = 0.002      # what a no-op costs.  The spec says move_cost, and this default IS
+                                  # move_cost; it is a separate field only so the pre-check can
+                                  # measure what the no-op charge costs the population, since fix A
+                                  # makes `interact` a guaranteed no-op for 1/6 of actions in phase 1.
     carry_cost: float = 0.002     # per step while holding an item or a tool (v2.9b)
     start_energy: float = 1.5
     founder_energy: float = 3.0
@@ -83,17 +87,23 @@ class Config:
     # the tool task (v2.9b)
     n_items: int = 3
     n_stations: int = 2
-    stations_per_type: int = 20
-    items_per_step: float = 1.5
-    nuts_per_patch: float = 0.3
+    stations_per_type: int = 30       # v3.9: station cover ~2.6%, target <= 3%
+    items_per_step: float = 0.8      # v3.9: solved to item cover <= 8%
+    nuts_per_patch: float = 0.12     # v3.9: solved to nut cover <= 8%
     nuts_uniform: float = 0.0     # nuts spawned anywhere, not only in the food patches.  This sets
                                   # the length of the station -> nut bridge, i.e. the difficulty of
                                   # the delayed credit; see the tuning note in the notebook.
     item_rot: float = 0.005
-    nut_value: float = 1.0
-    tool_break: float = 0.25
+    nut_value: float = 1.0            # v2.9b's value; v3.6's tuned 1.3 was for a saturated world
+    tool_break: float = 0.25          # v2.9b's value
     pickup_cost: float = 0.02
-    fail_cost: float = 0.0        # 0 = a wrong attempt gives no modulator, only the lost item
+    fail_cost: float = 0.0        # a wrong attempt costs this and fires m = -1.  0 = silent.
+    tool_bonus: float = 0.0       # a CORRECT attempt pays this and fires m = +1.  0 = silent.
+                                  # Both are 0 in the world's default: the recipe then has no
+                                  # immediate signal at all and credit is purely delayed (row 4).
+                                  # The oracle arms set both to 0.05, making the fixture two-sided:
+                                  # a one-sided negative signal would teach abstention, and with
+                                  # `declined` now a policy that would be misread as knowledge.
     recipe_every: int = 2000      # ~8-13 generations per era
     # mutation
     mut_sigma: float = 0.15
@@ -101,7 +111,9 @@ class Config:
     gene_sigma: float = 0.05
     action_noise: float = 0.3
     # the learner (v3.0)
-    mode: str = "plastic"          # "fixed" | "plastic"
+    mode: str = "plastic"          # "fixed" | "plastic" | "random" (uniform over the six actions;
+                                   # no plasticity, no learning -- the behavioural null for contact
+                                   # rates, not an outcome arm)
     plastic_layers: str = "both"   # "both" | "W1" | "W2"
     eta_init: float = 0.2          # founders' learning-rate genes ~ U(0, eta_init)  (v3 FAST)
     eta_max: float = 0.5
@@ -169,7 +181,9 @@ class Config:
     seed: int = 0
 
 
-N_ACTIONS = 5                                    # up, down, left, right, stay/interact
+N_ACTIONS = 6            # 0-3 move, 4 eat, 5 interact  (v3.9 audit fix A: one action used to do
+EAT = 4                  # attempt / crack / pickup / eat in priority order, so learning about one
+INTERACT = 5             # bled into all of them, and declining was not a policy the network had.)
 MOVES = np.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
 N_PAIRS = 6                                      # 3 items x 2 stations
 
@@ -364,6 +378,8 @@ class Agent:
         return c
 
     def act(self, obs, cfg, rng):
+        if cfg.mode == "random":
+            return int(rng.integers(0, N_ACTIONS))     # the behavioural null: no policy, no learning
         alive = self.integrity >= cfg.integrity_threshold
         plastic = cfg.mode == "plastic"
         W1 = self.W1 + self.H1 if plastic and cfg.plastic_layers in ("both", "W1") else self.W1
@@ -429,13 +445,13 @@ def wire_nav(W1, W2, nav_dir, nav_here, scaffold_food=True, scaffold_chain=True)
             W1[GOAL_CH * 4 + d, 4 + d] = nav_dir
             W2[4 + d, d] = nav_here
         W1[HERE + GOAL_CH, 9] = nav_here
-        W2[9, 4] = nav_here
+        W2[9, INTERACT] = nav_here
     if scaffold_food:
         for d in range(4):
             W1[APPETITE_CH * 4 + d, d] = nav_dir
             W2[d, d] = nav_here
         W1[HERE + APPETITE_CH, 8] = nav_here
-        W2[8, 4] = nav_here
+        W2[8, EAT] = nav_here
 
 
 GENOME = ("W1", "b1", "W2", "b2", "eta1", "eta2", "lam1", "lam2", "repair", "nav_dir", "nav_here")
@@ -486,7 +502,7 @@ def pair_pref(a, cfg, item, station, learned=True):
     obs[HERE + GOAL_CH] = 1.0
     obs[ENERGY] = 0.5
     logits = _forward(a, cfg, obs, learned)
-    return float(logits[4] - np.delete(logits, 4).max())
+    return float(logits[INTERACT] - np.delete(logits, INTERACT).max())   # attempting is `interact`
 
 
 def pair_gain(agents, cfg, recipe, learned=True, n_sample=40):
@@ -519,7 +535,7 @@ def food_pref(a, cfg, ftype, learned=True):
     obs[HERE + APPETITE_CH] = 1.0
     obs[ENERGY] = 0.5
     logits = _forward(a, cfg, obs, learned)
-    return float(logits[4] - np.delete(logits, 4).max())
+    return float(logits[EAT] - np.delete(logits, EAT).max())             # eating is `eat`
 
 
 def food_gain(agents, cfg, safe, learned=True, n_sample=40):
@@ -536,6 +552,91 @@ def probe_advantage_food(agents, cfg, safe, n_sample=40):
     if cfg.mode != "plastic" or len(agents) < 5:
         return np.nan
     return food_gain(agents, cfg, safe, True, n_sample) - food_gain(agents, cfg, safe, False, n_sample)
+
+
+# --------------------------------------------------------------------------
+# the action x cell table -- the ONLY place an action changes the world, an agent's
+# energy or the modulator.  run() calls it; world_semantics_selftest() calls it with
+# constructed cells and checks every row.  One function, so the test tests the real path.
+# --------------------------------------------------------------------------
+
+def resolve_action(a, action, world, cfg, rng, t=0):
+    """Apply `action` for agent `a`.  Mutates a.energy / a.item / a.tool and the world.
+    Returns (m, event, info).
+
+    Modulator events, complete:
+        eat safe food                          m = +1
+        eat poison                             m = -1
+        crack a nut                            m = +1
+        correct attempt, iff tool_bonus > 0    m = +1
+        wrong attempt,   iff fail_cost  > 0    m = -1
+        everything else                        m =  0
+    "Everything else" is: pickup, carrying, moving, any no-op, base metabolism, repair,
+    and -- when tool_bonus is 0 -- a successful attempt.  The modulator is NOT the agent's
+    own energy change in general; it is this table.
+
+    A no-op costs move_cost, so there is no free waiting action.
+    """
+    y, x = a.y, a.x
+    g = cfg.grid
+
+    if action < 4:
+        a.y, a.x = (y + MOVES[action][0]) % g, (x + MOVES[action][1]) % g
+        a.energy -= cfg.move_cost
+        return 0.0, "move", {}
+
+    if action == EAT:
+        if world.food[0, y, x] or world.food[1, y, x]:
+            ftype = 0 if world.food[0, y, x] else 1
+            world.food[ftype, y, x] = False
+            if ftype == world.safe:
+                a.energy += cfg.food_value
+                return 1.0, "eat_safe", {"ftype": ftype}
+            a.energy -= cfg.poison_value
+            return -1.0, "eat_poison", {"ftype": ftype}
+        a.energy -= cfg.noop_cost
+        return 0.0, "noop", {}
+
+    # ---- INTERACT.  Priority: attempt -> crack -> pickup.
+    st = int(world.stations[y, x])
+    vetoed_pair = (cfg.private_mem and a.item >= 0 and st >= 0
+                   and a.B[pair_id(a.item, st)] <= -0.3 and rng.random() <= cfg.veto_p)
+    if st >= 0 and a.item >= 0 and not a.tool and not vetoed_pair:
+        ok = (a.item, st) == world.recipe
+        info = {"pair": pair_id(a.item, st), "ok": ok, "item": a.item, "station": st}
+        a.item = -1
+        if ok:
+            a.tool = True
+            a.tool_made_t = t
+            a.used_tool = False
+            a.energy += cfg.tool_bonus
+            return (1.0 if cfg.tool_bonus > 0 else 0.0), "attempt_ok", info
+        a.energy -= cfg.fail_cost
+        return (-1.0 if cfg.fail_cost > 0 else 0.0), "attempt_bad", info
+
+    if world.nuts[y, x] and a.tool:
+        world.nuts[y, x] = False
+        a.energy += cfg.nut_value
+        broke = rng.random() < cfg.tool_break
+        gap = (t - a.tool_made_t) if a.tool_made_t >= 0 else None
+        first = not a.used_tool
+        a.used_tool = True
+        if broke:
+            a.tool = False
+            a.tool_made_t = -1
+        return 1.0, "crack", {"broke": broke, "gap": gap, "first": first}
+
+    it = int(world.items[y, x])
+    if it >= 0 and a.item < 0 and not a.tool:
+        pb = a.B.reshape(cfg.n_items, cfg.n_stations) if cfg.private_mem else None
+        if not (cfg.private_mem and pb[it].max() <= -0.3 and rng.random() <= cfg.veto_p):
+            a.item = it
+            world.items[y, x] = -1
+            a.energy -= cfg.pickup_cost
+            return 0.0, "pickup", {"item": it}
+
+    a.energy -= cfg.noop_cost
+    return 0.0, "noop", {}
 
 
 # --------------------------------------------------------------------------
@@ -572,7 +673,9 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     log = []
     W = dict(eats=0, safe=0, deaths=0, births=0, steps=0, inject=0, attempts=0, correct=0,
              nuts=0, pickups=0, e_food=0.0, e_nut=0.0, e_fail=0.0, bridge_sum=0.0, bridge_n=0,
-             trace_w=0.0, bridge1_sum=0.0, bridge1_n=0, rec_sum=0.0, rec_n=0)
+             trace_w=0.0, bridge1_sum=0.0, bridge1_n=0, rec_sum=0.0, rec_n=0,
+             e_bonus=0.0, noops=0, declined=0, decline_opps=0,
+             on_food=0, on_food_eat=0, on_food_int=0, on_item=0, on_item_eat=0, on_item_int=0)
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
     ATT_R = np.zeros((cfg.n_attempts + 1, 2))   # attempts since the last recipe change
     MEALS = np.zeros((cfg.n_meals + 1, 2))      # meal number in an agent's life (the v3 curve)
@@ -659,82 +762,67 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             if a.item >= 0 or a.tool:
                 a.energy -= cfg.carry_cost
 
-            m = 0.0
-            if action < 4:
-                a.y, a.x = (y + MOVES[action][0]) % g, (x + MOVES[action][1]) % g
-                a.energy -= cfg.move_cost
-            else:
-                st = int(world.stations[y, x])
-                if st >= 0 and a.item >= 0 and not a.tool and (not cfg.private_mem or a.B[pair_id(a.item, st)] > -0.3 or rng.random() > cfg.veto_p):
-                    # ---- a tool attempt.  No modulator here, whatever happens: the payoff is at the nut.
-                    ok = (a.item, st) == world.recipe
-                    p = pair_id(a.item, st)
-                    a.attempts += 1; W["attempts"] += 1
-                    if ok:
-                        a.tool = True
-                        a.tool_made_t = t
-                        a.used_tool = False
-                        a.successes += 1; W["correct"] += 1
-                    else:
-                        a.energy -= cfg.fail_cost
-                        W["e_fail"] += cfg.fail_cost
-                        if cfg.fail_cost > 0:
-                            m = -1.0      # the modulator is the sign of the agent's own energy change,
-                                          # so a fail_cost is exactly what signals a wrong attempt AT the
-                                          # station.  At fail_cost = 0 a wrong attempt is silent and the
-                                          # credit is purely delayed.  A SUCCESSFUL attempt is silent
-                                          # either way: making a tool yields no energy, the nut does.
-                    a.item = -1
-                    if cfg.private_mem:
-                        a.B[p] = 0.7 * a.B[p] + 0.3 * (1.0 if ok else -1.0)   # exact pair credit, hand-wired
-                    old = 0 if (t - a.born) < 150 else 1
-                    a.age_bins[old, 0] += 1; a.age_bins[old, 1] += ok
-                    k = a.attempts
-                    if k <= cfg.n_attempts:
-                        ATT[k, 0] += 1; ATT[k, 1] += ok
-                    a.since_recipe += 1
-                    kr = a.since_recipe
-                    if kr <= cfg.n_attempts:
-                        ATT_R[kr, 0] += 1; ATT_R[kr, 1] += ok
-                elif world.nuts[y, x] and a.tool:
-                    # ---- the payoff, arriving many steps after the attempt that earned it
-                    world.nuts[y, x] = False
-                    a.energy += cfg.nut_value
-                    m = 1.0
-                    a.cracks += 1; W["nuts"] += 1; W["e_nut"] += cfg.nut_value
-                    if a.tool_made_t >= 0:
-                        gap = t - a.tool_made_t
-                        gap_is_first = not a.used_tool
-                        a.used_tool = True
-                        W["bridge_sum"] += gap; W["bridge_n"] += 1
-                        W["trace_w"] += a.lam2 ** gap        # what is left of the attempt's trace now
-                        if gap_is_first:
-                            W["bridge1_sum"] += gap; W["bridge1_n"] += 1
-                    if rng.random() < cfg.tool_break:
-                        a.tool = False
-                        a.tool_made_t = -1
-                elif world.items[y, x] >= 0 and a.item < 0 and not a.tool and (not cfg.private_mem or pb[int(world.items[y, x])].max() > -0.3 or rng.random() > cfg.veto_p):
-                    a.item = int(world.items[y, x])
-                    world.items[y, x] = -1
-                    a.energy -= cfg.pickup_cost
-                    W["pickups"] += 1
-                elif world.food[0, y, x] or world.food[1, y, x]:
-                    ftype = 0 if world.food[0, y, x] else 1
-                    world.food[ftype, y, x] = False
-                    if ftype == world.safe:
-                        a.energy += cfg.food_value; m = 1.0
-                        W["safe"] += 1; W["e_food"] += cfg.food_value; a.safe_eats += 1
-                    else:
-                        a.energy -= cfg.poison_value; m = -1.0
-                    W["eats"] += 1; a.eats += 1
-                    k = a.eats
-                    if k <= cfg.n_meals:
-                        MEALS[k, 0] += 1; MEALS[k, 1] += (m > 0)
-                    if track_recency and not world.chain_on and len(a.e2_hist) == cfg.recency_k + 1:
-                        tot = float(np.abs(a.e2).sum())
-                        if tot > 0:
-                            old = float(np.abs((a.lam2 ** cfg.recency_k) * a.e2_hist[0]).sum())
-                            W["rec_sum"] += 1.0 - old / tot; W["rec_n"] += 1
+            on_food = bool(world.food[0, y, x] or world.food[1, y, x])
+            on_item = world.items[y, x] >= 0
+            at_station_carrying = world.stations[y, x] >= 0 and a.item >= 0 and not a.tool
+
+            m, event, info = resolve_action(a, action, world, cfg, rng, t)
+
+            # ---- choice rates, so `eat` vs `interact` on each cell type is measurable (fix A)
+            if on_food:
+                W["on_food"] += 1
+                W["on_food_eat"] += (action == EAT); W["on_food_int"] += (action == INTERACT)
+            if on_item:
+                W["on_item"] += 1
+                W["on_item_eat"] += (action == EAT); W["on_item_int"] += (action == INTERACT)
+            # ---- declining is now a policy (audit E), so it can be measured
+            if at_station_carrying:
+                W["decline_opps"] += 1
+                if action != INTERACT:
+                    W["declined"] += 1
+
+            if event in ("eat_safe", "eat_poison"):
+                W["eats"] += 1; a.eats += 1
+                if event == "eat_safe":
+                    W["safe"] += 1; W["e_food"] += cfg.food_value; a.safe_eats += 1
+                k = a.eats
+                if k <= cfg.n_meals:
+                    MEALS[k, 0] += 1; MEALS[k, 1] += (event == "eat_safe")
+                if track_recency and not world.chain_on and len(a.e2_hist) == cfg.recency_k + 1:
+                    tot = float(np.abs(a.e2).sum())
+                    if tot > 0:
+                        old_ = float(np.abs((a.lam2 ** cfg.recency_k) * a.e2_hist[0]).sum())
+                        W["rec_sum"] += 1.0 - old_ / tot; W["rec_n"] += 1
+            elif event in ("attempt_ok", "attempt_bad"):
+                ok = info["ok"]
+                a.attempts += 1; W["attempts"] += 1
+                if ok:
+                    a.successes += 1; W["correct"] += 1; W["e_bonus"] += cfg.tool_bonus
+                else:
+                    W["e_fail"] += cfg.fail_cost
+                if cfg.private_mem:
+                    p = info["pair"]
+                    a.B[p] = 0.7 * a.B[p] + 0.3 * (1.0 if ok else -1.0)   # exact pair credit, hand-wired
+                old = 0 if (t - a.born) < 150 else 1
+                a.age_bins[old, 0] += 1; a.age_bins[old, 1] += ok
+                k = a.attempts
+                if k <= cfg.n_attempts:
+                    ATT[k, 0] += 1; ATT[k, 1] += ok
+                a.since_recipe += 1
+                kr = a.since_recipe
+                if kr <= cfg.n_attempts:
+                    ATT_R[kr, 0] += 1; ATT_R[kr, 1] += ok
+            elif event == "crack":
+                a.cracks += 1; W["nuts"] += 1; W["e_nut"] += cfg.nut_value
+                if info["gap"] is not None:
+                    W["bridge_sum"] += info["gap"]; W["bridge_n"] += 1
+                    W["trace_w"] += a.lam2 ** info["gap"]
+                    if info["first"]:
+                        W["bridge1_sum"] += info["gap"]; W["bridge1_n"] += 1
+            elif event == "pickup":
+                W["pickups"] += 1
+            elif event == "noop":
+                W["noops"] += 1
 
             if cfg.scramble and m != 0.0:
                 m = 1.0 if rng.random() < 0.5 else -1.0      # same magnitude, no information
@@ -797,7 +885,15 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                                                                           # attempts, so the
                                                                           # fail-cost arm's world
                                                                           # change is measured
-                trace_recency=(W["rec_sum"] / W["rec_n"]) if W["rec_n"] else np.nan,     # share of energy income from nuts
+                trace_recency=(W["rec_sum"] / W["rec_n"]) if W["rec_n"] else np.nan,
+                declined_per_1k=1000.0 * W["declined"] / max(W["steps"], 1),
+                decline_frac=(W["declined"] / W["decline_opps"]) if W["decline_opps"] else np.nan,
+                eat_on_food=(W["on_food_eat"] / W["on_food"]) if W["on_food"] else np.nan,
+                int_on_food=(W["on_food_int"] / W["on_food"]) if W["on_food"] else np.nan,
+                eat_on_item=(W["on_item_eat"] / W["on_item"]) if W["on_item"] else np.nan,
+                int_on_item=(W["on_item_int"] / W["on_item"]) if W["on_item"] else np.nan,
+                noops_per_1k=1000.0 * W["noops"] / max(W["steps"], 1),
+                e_bonus_per_1k=1000.0 * W["e_bonus"] / max(W["steps"], 1),     # share of energy income from nuts
                 bridge_steps=(W["bridge_sum"] / W["bridge_n"]) if W["bridge_n"] else np.nan,
                 bridge_first=(W["bridge1_sum"] / W["bridge1_n"]) if W["bridge1_n"] else np.nan,
                 trace_weight=(W["trace_w"] / W["bridge_n"]) if W["bridge_n"] else np.nan,
@@ -849,3 +945,122 @@ def learning_rule_selftest(seed=0, verbose=True):
     if verbose:
         print(f"  learning rule self-test: {'PASS' if passed else 'FAIL'}")
     return passed
+
+def world_semantics_selftest(verbose=True):
+    """Addition 1: every (action, cell content, inventory state) row of the action x cell table,
+    constructed cell by cell, one resolve_action call each, energy delta and m asserted against
+    the table.  This is the test that would have caught the shared interact action."""
+    cfg = Config(mode="fixed", scaffold_food=False, scaffold_chain=False,
+                 fail_cost=0.05, tool_bonus=0.05, tool_break=0.0)   # break 0 so `crack` is deterministic
+    rng = np.random.default_rng(0)
+
+    def fresh(item=-1, tool=False, food=None, cell_item=None, station=None, nut=False, recipe=(0, 0)):
+        w = World(cfg, np.random.default_rng(0))
+        w.food[:] = False; w.items[:] = -1; w.nuts[:] = False; w.stations[:] = -1
+        w.safe = 0
+        w.recipe = recipe
+        a = Agent(cfg, np.random.default_rng(1), 0, 5, 5)
+        a.energy = 3.0
+        a.item, a.tool = item, tool
+        if food is not None:
+            w.food[food, 5, 5] = True
+        if cell_item is not None:
+            w.items[5, 5] = cell_item
+        if station is not None:
+            w.stations[5, 5] = station
+        w.nuts[5, 5] = nut
+        return a, w
+
+    MOVE, EATC, INT = 0, EAT, INTERACT
+    cases = [
+        # (label, action, cell/inventory kwargs, expected energy delta, expected m, expected event)
+        ("move",                         MOVE, {},                                          -cfg.move_cost,   0.0, "move"),
+        ("eat on safe food",             EATC, dict(food=0),                                +cfg.food_value,  1.0, "eat_safe"),
+        ("eat on poison",                EATC, dict(food=1),                                -cfg.poison_value, -1.0, "eat_poison"),
+        ("eat on empty",                 EATC, {},                                          -cfg.move_cost,   0.0, "noop"),
+        ("eat on item cell",             EATC, dict(cell_item=0),                           -cfg.move_cost,   0.0, "noop"),
+        ("eat on station, carrying",     EATC, dict(station=0, item=0),                     -cfg.move_cost,   0.0, "noop"),
+        ("eat on nut, tooled",           EATC, dict(nut=True, tool=True),                   -cfg.move_cost,   0.0, "noop"),
+        ("interact on empty",            INT,  {},                                          -cfg.move_cost,   0.0, "noop"),
+        ("interact on food",             INT,  dict(food=0),                                -cfg.move_cost,   0.0, "noop"),
+        ("interact: pickup",             INT,  dict(cell_item=2),                           -cfg.pickup_cost, 0.0, "pickup"),
+        ("interact: pickup blocked (carrying)", INT, dict(cell_item=2, item=1),             -cfg.move_cost,   0.0, "noop"),
+        ("interact: pickup blocked (tooled)",   INT, dict(cell_item=2, tool=True),          -cfg.move_cost,   0.0, "noop"),
+        ("interact: correct attempt",    INT,  dict(station=0, item=0, recipe=(0, 0)),      +cfg.tool_bonus,  1.0, "attempt_ok"),
+        ("interact: wrong attempt",      INT,  dict(station=1, item=0, recipe=(0, 0)),      -cfg.fail_cost,  -1.0, "attempt_bad"),
+        ("interact: station, empty-handed", INT, dict(station=0),                           -cfg.move_cost,   0.0, "noop"),
+        ("interact: crack",              INT,  dict(nut=True, tool=True),                   +cfg.nut_value,   1.0, "crack"),
+        ("interact: nut, no tool",       INT,  dict(nut=True),                              -cfg.move_cost,   0.0, "noop"),
+        ("priority: attempt before crack", INT, dict(station=0, item=0, nut=True, recipe=(0, 0)),
+                                                                                            +cfg.tool_bonus,  1.0, "attempt_ok"),
+        ("priority: crack before pickup", INT, dict(nut=True, tool=True, cell_item=1),      +cfg.nut_value,   1.0, "crack"),
+    ]
+    fails = []
+    for label, action, kw, d_exp, m_exp, ev_exp in cases:
+        a, w = fresh(**kw)
+        e0 = a.energy
+        m, ev, _ = resolve_action(a, action, w, cfg, rng, t=0)
+        d = a.energy - e0
+        ok = abs(d - d_exp) < 1e-9 and m == m_exp and ev == ev_exp
+        if not ok:
+            fails.append(f"{label}: got dE {d:+.4f} m {m:+.1f} {ev}, expected dE {d_exp:+.4f} m {m_exp:+.1f} {ev_exp}")
+        if verbose:
+            print(f"  {label:<38} dE {d:+.4f}  m {m:+.0f}  {ev:<12} {'OK' if ok else 'FAIL'}")
+    # silent-by-default: with tool_bonus and fail_cost at 0, both attempt outcomes fire m = 0
+    silent = Config(mode="fixed", scaffold_food=False, scaffold_chain=False, fail_cost=0.0, tool_bonus=0.0)
+    for lab, station, m_exp in [("correct attempt, default world", 0, 0.0), ("wrong attempt, default world", 1, 0.0)]:
+        a, w = fresh(station=station, item=0, recipe=(0, 0))
+        m, ev, _ = resolve_action(a, INTERACT, w, silent, rng, t=0)
+        ok = m == m_exp
+        if not ok:
+            fails.append(f"{lab}: m {m} expected {m_exp}")
+        if verbose:
+            print(f"  {lab:<38} m {m:+.0f}  {ev:<12} {'OK' if ok else 'FAIL'}")
+    if verbose:
+        print(f"  world-semantics self-test: {'PASS' if not fails else 'FAIL'}  ({len(cases) + 2} rows)")
+        for f in fails:
+            print("   ", f)
+    return not fails
+
+
+COVER_TARGETS = dict(items=0.08, nuts=0.08, stations=0.03, food_with_item=0.10)
+
+
+def standing_cover(cfg=None, steps=1000, seeds=(0, 1, 2, 3)):
+    """Audit fix B: standing cover with NO agents, so densities are set to a target rather than
+    by feel.  Returns cover fractions averaged over `seeds`, plus the fraction of food cells that
+    also carry an item -- co-occupancy is allowed here and is measured, not prevented."""
+    cfg = cfg or Config(chain=True)
+    g2 = cfg.grid ** 2
+    acc = {k: [] for k in ("food", "items", "nuts", "stations", "food_with_item")}
+    for sd in seeds:
+        w = World(cfg, np.random.default_rng(sd))
+        w.chain_on = True
+        for t in range(steps):
+            w.step(t)
+        fc = w.food.any(0)
+        nf = int(fc.sum())
+        acc["food"].append(nf / g2)
+        acc["items"].append(int((w.items >= 0).sum()) / g2)
+        acc["nuts"].append(int(w.nuts.sum()) / g2)
+        acc["stations"].append(int((w.stations >= 0).sum()) / g2)
+        acc["food_with_item"].append(int((fc & (w.items >= 0)).sum()) / max(nf, 1))
+    return {k: float(np.mean(v)) for k, v in acc.items()}, {k: float(np.max(v)) for k, v in acc.items()}
+
+
+def assert_cover(cfg=None, steps=1000, verbose=True):
+    mean, worst = standing_cover(cfg, steps)
+    fails = []
+    if verbose:
+        print(f"  standing cover, no agents, {steps} steps, mean over 4 seeds (worst in brackets):")
+    for k, tgt in COVER_TARGETS.items():
+        ok = worst[k] <= tgt
+        if not ok:
+            fails.append(f"{k} {worst[k]*100:.1f}% > target {tgt*100:.0f}%")
+        if verbose:
+            print(f"    {k:<16} {mean[k]*100:5.1f}%  [{worst[k]*100:5.1f}%]   target <= {tgt*100:.0f}%   "
+                  f"{'OK' if ok else 'FAIL'}")
+    if verbose:
+        print(f"    {'food':<16} {mean['food']*100:5.1f}%  [{worst['food']*100:5.1f}%]   (v3.1, not a target)")
+        print(f"  cover targets: {'PASS' if not fails else 'FAIL -- ' + '; '.join(fails)}")
+    return not fails

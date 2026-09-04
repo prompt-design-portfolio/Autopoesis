@@ -1,7 +1,7 @@
 # v3.9 world spec
 
-*Written before any code. Nothing below is implemented yet. Three items marked **DECISION** need
-your agreement because they depart from the literal text of the build plan.*
+*Agreed 4 September 2026. The three DECISION points are resolved below and the two additions are
+folded in. This is the spec the code implements.*
 
 **What this build is.** v3.8 rerun on a rig that can show learning if it is there. Rig fixes A, B,
 D, F from the audit, each with its own acceptance check. No new mechanism. `goal_channel` stays on;
@@ -30,7 +30,7 @@ Agents do not block each other; occupancy is an observation channel only.
 | action | food cell | item cell, empty-handed, no tool | station, carrying item | nut cell, carrying tool | otherwise |
 |---|---|---|---|---|---|
 | **eat** | eat it. safe → energy **+`food_value`**, **m = +1**; poison → energy **−`poison_value`**, **m = −1** | no-op, `move_cost` | no-op, `move_cost` | no-op, `move_cost` | no-op, `move_cost` |
-| **interact** | no-op, `move_cost` | pick up, **−`pickup_cost`**, **m = 0** | attempt. correct → tool, **silent, m = 0**; wrong → item lost, **−`fail_cost`**, **m = −1 iff `fail_cost` > 0** | crack, **+`nut_value`**, **m = +1**, tool breaks w.p. `tool_break` | no-op, `move_cost` |
+| **interact** | no-op, `move_cost` | pick up, **−`pickup_cost`**, **m = 0** | attempt. correct → tool, **+`tool_bonus`**, **m = +1 iff `tool_bonus` > 0**; wrong → item lost, **−`fail_cost`**, **m = −1 iff `fail_cost` > 0** | crack, **+`nut_value`**, **m = +1**, tool breaks w.p. `tool_break` | no-op, `move_cost` |
 
 `interact` keeps v3.8's priority when a cell affords more than one: **attempt → crack → pickup**.
 A successful action pays its own cost only; a **no-op costs `move_cost`**, so there is no free
@@ -46,6 +46,7 @@ live action set is effectively five.
 | eat safe food | **+1** |
 | eat poison | **−1** |
 | crack a nut | **+1** |
+| correct attempt, and only if `tool_bonus` > 0 | **+1** |
 | wrong attempt, and only if `fail_cost` > 0 | **−1** |
 | everything else | **0** |
 
@@ -54,18 +55,22 @@ any no-op (`move_cost`), base metabolism, repair, **and a successful attempt**. 
 `sim.py` currently says "the agent's own energy change", which is not what the code does; it will
 be corrected to this table (audit D, no behaviour change).
 
-**Consequence, stated starkly:** *there is never a positive immediate signal for a correct
-attempt.* With `fail_cost = 0` a wrong attempt is silent too, so the recipe has no immediate signal
-at all. With `fail_cost = 0.05` the only immediate signal is negative. **The learner-oracle arm is
-therefore an *elimination* oracle, not a two-sided one** — it can learn "these five pairs hurt",
-not "this one pays".
+**In the world's default** (`fail_cost = 0`, `tool_bonus = 0`) both attempt outcomes are silent, so
+the recipe has **no immediate signal at all** and the only credit is the nut, some steps later.
+That is exactly what row 4 tests. **In the oracle arms** both fire, so the signal is immediate and
+two-sided.
 
-> **DECISION 1.** Build-plan rule 3 asks the oracle to give "an immediate, unambiguous signal for
-> exactly the thing being tested". A one-sided negative signal is immediate and unambiguous but
-> asymmetric. **My recommendation: keep it as specified** — adding a positive event for a
-> successful attempt would be a new modulator event and a second change in a rig-fix build. But if
-> row 3 comes back null, the asymmetry is a live explanation, and the natural follow-up is a
-> two-sided oracle (`tool_value` > 0 giving m = +1 on a correct attempt) as v3.9b.
+**RESOLVED — the oracle is two-sided.** In the **oracle arms only**, a correct attempt pays
+`tool_bonus = 0.05` and fires **m = +1**; a wrong attempt costs `fail_cost = 0.05` and fires
+**m = −1**. The world's default stays silent on both, so pure delayed credit remains what row 4
+asks. A negative-only fixture would teach the arm to *abstain* — and with `declined` now a policy,
+abstention would read as knowledge. The fixture's job is the cleanest possible signal, so that a
+null is about the rule and nothing else. **Elimination (negative-only) becomes a later condition,
+not the fixture.**
+
+Oracle controls: **`fixed + oracle`** (identical energy events, no learning) and
+**`scrambled + oracle`** (identical events, random-sign `m`). All three oracle arms see the same
+energy world, so a move in `fixed + oracle` against `fixed` is the world changing, not the signal.
 
 ## Observation — 60 inputs, unchanged
 
@@ -84,11 +89,11 @@ remain in the genome, reach nothing, and serve as the dead-gene drift scale.
 
 ## Standing densities — measured with no agents, after 1000 steps
 
-> **DECISION 2.** The build plan says start from v2.9b's `items_per_step 1.5`, `nuts_per_patch 0.3`,
-> `stations_per_type 20`. **Measured, those miss two of the three targets** — and the plan also says
-> densities go to a target, not a feel. The targets govern. Proposed values solve to them:
+**RESOLVED — densities accepted as proposed.** v2.9b's stated values miss two of three targets;
+the targets govern, so these solve to them. Cover is asserted in the setup cell and
+food-cells-with-item is printed.
 
-| | v3.8 (saturated) | v2.9b as written | **proposed** | target |
+| | v3.8 (saturated) | v2.9b as written | **agreed** | target |
 |---|---|---|---|---|
 | `items_per_step` | 8.0 | 1.5 | **0.8** | — |
 | `nuts_per_patch` / `nuts_uniform` | 0.3 / 8.0 | 0.3 / 0 | **0.12 / 0** | — |
@@ -111,11 +116,10 @@ mechanism. That world had an instinct, a different metabolism and 20 stations; t
 stations and the network controls approach, so it is not the same measurement — but **attempts per
 life is the number that decides whether row 3 can be read at all**, and the pre-checks measure it.
 
-> **DECISION 3.** If attempts/life comes back too low, how it may be fixed: the cover figures are
-> **ceilings**, so density may be raised toward them (items to 8%, nuts to 8%, stations to 3%) and
-> no further, judged against `random policy` and `fixed` only — never against a plastic arm
-> (rule 9). If attempts/life is still ~1 at the ceiling, that is a finding about the world and gets
-> reported, not tuned past.
+**RESOLVED — accepted.** Densities may rise **to** the ceilings (items 8%, nuts 8%, stations 3%)
+and no further, judged against `random policy` and `fixed` only, never a plastic arm (rule 9). If
+attempts/life is still ~1 at the ceilings, that is reported as a property of the world, not tuned
+past. **attempts/life is printed per arm in the pre-checks.**
 
 ## Phases — one population, never rebuilt
 
@@ -134,14 +138,13 @@ v3.1 metabolism throughout: `base_cost` 0.006 · `move_cost` 0.002 · `carry_cos
 Chain: `pickup_cost` 0.02 · **`nut_value` 1.0** · **`tool_break` 0.25** · `fail_cost` 0 (0.05 in
 the two fail-cost arms) · `recipe_every` 2000.
 
-> `nut_value` and `tool_break` revert to **v2.9b's** 1.0 / 0.25 rather than v3.6's tuned 1.3 / 0.4,
-> for the same reason the densities do: v3.6's tuning was for a scaffolded, saturated world. Say if
-> you would rather keep the tuned pair.
+`nut_value` **1.0** and `tool_break` **0.25** — v2.9b's, accepted; v3.6's tuned 1.3 / 0.4 were for a
+scaffolded, saturated world.
 
-## Arms — seven, three seeds
+## Arms — eight, three seeds
 
-`random policy` · `fixed` · `scrambled` · `plastic (W2)` · `fixed + fail cost` ·
-`plastic (W2) + fail cost` · `fixed + B (ceiling)`
+`random policy` · `fixed` · `scrambled` · `plastic (W2)` · **`fixed + oracle`** ·
+**`scrambled + oracle`** · **`plastic (W2) + oracle`** · `fixed + B (ceiling)`
 
 **`random policy`** draws uniformly over the six actions. No plasticity, no learning; a behavioural
 null only. **It is expected to sit near the population floor with injections, and that must not
@@ -173,6 +176,30 @@ transition table and per-arm population. Then acceptance at 2 seeds — (i) phas
 learning survives phase 2 (safe ≥ 0.58, `probe_adv` food ≥ 1.0 **in phase 2**); (iii) oracle
 survives (`plastic + fail cost` pop ≥ 80, no injections); (iv) cover targets met. **If (ii) or (iii)
 fails I stop and report rather than tune past it.**
+
+## Two additions, agreed
+
+**Addition 1 — world-semantics unit test.** Every (action, cell content, inventory state) row of
+the table above is constructed cell by cell, resolved with one call, and its energy delta, its `m`
+and its event asserted against the table — including the two priority rows and the silent-by-default
+attempt outcomes. It runs in the setup cell. It is the test that would have caught the shared
+interact action. To make it test the *real* path rather than a re-implementation, the action × cell
+table is extracted into a single function, `resolve_action`, which both `run()` and the test call.
+
+**Addition 2 — the oracle row pre-registers abstention.** Row 3 reads `declined` and attempts/1k
+against `fixed + oracle` **before** hit rate. Attempts below 0.8× with `declined` rising is
+abstention, not knowledge. **Prediction, stated now: with a two-sided signal abstention should not
+occur.** If it does, that is a finding about the rule under mixed signals, not a null on the
+conjunction.
+
+## Amendment proposed after the pre-checks (needs your agreement)
+
+**Row 2(c)'s contact test as specified is confounded.** Comparing pickups/1k and attempts/1k to
+`random policy` compares *action budgets*, not approach: an arm that learns to `eat` necessarily
+spends fewer of its six actions on `interact` than a uniform walker, so it can fall below the null
+while approaching better. The unconfounded measure is **conditional** — `P(interact | standing on
+an item cell)` and `P(eat | standing on a food cell)` — whose null is exactly 1/6 by construction.
+Both are now logged and both are printed; the proposal is that row 2(c) reads the conditional.
 
 ## What this spec does not change
 
