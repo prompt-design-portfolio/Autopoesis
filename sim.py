@@ -363,8 +363,23 @@ def scaffold_scale(W1, W2, scale, n_scaffold):
     v2.9b scaled the whole network; that leaves the grown learner's output layer no basis to
     read (see the notebook).  Every other hidden unit keeps full-scale random weights: they are
     that basis, and a conjunction can only be expressed by a unit responding to item AND
-    station jointly.  Note this is an initialisation, not a constraint -- mutation erodes it
-    over ~30 generations, by which point the scaffold units carry ordinary random weights too."""
+    station jointly.
+
+    KNOWN DRIFT, deliberately not corrected.  This is an initialisation, not a constraint, and
+    mutation regrows what it shrank: each entry gains variance mut_rate * mut_sigma^2 = 0.00225
+    per generation, so the scaffold units' incidental weights go sd 0.03 -> 0.21 by generation 19
+    and 0.27 by generation 32, against the free units' 0.30.  By late in a run those ten units are
+    ordinary random-feature units that also carry the instinct.  It is left alone because:
+      * it is the same mutation process in every condition, and every claim in the table is a
+        between-condition contrast, so it cannot produce a between-condition artifact;
+      * the instinct itself never degrades -- wire_nav rewrites the nav synapses from the gene at
+        every birth, so only the INCIDENTAL weights of those units drift;
+      * re-applying the scaling in child() would not hold the units at 0.03.  W' = (W + mut) *
+        0.1 compounds to a stationary sd of 0.005 -- 6x below the initialisation it is meant to
+        preserve and 63x below the free units -- which empties those units rather than keeping
+        them clean, and is a larger, untested change than the one it fixes.
+    The one caveat to record: conditions differ in generations reached (19-32 across the grid),
+    so the drift is somewhat larger in the longer-lived ones."""
     W1[:, :n_scaffold] *= scale
     W2[:n_scaffold, :] *= scale
 
@@ -411,8 +426,9 @@ def restore(d, cfg, rng, lineage, y, x):
         v = d[k]
         setattr(a, k, v.copy() if isinstance(v, np.ndarray) else float(v))
     a.energy = float(d["energy"])
-    wire_nav(a.W1, a.W2, a.nav_dir, a.nav_here)
-    return a
+    wire_nav(a.W1, a.W2, a.nav_dir, a.nav_here, cfg.scaffold_food)   # cfg.scaffold_food, or a replay of a
+    return a                                                          # food-unscaffolded population gets the
+                                                                      # food instinct wired back in
 
 
 # --------------------------------------------------------------------------

@@ -34,16 +34,16 @@ for name, kw in A.VARIANTS.items():
     print("  " + name.ljust(26) + str({k: v for k, v in kw.items() if k not in A.WORLD}))
 '''
 
-CODE_RUN = '''# QUICK = True   exercises every cell below in ~5-8 min: 1 seed, 1500 steps, and recipe_every
-#                dropped to 500 so that recipe changes actually occur and the recovery tables and
+CODE_RUN = '''# QUICK = True   exercises every cell below in ~6 min: 1 seed, 1000 steps, and recipe_every
+#                dropped to 400 so two recipe changes actually occur and the recovery tables and
 #                the since-change curves are exercised too.  It is a smoke test, NOT a result.
-# QUICK = False  the real experiment: 7 conditions x 5 seeds x 8000 steps.
+# QUICK = False  the real experiment: 6 conditions x 3 seeds x 8000 steps (~2-2.5 h).
 QUICK = True
 
 if QUICK:
-    SEEDS, N_STEPS, OVERRIDES = [0], 1500, dict(recipe_every=500)
+    SEEDS, N_STEPS, OVERRIDES = [0], 1000, dict(recipe_every=400)
 else:
-    SEEDS, N_STEPS, OVERRIDES = [0, 1, 2, 3, 4], 8000, {}
+    SEEDS, N_STEPS, OVERRIDES = [0, 1, 2], 8000, {}      # seeds 3-4 held in reserve; see below
 
 # Results are pickled after every run, so a dropped Colab session costs one run, not the lot.
 # To resume:  import pickle; results = pickle.load(open("results_v3_6.pkl", "rb"))
@@ -73,15 +73,22 @@ nb = {
            "if either file is missing."),
         code(CODE_SETUP),
         md("## 2. Run\n\n**Runtime.** ~6–8 min per 8000-step run on a Colab CPU runtime (populations "
-           "of 200–420 with 24 hidden units and 11 observation channels — heavier than v3.5's ~2.5–5 "
-           "min). The full grid is 7 × 5 = **35 runs ≈ 4–5 hours**, which is longer than a Colab "
-           "session usually survives, so the run cell checkpoints to `results_v3_6.pkl` after every "
-           "run. If the session drops, reload the pickle and re-run only the seeds you are missing "
-           "(`SEEDS = [3, 4]`), then merge the dicts.\n\nSet `QUICK = False` for the real thing."),
+           "of 200–420 with 24 hidden units and 11 observation channels — heavier than v3.5\'s ~2.5–5 "
+           "min). This pass is 6 conditions × 3 seeds = **18 runs ≈ 2–2.5 hours**.\n\nThe cell "
+           "checkpoints to `results_v3_6.pkl` after every run, so a dropped Colab session costs one "
+           "run rather than the lot. To resume, reload the pickle and re-run only the missing seeds, "
+           "then merge.\n\n**Seeds 3–4 are held in reserve.** A positive on any row gets them before "
+           "it is called. To append them later, in a fresh session with the same three files and the "
+           "same `results_v3_6.pkl` present:\n\n```python\nimport pickle\nbase = pickle.load(open(\"results_v3_6.pkl\", \"rb\"))\n"
+           "more = A.run_experiment(seeds=[3, 4], n_steps=8000, save_path=\"results_seeds34.pkl\")\n"
+           "for k in base:\n    base[k] += more[k]          # seed order stays [0,1,2,3,4]\n"
+           "pickle.dump(base, open(\"results_v3_6_all.pkl\", \"wb\"))\nresults = base\n```\n\n"
+           "The seed criterion adapts automatically: `min(4, n_seeds)`, so 3 seeds reads as 3/3 and "
+           "5 seeds as 4/5.\n\nSet `QUICK = False` for the real thing."),
         code(CODE_RUN),
         md("## 3. The printed summary\n\nEvent-weighted second-half aggregates, per-seed breakdowns, "
            "then the decision numbers in the order of the table above.\n\n**Reading a QUICK run:** it "
-           "is a smoke test, not a result. 1500 steps is ~6 generations, so populations have not "
+           "is a smoke test, not a result. 1000 steps is ~4 generations, so populations have not "
            "equilibrated and row 0 will flag several conditions as uninterpretable — that is expected "
            "and says nothing about the real run. Read it only to confirm every cell produces the "
            "output it should."),

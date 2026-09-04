@@ -24,18 +24,31 @@ sets the balance between instinct and override.
 
 ---
 
-## Conditions (7 × 5 seeds, 8000 steps)
+## Conditions (6 × 3 seeds, 8000 steps)
 
 | condition | what it is for |
 |---|---|
 | `fixed` | baseline and gate: what the genome alone does. Also the reference for `eta1`, `eta2`, `lam2` and the scaffold genes *in this world*. |
 | `scrambled` | **the control that carries the claim.** Same plasticity, same H magnitudes, same power to override the innate scaffold; random-sign modulator, no information. |
 | `plastic (W2)` | the result condition. |
-| `plastic (both)` | W1 plasticity could build the conjunction features that H2 reads. |
 | `fixed + B (ceiling)` | v2's hand-wired private memory: exact per-pair credit. A reference level, **not** a matched comparison — it acts through navigation preference and a veto, not through the network's output. |
 | `fixed + fail cost` / `plastic (W2) + fail cost` | the elimination pair (`fail_cost = 0.05`). A wrong attempt now costs energy, so `m = −1` arrives **at the station** and the conjunction becomes partly learnable by elimination — an easier question than pure delayed credit, hence a separate condition. The `fixed` arm is not optional: without it a gain in the plastic arm could be the 0.05 energy change rather than the −1 signal. |
 
-The no-flip pair is dropped from this pass; it returns only if the main result is positive.
+`plastic (both)` is dropped — `eta1` has been selected off in v3.1, v3.4, v3.5 and in this world's
+pre-run checks, so the question is answered. The no-flip pair is also dropped; it returns only if
+the main result is positive.
+
+**Seeds 3–4 are held in reserve.** This pass runs seeds 0–2, so the seed criterion is **3/3**
+(the code uses `min(4, n_seeds)`, so appending the reserve seeds later reads as 4/5 automatically).
+**A positive on any row gets seeds 3–4 before it is called.** A negative does not need them.
+
+**Row 13 is the row this pass exists to test.** None of the pre-run checks measured
+`plastic (W2) + fail cost`: `fail_cost` was, until this pass, subtracting energy without producing
+a modulator, so it was inert as a learning signal. With that fixed, a wrong attempt yields
+`m = −1` **at the station**, and the conjunction becomes partly learnable by elimination rather
+than purely by delayed credit. Its control line (`fixed + fail cost` − `fixed`) is printed first,
+because if the fixed arm moves too then the 0.05 energy cost changed the world rather than the
+signal.
 
 ## Tuning log — every pass, and what it was judged against
 
@@ -67,6 +80,30 @@ cuts their attempts back to ~3.7. Every arm that thins the world enough to lengt
 starves `fixed` first. Raising nut income restores `fixed` and re-crowds the ceiling. The one arm
 that broke 0.10 bought it by pushing `fixed` to the exclusion threshold, which makes the baseline
 uninterpretable and the gap meaningless.
+
+### Two review fixes applied before this pass
+
+**`restore()` ignored `scaffold_food`.** A replay of a food-unscaffolded population had the food
+instinct wired back in at ~4.7. Fixed, with a regression check: the synapse now reads 0.026 when
+`scaffold_food=False` and 4.7 when True.
+
+**The scaffold units' 0.1 scaling erodes within a run — left alone, deliberately.** It is an
+initialisation, not a constraint: each weight gains variance `mut_rate × mut_sigma²` = 0.00225 per
+generation, so those units' incidental weights go sd 0.03 → 0.21 by generation 19 and 0.27 by 32,
+against the free units' 0.30. By late in a run the ten scaffold units are ordinary random-feature
+units that *also* carry the instinct. Not corrected because:
+
+- it is the same mutation process in every condition, and every claim in the table is a
+  between-condition contrast, so it cannot make a between-condition artifact;
+- the instinct itself never degrades — `wire_nav` rewrites the nav synapses from the gene at every
+  birth, so only the *incidental* weights drift;
+- re-applying the scaling in `child()` would not hold the units at 0.03. `W' = (W + mut) × 0.1`
+  compounds to a stationary sd of **0.005** — 6× below the initialisation it is meant to preserve
+  and 63× below the free units. That empties those units rather than keeping them clean, and is a
+  larger, untested change than the one it fixes.
+
+One caveat to record: conditions reach different generation counts (19–32 across the grid), so the
+drift is somewhat larger in the longer-lived ones.
 
 ### Issue 1 (ceiling headroom) is NOT fixed either
 
@@ -101,27 +138,27 @@ set out to test.
 
 Second-half aggregates, **event-weighted** (Σcorrect / Σattempts, not a mean of per-window ratios —
 a mean-of-ratios artifact produced the v2 "ratchet" claim that was retracted). Margin **0.03**,
-seed criterion **4/5**. Chance = 0.167.
+seed criterion **3/3 for this pass** (seeds 0–2; `min(4, n_seeds)`). Chance = 0.167.
+**Any row that fires positive is provisional until seeds 3–4 are appended.**
 
 Rows are checked in order. Every row names the condition that attributes it — the v3.4 lesson.
 
 | # | outcome | reading | what attributes it |
 |---|---|---|---|
 | **0** | any condition with pop < 80, injections > 0, or attempts/1k < 5 | that condition is uninterpretable; name it and exclude it | pop, injections, attempts/1k, per seed |
-| **1** | **gate:** `fixed` ≥ 0.25 in 4/5 | the genome tracks the recipe at `recipe_every=2000`. The world does not isolate within-life learning. **Stop, retune, no claim.** | `fixed`'s `pair_gain_innate`, its era late−early |
-| **2** | **ceiling:** `fixed + B` − `fixed` < 0.10 in ≥2/5 | not enough headroom for a 0.03 margin to have power. A null is then a statement about the test, not the learner. | attempts/life against the elimination prediction mean *k* 1/(7−*k*) |
-| **3** | `plastic (W2)` − `fixed` ≥ +0.03 in 4/5 **and** `plastic (W2)` − `scrambled` ≥ +0.03 in 4/5 **and** `probe_adv` (recipe) > 0 in 4/5 **and** attempts/1k ≥ 0.8 × fixed **and — REQUIRED — at least one within-life signature in 4/5: `hit_old` > `hit_young`, or the attempt-in-life curve rising** | **the grown learner acquires a conjunctive delayed-credit fact within life** | `scrambled` (information, not override); `probe_adv` is within-agent, so not selection or composition; attempts/1k rules out abstention; the within-life signature is what separates acquisition *within a life* from a population-level shift. The ceiling shows what a real one looks like — its attempt-in-life curve climbs 0.13 → 0.75. |
+| **1** | **gate:** `fixed` ≥ 0.25 in 3/3 | the genome tracks the recipe at `recipe_every=2000`. The world does not isolate within-life learning. **Stop, retune, no claim.** | `fixed`'s `pair_gain_innate`, its era late−early |
+| **2** | **ceiling:** `fixed + B` − `fixed` < 0.10 in ≥2/3 | not enough headroom for a 0.03 margin to have power. A null is then a statement about the test, not the learner. | attempts/life against the elimination prediction mean *k* 1/(7−*k*) |
+| **3** | `plastic (W2)` − `fixed` ≥ +0.03 in 3/3 **and** `plastic (W2)` − `scrambled` ≥ +0.03 in 3/3 **and** `probe_adv` (recipe) > 0 in 3/3 **and** attempts/1k ≥ 0.8 × fixed **and — REQUIRED — at least one within-life signature in 3/3: `hit_old` > `hit_young`, or the attempt-in-life curve rising** | **the grown learner acquires a conjunctive delayed-credit fact within life** | `scrambled` (information, not override); `probe_adv` is within-agent, so not selection or composition; attempts/1k rules out abstention; the within-life signature is what separates acquisition *within a life* from a population-level shift. The ceiling shows what a real one looks like — its attempt-in-life curve climbs 0.13 → 0.75. |
 | **4** | beats `fixed` but ≈ `scrambled` | the gain is having a plastic override of the scaffold, not the modulator's information. **Not learning.** | `scrambled` |
 | **5** | hit rises, attempts/1k < 0.8 × fixed, nuts/1k flat | bought by attempting less. Abstention, not knowledge. | attempts/1k + nuts/1k |
 | **6** | nothing differs by 0.03, row 2 passed, and the positive control holds | **null, attributable:** the rule doesn't bridge station→nut where exact credit *does* pay. Spends the one agreed rule-form change. | ceiling + food probe |
 | **7** | as row 6 but the food control also fails | learner broken *in this world*. **Fix that first, no rule-form change.** | `probe_adv` (food), safe_rate |
 | **8** | on a null: λ²^gap < 0.02 and λ2 not above `fixed`'s value | the null is about trace *length*, not the conjunction | `bridge_first`, λ2 per seed |
-| **10** | `plastic` < `fixed` by ≥0.03 in 4/5 | if `scrambled` equally below → machinery cost (v3.5's mechanism). If `plastic` < `scrambled` → the modulator is actively *misleading*; credit lands on navigation. | `scrambled` vs `plastic`, `h_norm` |
-| **10b** | `eta2` in the plastic conditions is inside `fixed`'s drift range in ≥4/5 | **plasticity was selected off before the question was reached.** Rows 3–6 are then about a modulator stream in which plasticity does not pay, not about bridging. Reports as a reversal of v3.1's finding #10. **Expected to fire** — see the tuning log. | `eta2` per seed vs `fixed` and `fixed + B`, whose eta genes are dead in this world; `h_norm`; `nut_share` |
-| **10c** | `probe_adv` (food) ≤ 0 in ≥2/5 in `plastic (W2)` | the within-agent control failed too → row 7 | food probe per seed |
-| **11** | `plastic (both)` − `plastic (W2)` ≥ +0.03 in 4/5 **and** `eta1` above `fixed`'s drift | W1 plasticity builds the conjunction; first world where `eta1` is selected up | `eta1` vs `fixed` drift |
+| **10** | `plastic` < `fixed` by ≥0.03 in 3/3 | if `scrambled` equally below → machinery cost (v3.5's mechanism). If `plastic` < `scrambled` → the modulator is actively *misleading*; credit lands on navigation. | `scrambled` vs `plastic`, `h_norm` |
+| **10b** | `eta2` in the plastic conditions is inside `fixed`'s drift range in ≥3/3 | **plasticity was selected off before the question was reached.** Rows 3–6 are then about a modulator stream in which plasticity does not pay, not about bridging. Reports as a reversal of v3.1's finding #10. **Expected to fire** — see the tuning log. | `eta2` per seed vs `fixed` and `fixed + B`, whose eta genes are dead in this world; `h_norm`; `nut_share` |
+| **10c** | `probe_adv` (food) ≤ 0 in ≥2/3 in `plastic (W2)` | the within-agent control failed too → row 7 | food probe per seed |
 | **12** | the scaffold genes `nav_dir`, `nav_here`, per seed, against `fixed`'s values | **these are not dead genes in any condition** — they set behaviour everywhere — so the reference is `fixed`'s value, not a drift range. A plastic condition evolving a *lower* instinct than `fixed` is evolution buying room for the override, which is the mechanism row 3 needs. Equal values mean the balance did not move, and a positive row 3 would then need another explanation. | `fixed` vs the plastic conditions; the drift scale is σ 0.2 × √(generations) ≈ 1.0 over a run |
-| **13** | `plastic (W2) + fail cost` − `fixed + fail cost` ≥ +0.03 in 4/5, **and** `fixed + fail cost` ≈ `fixed` | an immediate −1 on a wrong attempt is enough: the conjunction is learnable **by elimination** even where pure delayed credit fails. If `fixed + fail cost` also moves, the 0.05 energy change altered the world rather than the signal, and the first line cannot be read as learning. | the `fixed + fail cost` arm |
+| **13** | `plastic (W2) + fail cost` − `fixed + fail cost` ≥ +0.03 in 3/3, **and** `fixed + fail cost` ≈ `fixed` | an immediate −1 on a wrong attempt is enough: the conjunction is learnable **by elimination** even where pure delayed credit fails. If `fixed + fail cost` also moves, the 0.05 energy change altered the world rather than the signal, and the first line cannot be read as learning. | the `fixed + fail cost` arm |
 
 **Not claimed either way by this run:** anything about culture, records or symbols (v3.7); anything
 about `both`/`eta1` beyond row 11; food/recipe interference (the no-flip pair is dropped from this

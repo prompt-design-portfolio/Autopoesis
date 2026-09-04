@@ -57,8 +57,6 @@ VARIANTS = {
     "scrambled":              dict(mode="plastic", plastic_layers="W2", scramble=True, **WORLD),
     # the result condition
     "plastic (W2)":           dict(mode="plastic", plastic_layers="W2", **WORLD),
-    # W1 plasticity could build the conjunction features H2 reads
-    "plastic (both)":         dict(mode="plastic", plastic_layers="both", **WORLD),
     # the ceiling: exact per-pair credit, hand-wired, steering navigation and a soft veto.
     # It acts through a DIFFERENT channel from the learner (navigation preference and a veto,
     # not the network's output), so it is a reference level, not a matched comparison.
@@ -75,7 +73,7 @@ COLORS = {"fixed": "tab:red", "scrambled": "black", "plastic (W2)": "tab:blue",
 
 CHANCE = 1.0 / 6.0
 MARGIN = 0.03          # the project's standard margin
-SEED_RULE = 4          # ... in 4 of 5 seeds
+SEED_RULE = 4          # ... in 4 of 5 seeds; min(SEED_RULE, n_seeds), so a 3-seed pass is 3/3
 
 
 # ---------------------------------------------------------------- running
@@ -340,14 +338,21 @@ def _decision_numbers(results):
         print(f"  {n:<26} bridge_first {np.round(b, 1).tolist()}  lam2^gap {np.round(w, 3).tolist()}")
 
     print("\nrow 10b  was plasticity selected off before the question was reached?")
-    for g in ("eta2", "eta1", "lam2"):
-        print(f"  {g}")
+    print("  eta and lam are DEAD genes in the fixed conditions, so those rows are this world's drift.")
+    plastics = [n for n in names if "plastic" in n or n == "scrambled"]
+    for g in ("eta2", "lam2", "eta1"):
+        print(f"  {g}   per seed, then (condition - fixed)")
+        base = ps("fixed", lambda L: half(L, g))
         for n in names:
-            print(f"    {n:<26} {np.round(ps(n, lambda L: half(L, g)), 3).tolist()}")
-    print("  read the plastic rows against `fixed` and `fixed + B`, whose eta/lam are dead genes in this world")
+            v = ps(n, lambda L: half(L, g))
+            tail = f"   vs fixed: {np.round(v - base, 3).tolist()}" if n in plastics else "   <- drift reference" if n == "fixed" else ""
+            print(f"    {n:<26} {np.round(v, 3).tolist()}{tail}")
+    print("  pre-run checks had eta2 0.033/0.049 against fixed's 0.134/0.043, and lam2 0.447/0.331")
+    print("  against fixed's 0.735/0.765 -- selection SHORTENING the trace that bridging requires.")
 
-    print("\nrow 11  does W1 plasticity build the conjunction?")
-    diff("plastic (both)", "plastic (W2)")
+    if "plastic (both)" in results:
+        print("\nrow 11  does W1 plasticity build the conjunction?")
+        diff("plastic (both)", "plastic (W2)")
 
     print("\nrow 12  the scaffold genes -- what balance did evolution set between instinct and override?")
     for g in ("nav_dir", "nav_here"):
@@ -359,12 +364,25 @@ def _decision_numbers(results):
     print("  instinct than `fixed` is evolution buying room for the override, which is the")
     print("  mechanism row 3 needs; equal values mean the instinct/override balance did not move.")
 
-    print("\nrow 13  elimination -- does an immediate -1 on a wrong attempt change the answer?")
+    print("\n" + "=" * 78)
+    print("row 13  ELIMINATION -- the row this pass exists to test.")
+    print("  Nothing in the pre-run checks measured `plastic (W2) + fail cost`: with fail_cost = 0.05")
+    print("  a wrong attempt produces m = -1 AT the station, so the conjunction becomes partly")
+    print("  learnable by elimination rather than purely by delayed credit.")
+    print("=" * 78)
+    print("  the result line:")
     diff("plastic (W2) + fail cost", "fixed + fail cost")
-    diff("plastic (W2) + fail cost", "plastic (W2)")
+    print("  the control line -- read this FIRST:")
     diff("fixed + fail cost", "fixed")
-    print("  the third line is the control: if the fixed arm moves too, the 0.05 energy cost")
-    print("  changed the world rather than the signal, and the first line cannot be read as learning.")
+    print("    if the fixed arm moves too, the 0.05 energy cost changed the world rather than the")
+    print("    signal, and the result line cannot be read as learning.")
+    print("  for reference (confounds a world change with a signal change; not a decision line):")
+    diff("plastic (W2) + fail cost", "plastic (W2)")
+    pf, p = "plastic (W2) + fail cost", "plastic (W2)"
+    print(f"  probe_adv (recipe)  {pf}: {np.round(P[pf], 3).tolist()}   {p}: {np.round(P[p], 3).tolist()}")
+    print(f"  attempts/1k ratio vs its own fixed arm: {np.round(A_[pf] / np.maximum(A_['fixed + fail cost'], 1e-9), 2).tolist()}")
+    print(f"  within-life signature (attempt-in-life gain) {pf}: {np.round(AG[pf], 3).tolist()}")
+    print(f"  hit_old - hit_young {pf}: {np.round(OY[pf], 3).tolist()}")
     print("-" * 78)
 
 
