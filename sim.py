@@ -69,7 +69,11 @@ class Config:
                                   # move_cost; it is a separate field only so the pre-check can
                                   # measure what the no-op charge costs the population, since fix A
                                   # makes `interact` a guaranteed no-op for 1/6 of actions in phase 1.
-    carry_cost: float = 0.002     # per step while holding an item or a tool (v2.9b)
+    carry_cost: float = 0.0       # v3.9 amendment 3: zero.  A carry tax punishes exploration, not
+                                  # the chain -- a random `interact` press picked up an item that
+                                  # then taxed the agent forever, which is why `fixed` and
+                                  # `scrambled` sat at the floor.  The chain's costs are
+                                  # pickup_cost, the item lost on a wrong attempt, and fail_cost.
     start_energy: float = 1.5
     founder_energy: float = 3.0
     repro_threshold: float = 3.0
@@ -87,16 +91,20 @@ class Config:
     # the tool task (v2.9b)
     n_items: int = 3
     n_stations: int = 2
-    stations_per_type: int = 85       # v3.9 amendment 2: station cover 6-8%
-    items_per_step: float = 3.0      # v3.9 amendment 2: solved to a READABILITY target, item cover
-                                     # 20-25%, because co-occupancy only mattered while one action
-                                     # did both jobs -- fix A already solved that.
+    stations_per_patch: int = 8       # v3.9 amendment 3: stations of EACH type per food patch.
+                                      # The chain is co-located with foraging, so the recipe is an
+                                      # expensive FACT rather than an expensive JOURNEY.  Nothing
+                                      # spawns outside a patch; stations move with their patch.
+    stations_per_type: int = 0        # retained, unused: global placement is gone
+    items_per_step: float = 0.0      # retained, unused: items now spawn per patch, like food
+    items_per_patch: float = 0.22    # v3.9 amendment 3: items spawn INSIDE the food patches, like
+                                     # food.  Solved to ~20-25% item cover within the patches.
     nuts_per_patch: float = 0.0      # v3.9 amendment 2: no nuts in this build.  The chain is
     nuts_uniform_unused: float = 0.0 # pickup -> carry -> attempt, and the attempt pays.  The
                                      # station -> nut bridge returns in v3.11 as its own change.
     nuts_uniform: float = 0.0     # retained at 0; nuts return in v3.11 with the bridge.
     item_rot: float = 0.005
-    tool_value: float = 1.5           # a CORRECT attempt pays this immediately, m = +1, and the
+    tool_value: float = 2.5           # a CORRECT attempt pays this immediately, m = +1, and the
                                       # item is consumed.  Nothing is carried afterwards: there is
                                       # no tool state in this build.
     pickup_cost: float = 0.02
@@ -229,15 +237,41 @@ class World:
         self.items = np.full((g, g), -1, dtype=np.int8)
         self.nuts = np.zeros((g, g), dtype=bool)
         self.stations = np.full((g, g), -1, dtype=np.int8)
-        for s in range(cfg.n_stations):
-            for _ in range(cfg.stations_per_type):
-                y, x = rng.integers(0, g, 2)
-                self.stations[y, x] = s
+        # Station offsets are fixed relative to their patch, so stations travel with the patch on
+        # drift.  Each patch carries cfg.stations_per_patch of EACH type, inside patch_radius.
+        r = cfg.patch_radius
+        self.station_offsets = []          # (patch index, dy, dx, type)
+        for pi in range(cfg.n_patches):
+            for st in range(cfg.n_stations):
+                for _ in range(cfg.stations_per_patch):
+                    dy, dx = rng.integers(-r, r + 1, size=2)
+                    self.station_offsets.append((pi, int(dy), int(dx), st))
+        self._place_stations()
         self.recipe = (int(rng.integers(cfg.n_items)), int(rng.integers(cfg.n_stations)))
         self.flips, self.recipe_changes = [], []
         self.chain_on = cfg.chain      # set per phase by run()
         self.chain_start = 0           # step at which the chain switched on; recipe eras are measured
                                        # from here, so phase 2 gets whole eras rather than a part-era
+
+    def _in_patch(self):
+        """Cells inside any patch, by Chebyshev radius -- the same shape spawning uses."""
+        g, r = self.cfg.grid, self.cfg.patch_radius
+        m = np.zeros((g, g), dtype=bool)
+        idx = np.arange(g)
+        for (py, px) in self.patches:
+            dy = np.minimum(np.abs(idx - py), g - np.abs(idx - py))
+            dx = np.minimum(np.abs(idx - px), g - np.abs(idx - px))
+            m |= (dy[:, None] <= r) & (dx[None, :] <= r)
+        return m
+
+    def _place_stations(self):
+        """Rebuild the station grid from the current patch positions.  Called at creation and after
+        every patch drift, so a station is always the same offset from its patch."""
+        g = self.cfg.grid
+        self.stations[:] = -1
+        for pi, dy, dx, st in self.station_offsets:
+            py, px = self.patches[pi]
+            self.stations[(py + dy) % g, (px + dx) % g] = st
 
     def new_recipe(self, t):
         cfg = self.cfg
@@ -253,6 +287,10 @@ class World:
         changed_recipe = False
         if t > 0 and t % cfg.patch_drift_every == 0:
             self.patches = (self.patches + rng.integers(-8, 9, size=self.patches.shape)) % g
+            self._place_stations()          # stations travel with their patch
+            self.items[~self._in_patch()] = -1   # ... and items left behind by the drift are cleared,
+                                                 # so "nothing outside a patch" holds at every step
+                                                 # rather than only at spawn time
         if t > 0 and t % cfg.flip_every == 0:
             self.safe = 1 - self.safe
             self.flips.append(t)
@@ -274,12 +312,13 @@ class World:
                 y, x = (py + dy) % g, (px + dx) % g
                 if not self.food[:, y, x].any():
                     self.food[rng.integers(2), y, x] = True
-        if self.chain_on:
-            # items anywhere
-            for _ in range(rng.poisson(cfg.items_per_step)):
-                y, x = rng.integers(0, g, 2)
-                if self.items[y, x] < 0:
-                    self.items[y, x] = rng.integers(cfg.n_items)
+            if self.chain_on:               # items spawn in the patches too: nothing outside them
+                k = rng.poisson(cfg.items_per_patch)
+                for dy, dx in rng.integers(-r, r + 1, size=(k, 2)):
+                    y, x = (py + dy) % g, (px + dx) % g
+                    if self.items[y, x] < 0:
+                        self.items[y, x] = rng.integers(cfg.n_items)
+
         return changed_recipe
 
 
@@ -1008,51 +1047,76 @@ def world_semantics_selftest(verbose=True):
 
 
 
-# v3.9 amendment 2: densities go to a READABILITY target, not a co-occupancy ceiling -- fix A
-# already solved co-occupancy.  Bands, not ceilings; food_with_item is printed, not constrained.
-COVER_BANDS = dict(items=(0.20, 0.25), stations=(0.06, 0.08))
+# v3.9 amendment 3: the chain is co-located with foraging, so the world criterion is IN-PATCH,
+# not global cover.  From a random patch cell the nearest station of each type must be <= 3 steps.
+PATCH_TARGETS = dict(max_station_dist=3.0, item_cover=(0.20, 0.25))
 
 
-def standing_cover(cfg=None, steps=1000, seeds=(0, 1, 2, 3)):
-    """Audit fix B: standing cover with NO agents, so densities are set to a target rather than
-    by feel.  Returns cover fractions averaged over `seeds`, plus the fraction of food cells that
-    also carry an item -- co-occupancy is allowed here and is measured, not prevented."""
+def _patch_mask(w, cfg):
+    """Cells inside any food patch (Chebyshev radius, matching how spawning works)."""
+    g, r = cfg.grid, cfg.patch_radius
+    m = np.zeros((g, g), dtype=bool)
+    yy = np.arange(g)
+    for (py, px) in w.patches:
+        dy = np.minimum(np.abs(yy - py), g - np.abs(yy - py))
+        dx = np.minimum(np.abs(yy - px), g - np.abs(yy - px))
+        m |= (dy[:, None] <= r) & (dx[None, :] <= r)
+    return m
+
+
+def patch_metrics(cfg=None, steps=1000, seeds=(0, 1, 2, 3), n_sample=400):
+    """In-patch item cover, mean torus-Manhattan distance from a random patch cell to the nearest
+    station of each type, and a check that nothing spawns outside a patch."""
     cfg = cfg or Config(chain=True)
-    g2 = cfg.grid ** 2
-    acc = {k: [] for k in ("food", "items", "nuts", "stations", "food_with_item")}
+    g = cfg.grid
+    acc = {k: [] for k in ("item_cover", "d0", "d1", "outside", "n_station_cells", "patch_cells")}
     for sd in seeds:
-        w = World(cfg, np.random.default_rng(sd))
+        rng = np.random.default_rng(sd)
+        w = World(cfg, rng)
         w.chain_on = True
         for t in range(steps):
             w.step(t)
-        fc = w.food.any(0)
-        nf = int(fc.sum())
-        acc["food"].append(nf / g2)
-        acc["items"].append(int((w.items >= 0).sum()) / g2)
-        acc["nuts"].append(int(w.nuts.sum()) / g2)
-        acc["stations"].append(int((w.stations >= 0).sum()) / g2)
-        acc["food_with_item"].append(int((fc & (w.items >= 0)).sum()) / max(nf, 1))
-    return {k: float(np.mean(v)) for k, v in acc.items()}, {k: float(np.max(v)) for k, v in acc.items()}
+        pm = _patch_mask(w, cfg)
+        items = w.items >= 0
+        acc["item_cover"].append(items[pm].sum() / max(pm.sum(), 1))
+        acc["outside"].append(int((items & ~pm).sum() + ((w.stations >= 0) & ~pm).sum()))
+        acc["n_station_cells"].append(int((w.stations >= 0).sum()))
+        acc["patch_cells"].append(int(pm.sum()))
+        ys, xs = np.where(pm)
+        pick = rng.choice(len(ys), size=min(n_sample, len(ys)), replace=False)
+        for st, key in ((0, "d0"), (1, "d1")):
+            sy, sx = np.where(w.stations == st)
+            if len(sy) == 0:
+                acc[key].append(np.inf); continue
+            dy = np.abs(ys[pick][:, None] - sy[None, :]); dy = np.minimum(dy, g - dy)
+            dx = np.abs(xs[pick][:, None] - sx[None, :]); dx = np.minimum(dx, g - dx)
+            acc[key].append(float(np.mean((dy + dx).min(1))))
+    return {k: float(np.mean(v)) for k, v in acc.items()}
 
 
 def assert_cover(cfg=None, steps=1000, verbose=True):
-    mean, worst = standing_cover(cfg, steps)
+    m = patch_metrics(cfg, steps)
     fails = []
+    lo, hi = PATCH_TARGETS["item_cover"]
+    dmax = PATCH_TARGETS["max_station_dist"]
+    checks = [
+        ("in-patch item cover", f"{m['item_cover']*100:5.1f}%", lo <= m["item_cover"] <= hi,
+         f"band {lo*100:.0f}-{hi*100:.0f}%"),
+        ("dist to station 0", f"{m['d0']:5.2f}", m["d0"] <= dmax, f"<= {dmax:.0f} steps"),
+        ("dist to station 1", f"{m['d1']:5.2f}", m["d1"] <= dmax, f"<= {dmax:.0f} steps"),
+        ("items/stations outside patches", f"{m['outside']:5.0f}", m["outside"] == 0, "must be 0"),
+    ]
     if verbose:
-        print(f"  standing cover, no agents, {steps} steps, mean over 4 seeds:")
-    for k, (lo, hi) in COVER_BANDS.items():
-        ok = lo <= mean[k] <= hi
+        print(f"  in-patch world criterion, no agents, {steps} steps, mean over 4 seeds:")
+    for lab, val, ok, tgt in checks:
         if not ok:
-            fails.append(f"{k} {mean[k]*100:.1f}% outside band {lo*100:.0f}-{hi*100:.0f}%")
+            fails.append(f"{lab} {val} vs {tgt}")
         if verbose:
-            print(f"    {k:<16} {mean[k]*100:5.1f}%   band {lo*100:.0f}-{hi*100:.0f}%   "
-                  f"{'OK' if ok else 'FAIL'}")
+            print(f"    {lab:<32} {val}   {tgt:<22} {'OK' if ok else 'FAIL'}")
     if verbose:
-        print(f"    {'food':<16} {mean['food']*100:5.1f}%   (v3.1, not a target)")
-        print(f"    {'food_with_item':<16} {mean['food_with_item']*100:5.1f}%   (printed, unconstrained "
-              f"-- fix A made co-occupancy harmless)")
-        print(f"    {'nuts':<16} {mean['nuts']*100:5.1f}%   (must be 0: no nuts in v3.9)")
-        print(f"  cover bands: {'PASS' if not fails else 'FAIL -- ' + '; '.join(fails)}")
-    if mean["nuts"] > 0:
-        fails.append("nuts present; v3.9 has none")
+        print(f"    {'station cells':<32} {m['n_station_cells']:5.0f}   "
+              f"(some offsets coincide, so a few of the {cfg.n_patches if cfg else 8} x 2 x "
+              f"{(cfg or Config()).stations_per_patch} overlap)")
+        print(f"    {'patch cells':<32} {m['patch_cells']:5.0f}   of {(cfg or Config()).grid ** 2}")
+        print(f"  world criterion: {'PASS' if not fails else 'FAIL -- ' + '; '.join(fails)}")
     return not fails

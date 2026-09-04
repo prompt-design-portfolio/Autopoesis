@@ -17,7 +17,7 @@ try:
 except Exception:
     plt = None
 
-from sim import Config, run, COVER_BANDS
+from sim import Config, run, PATCH_TARGETS
 
 # ---------------------------------------------------------------------------
 # the world -- v3.1 metabolism throughout, the chain at the agreed cover targets
@@ -29,10 +29,14 @@ WORLD = dict(
     repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=400, init_pop=300,
     # the SHORTENED chain (amendment 2): pickup -> carry -> attempt, and the attempt pays.
     # No nuts, no tool state.  The station -> nut bridge returns in v3.11 as one change.
-    items_per_step=3.0, stations_per_type=85, nuts_per_patch=0.0, nuts_uniform=0.0,
-    tool_value=1.5, fail_cost=0.05, recipe_every=2000,
-    # densities go to a READABILITY target now, not a co-occupancy ceiling -- fix A already
-    # solved co-occupancy.  item cover 20-25%, station cover 6-8%.
+    # amendment 3: the chain is CO-LOCATED with foraging.  Items and stations spawn only inside
+    # the food patches, each patch carries 8 stations of each type at fixed offsets that travel
+    # with it, and items stranded by a drift are cleared.  The recipe is an expensive FACT, not
+    # an expensive JOURNEY.  World criterion is in-patch: nearest station of each type <= 3 steps
+    # from a random patch cell, in-patch item cover 20-25%.
+    items_per_patch=0.22, stations_per_patch=8, nuts_per_patch=0.0, nuts_uniform=0.0,
+    carry_cost=0.0,                 # a carry tax punishes exploration, not the chain
+    tool_value=2.5, fail_cost=0.05, recipe_every=2000,
     scaffold_food=False, scaffold_chain=False,
 )
 
@@ -296,7 +300,25 @@ def _decision_numbers(results):
             flag = "  (null arm, exempt)" if n == NULL else ("  <-- EXCLUDE" if bad else "")
             print(f"  {lab}  {n:<22} pop {np.round(pop,0).tolist()}  inj {np.round(inj,1).tolist()}{flag}")
 
-    print("\nrow 1  GATE -- can the genome track the recipe now that it pays?")
+    print("\nrow 1a  PHASE-1 GATE -- is this v3.1?  A STOP ROW: if it fails, nothing below is read.")
+    sp, sf = v(PL, P1, safe), v(F, P1, safe)
+    pf = v(PL, P1, lambda L: half(L, "probe_adv_food"))
+    fpop, finj = v(F, P1, lambda L: half(L, "pop")), v(F, P1, lambda L: half(L, "injections"))
+    excluded = (fpop < 80) | (finj > 0)
+    V31_HI = 0.56
+    print(f"  safe_rate  plastic {np.round(sp,3).tolist()}   fixed {np.round(sf,3).tolist()}   (v3.1: 0.60-0.66 vs 0.51-0.56)")
+    if excluded.any():
+        print(f"  ROW-0 FALLBACK in seed(s) {np.where(excluded)[0].tolist()}: `fixed` phase 1 excluded"
+              f" (pop {np.round(fpop[excluded],0).tolist()}); those seeds read against v3.1's published"
+              f" range, conservative end {V31_HI}.")
+    gate_a = []
+    for i in range(nseed):
+        d = sp[i] - (V31_HI if excluded[i] else sf[i])
+        gate_a.append(d >= MARGIN)
+        print(f"    seed {i}: {d:+.3f} ({'published' if excluded[i] else 'measured'})   {'PASS' if d >= MARGIN else 'FAIL'}")
+    print(f"    >= +{MARGIN} in {sum(gate_a)}/{nseed};  probe_adv (food) {np.round(pf,3).tolist()} (target >= 1.0)")
+
+    print("\nrow 1b  RECIPE GATE -- can the genome track the recipe now that it pays?")
     hf = v(F, P2, hit)
     print(f"  fixed recipe_hit {np.round(hf,3).tolist()}   (chance {CHANCE:.3f}; gate FIRES at > 0.25 in {rule}/{nseed})")
     print(f"  fixed pair_gain innate {np.round(v(F,P2,lambda L: half(L,'pair_gain_innate')),3).tolist()}")
@@ -319,13 +341,24 @@ def _decision_numbers(results):
         print(f"    {n:<22} P1 safe {np.round(v(n,P1,safe),3).tolist()}  "
               f"P1 probe_adv (food) {np.round(v(n,P1,lambda L: half(L,'probe_adv_food')),3).tolist()}  "
               f"P1 pop {np.round(v(n,P1,lambda L: half(L,'pop')),0).tolist()}")
-    print("  (b) READABILITY:  attempts/life >= 3 in `random policy`")
+    print("  (b) READABILITY -- judged on `fixed`, not the null.  `random policy` sits at the")
+    print("      injection floor, so its attempts/life measures churn rather than the world.")
+    alf = v(F, P2, lambda L: half(L, "attempts_per_life"))
+    isf = v(F, P2, lambda L: half(L, "int_at_station"))
+    isn = np.nanmean(v(NULL, P2, lambda L: half(L, "int_at_station"))) if have(NULL) else np.nan
+    print(f"    fixed  attempts/life {np.round(alf,2).tolist()}   "
+          f"{'PASS' if np.all(alf >= 3.0) else 'FAIL'}   (criterion >= 3)")
+    print(f"    fixed  P(interact | at station, carrying) {np.round(isf,3).tolist()}  vs null {isn:.3f}   "
+          f"{'PASS' if np.all(isf > isn) else 'FAIL'}")
     if have(NULL):
-        al = v(NULL, P2, lambda L: half(L, "attempts_per_life"))
-        print(f"    {NULL:<22} attempts/life {np.round(al,2).tolist()}   "
-              f"{'PASS' if np.all(al >= 3.0) else 'FAIL -- raise densities, judged against the null only'}")
-        for n in OUTCOME_ARMS:
-            print(f"    {n:<22} attempts/life {np.round(v(n,P2,lambda L: half(L,'attempts_per_life')),2).tolist()}")
+        aln = v(NULL, P2, lambda L: half(L, "attempts_per_life"))
+        print(f"    {NULL} (affordance null) attempts/life {np.round(aln,2).tolist()}   "
+              f"{'PASS' if np.all(aln >= 1.0) else 'FAIL'}   (criterion >= 1)")
+    for n in OUTCOME_ARMS:
+        print(f"    {n:<22} attempts/life {np.round(v(n,P2,lambda L: half(L,'attempts_per_life')),2).tolist()}")
+    print("    STOP CONDITION: if `fixed` makes fewer than ONE attempt per life over a full")
+    print("    8000-step phase 2 in the acceptance run, rig work on this world stops and the")
+    print("    result is reported as a finding about sparse chains under autopoietic economics.")
     print("  (c) CONDITIONAL APPROACH -- the unconfounded test.  A per-1k rate compares action")
     print("      budgets, not approach; these condition on the opportunity.  The null is the")
     print("      `random policy` arm, whose analytic share is 1/5 in phase 1 (interact masked)")

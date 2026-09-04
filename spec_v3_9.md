@@ -1,10 +1,38 @@
 # v3.9 world spec
 
-*Agreed 4 September 2026, **amended 2** after the first pre-checks. The chain is shortened to what
+*Agreed 4 September 2026, **amended 3** after the first pre-checks. The chain is shortened to what
 v3.9 tests; the oracle arms are gone because the two-sided signal is now part of the world; densities
 go to a readability target. This is the spec the code implements.*
 
-> **Amendment 2's readability criterion is NOT met, and is not reachable by the levers it allows.**
+### Amendment 3 (co-location) — what changed
+
+1. **The chain is co-located with foraging.** Items spawn **inside the food patches** like food
+   (`items_per_patch` 0.22), and each patch carries **8 stations of each type** at fixed offsets
+   that **travel with the patch on drift**. Items stranded by a drift are cleared, so "nothing
+   outside a patch" holds at every step, not only at spawn. The recipe is an expensive *fact*, not
+   an expensive *journey*.
+2. **`carry_cost = 0`** — a carry tax punishes exploration, not the chain. The chain's costs are
+   `pickup_cost` 0.02, the item lost on a wrong attempt, and `fail_cost` 0.05.
+3. **`tool_value = 2.5`.**
+4. **Readability criterion moved to `fixed`**: attempts/life ≥ 3 and P(`interact` | at station,
+   carrying) > null, second half of phase 2, judged against `fixed` only. `random policy` stays as
+   the affordance null and must show attempts/life ≥ 1.
+5. **Phase-1 v3.1 gate restored as row 1a**, a stop row, ahead of the recipe gate 1b.
+6. Conditional nulls per phase: **1/5 in phase 1** (interact masked), **1/6 in phase 2**; measured
+   null printed beside the analytic one.
+
+**World criterion (in-patch, replaces global cover), measured with no agents over 4 seeds:**
+in-patch item cover **21.5%** (band 20–25%) · nearest station of type 0 **2.87 steps**, type 1
+**2.71** (≤ 3) · items/stations outside patches **0** · 119 station cells over 1058 patch cells.
+
+### STOP CONDITION (agreed)
+
+**If `fixed` makes fewer than one attempt per life over a full 8000-step phase 2 in the acceptance
+run, rig work on this world stops** and the result is reported as a finding about sparse chains
+under autopoietic economics. No further economics passes.
+
+> **Superseded: amendment 2's readability criterion was NOT met, and was not reachable by the
+> levers it allowed.**
 > `random policy` attempts/life is 0.96 at the agreed band, 2.16 at **three times** the station band
 > (23% cover), and *falls* as `tool_value` rises (0.96 → 0.85 at 8.0). It is pinned by the null arm
 > living at the injection floor, so it measures the floor rather than the world's affordances —

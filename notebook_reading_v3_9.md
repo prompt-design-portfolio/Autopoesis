@@ -1,4 +1,13 @@
-## 8. Reading it
+## 8. Pre-check note — the abstention observed under amendment 2
+
+*An observation from a 1-seed pre-check, not a claim.* Before the chain was co-located, with
+`tool_value` 1.5 and a carry tax, `plastic (W2)` **declined 99.7% of station opportunities** and
+made **0.006 attempts per life** — 160× below the random-walk null — while being the **only arm not
+at the population floor** (153 against 41–52, zero injections) and holding the best safe rate
+(0.622). Given a genuine choice, the best learner rejected the chain and specialised in eating.
+That reading is what amendment 3 responds to: the failure was opportunity cost, not payoff size.
+
+## 8b. Reading it
 
 In the order of the decision table. **Rows 1 and 2 are stop conditions.**
 
