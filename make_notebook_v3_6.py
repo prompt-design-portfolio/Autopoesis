@@ -6,8 +6,8 @@ sim.py and analysis.py uploaded alongside it: no local paths, no multiprocessing
 import json, pathlib
 
 HERE = pathlib.Path(__file__).parent
-MD_INTRO = (HERE / "notebook_intro.md").read_text()
-MD_READING = (HERE / "notebook_reading.md").read_text()
+MD_INTRO = (HERE / "notebook_intro_v3_6.md").read_text()
+MD_READING = (HERE / "notebook_reading_v3_6.md").read_text()
 
 CODE_SETUP = '''# --- Colab check -------------------------------------------------------------
 # Upload sim.py and analysis.py next to this notebook (Files pane, or run:
@@ -15,14 +15,14 @@ CODE_SETUP = '''# --- Colab check ----------------------------------------------
 # and pick both).  Nothing else is needed: pure numpy + matplotlib.
 import os, sys
 
-missing = [f for f in ("sim.py", "analysis.py") if not os.path.exists(f)]
+missing = [f for f in ("sim.py", "analysis_v3_6.py") if not os.path.exists(f)]
 if missing:
     raise SystemExit(f"missing {missing} in {os.getcwd()} -- upload them next to this notebook")
 if os.getcwd() not in sys.path:
     sys.path.insert(0, os.getcwd())
 
 import numpy as np
-import sim, analysis as A
+import sim, analysis_v3_6 as A
 
 print("numpy", np.__version__)
 print("observation size:", sim.N_IN, " pairs:", sim.N_PAIRS, " chance recipe hit:", round(A.CHANCE, 3))

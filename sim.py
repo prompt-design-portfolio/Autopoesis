@@ -115,6 +115,18 @@ class Config:
     nav_here_init: tuple = (2.0, 6.0)   # founders' interact gene ~ U(...)
     nav_sigma: float = 0.2              # per-generation mutation, ~2% of nav_max, as eta's 0.01 is of 0.5
     nav_max: float = 12.0
+    scaffold_chain: bool = True    # whether the instinct approaches items/stations/nuts and interacts
+                                   # with them.  v3.8 sets this False: the chain has to be found
+                                   # unwired, so nav_dir/nav_here stay in the genome but reach nothing.
+    goal_channel: bool = True      # keep the stage-machine 'goal' OBSERVATION (points at items when
+                                   # empty-handed, stations when carrying, nuts when tooled).  This is
+                                   # a hand-designed feature but not a valence -- it never says WHICH
+                                   # item or station -- and it is identical in every condition, so it
+                                   # cannot explain a between-condition difference.  Set False for a
+                                   # stricter version in which the chain must be found from the
+                                   # per-type channels alone.
+    chain: bool = True             # is the tool chain present at all?  Set per PHASE, not per run:
+                                   # v3.8 stages it off then on for one continuous population.
     scaffold_food: bool = True     # whether the instinct also approaches and eats food.  The chain
                                    # (item -> station -> nut) must be scaffolded or nothing happens
                                    # and no condition is readable.  Food need not be: it is the
@@ -203,6 +215,9 @@ class World:
                 self.stations[y, x] = s
         self.recipe = (int(rng.integers(cfg.n_items)), int(rng.integers(cfg.n_stations)))
         self.flips, self.recipe_changes = [], []
+        self.chain_on = cfg.chain      # set per phase by run()
+        self.chain_start = 0           # step at which the chain switched on; recipe eras are measured
+                                       # from here, so phase 2 gets whole eras rather than a part-era
 
     def new_recipe(self, t):
         cfg = self.cfg
@@ -221,13 +236,17 @@ class World:
         if t > 0 and t % cfg.flip_every == 0:
             self.safe = 1 - self.safe
             self.flips.append(t)
-        if t > 0 and t % cfg.recipe_every == 0:
+        if self.chain_on and t > self.chain_start and (t - self.chain_start) % cfg.recipe_every == 0:
             self.new_recipe(t)
             changed_recipe = True
         # rot
         self.food &= rng.random(self.food.shape) > cfg.food_rot
-        self.items[rng.random(self.items.shape) < cfg.item_rot] = -1
-        self.nuts &= rng.random(self.nuts.shape) > cfg.item_rot
+        if not self.chain_on:                       # phase 1: no items, no nuts, chain channels zero
+            self.items[:] = -1
+            self.nuts[:] = False
+        else:
+            self.items[rng.random(self.items.shape) < cfg.item_rot] = -1
+            self.nuts &= rng.random(self.nuts.shape) > cfg.item_rot
         # food and nuts grow in the drifting patches
         r = cfg.patch_radius
         for (py, px) in self.patches:
@@ -236,16 +255,18 @@ class World:
                 y, x = (py + dy) % g, (px + dx) % g
                 if not self.food[:, y, x].any():
                     self.food[rng.integers(2), y, x] = True
-            k = rng.poisson(cfg.nuts_per_patch)
-            for dy, dx in rng.integers(-r, r + 1, size=(k, 2)):
-                self.nuts[(py + dy) % g, (px + dx) % g] = True
-        for _ in range(rng.poisson(cfg.nuts_uniform)):
-            self.nuts[tuple(rng.integers(0, g, 2))] = True
-        # items anywhere
-        for _ in range(rng.poisson(cfg.items_per_step)):
-            y, x = rng.integers(0, g, 2)
-            if self.items[y, x] < 0:
-                self.items[y, x] = rng.integers(cfg.n_items)
+            if self.chain_on:
+                k = rng.poisson(cfg.nuts_per_patch)
+                for dy, dx in rng.integers(-r, r + 1, size=(k, 2)):
+                    self.nuts[(py + dy) % g, (px + dx) % g] = True
+        if self.chain_on:
+            for _ in range(rng.poisson(cfg.nuts_uniform)):
+                self.nuts[tuple(rng.integers(0, g, 2))] = True
+            # items anywhere
+            for _ in range(rng.poisson(cfg.items_per_step)):
+                y, x = rng.integers(0, g, 2)
+                if self.items[y, x] < 0:
+                    self.items[y, x] = rng.integers(cfg.n_items)
         return changed_recipe
 
 
@@ -282,7 +303,7 @@ class Agent:
             self.W2[cfg.n_scaffold:, :] *= cfg.free_scale
         self.nav_dir = float(rng.uniform(*cfg.nav_dir_init))
         self.nav_here = float(rng.uniform(*cfg.nav_here_init))
-        wire_nav(self.W1, self.W2, self.nav_dir, self.nav_here, cfg.scaffold_food)
+        wire_nav(self.W1, self.W2, self.nav_dir, self.nav_here, cfg.scaffold_food, cfg.scaffold_chain)
         self.H1 = np.zeros_like(self.W1); self.H2 = np.zeros_like(self.W2)
         self.e1 = np.zeros_like(self.W1); self.e2 = np.zeros_like(self.W2)
         self.eta1 = rng.uniform(0, cfg.eta_init); self.eta2 = rng.uniform(0, cfg.eta_init)
@@ -319,7 +340,7 @@ class Agent:
         c.repair = float(np.clip(self.repair + rng.normal(0, cfg.gene_sigma), 0, 1))
         c.nav_dir = float(np.clip(self.nav_dir + rng.normal(0, cfg.nav_sigma), 0, cfg.nav_max))
         c.nav_here = float(np.clip(self.nav_here + rng.normal(0, cfg.nav_sigma), 0, cfg.nav_max))
-        wire_nav(c.W1, c.W2, c.nav_dir, c.nav_here, cfg.scaffold_food)   # the instinct comes from the gene, not from mutated synapses
+        wire_nav(c.W1, c.W2, c.nav_dir, c.nav_here, cfg.scaffold_food, cfg.scaffold_chain)   # the instinct comes from the gene, not from mutated synapses
         c.energy = cfg.start_energy
         c.y, c.x = self.y, self.x
         c.item, c.tool = -1, False           # nothing carried is inherited
@@ -384,7 +405,7 @@ def scaffold_scale(W1, W2, scale, n_scaffold):
     W2[:n_scaffold, :] *= scale
 
 
-def wire_nav(W1, W2, nav_dir, nav_here, scaffold_food=True):
+def wire_nav(W1, W2, nav_dir, nav_here, scaffold_food=True, scaffold_chain=True):
     """v2.9b's forager instinct: approach whatever the current stage of the chain wants ('goal')
     and approach food ('food_any'); interact when standing on either.  It says nothing about
     WHICH item, station or food type -- that is the experiment.
@@ -394,11 +415,12 @@ def wire_nav(W1, W2, nav_dir, nav_here, scaffold_food=True):
     a scalar and selection can raise or lower it, exactly as it does eta.  The directional
     inputs are normalised by v*(2v+1) = 10, so nav_dir buys ~10x less activation than nav_here
     at the same value; the two are separate genes for that reason."""
-    for d in range(4):
-        W1[GOAL_CH * 4 + d, 4 + d] = nav_dir
-        W2[4 + d, d] = nav_here
-    W1[HERE + GOAL_CH, 9] = nav_here
-    W2[9, 4] = nav_here
+    if scaffold_chain:
+        for d in range(4):
+            W1[GOAL_CH * 4 + d, 4 + d] = nav_dir
+            W2[4 + d, d] = nav_here
+        W1[HERE + GOAL_CH, 9] = nav_here
+        W2[9, 4] = nav_here
     if scaffold_food:
         for d in range(4):
             W1[APPETITE_CH * 4 + d, d] = nav_dir
@@ -426,7 +448,7 @@ def restore(d, cfg, rng, lineage, y, x):
         v = d[k]
         setattr(a, k, v.copy() if isinstance(v, np.ndarray) else float(v))
     a.energy = float(d["energy"])
-    wire_nav(a.W1, a.W2, a.nav_dir, a.nav_here, cfg.scaffold_food)   # cfg.scaffold_food, or a replay of a
+    wire_nav(a.W1, a.W2, a.nav_dir, a.nav_here, cfg.scaffold_food, cfg.scaffold_chain)   # cfg.scaffold_food, or a replay of a
     return a                                                          # food-unscaffolded population gets the
                                                                       # food instinct wired back in
 
@@ -511,11 +533,25 @@ def probe_advantage_food(agents, cfg, safe, n_sample=40):
 # the run
 # --------------------------------------------------------------------------
 
-def run(cfg, verbose=True, init_genomes=None):
+def run(cfg, verbose=True, init_genomes=None, phases=None):
+    """phases: a list of {"n_steps": int, "chain": bool} run back to back on ONE population.
+    The agents list, their H, their eligibility traces and the world are all carried across a
+    phase boundary untouched -- only cfg.chain flips.  phases=None runs a single phase of
+    cfg.n_steps at cfg.chain, which is what every earlier notebook did."""
+    if phases is None:
+        phases = [dict(n_steps=cfg.n_steps, chain=cfg.chain)]
+    schedule, bounds, acc = [], [], 0
+    for p in phases:
+        acc += p["n_steps"]
+        schedule.append((acc, bool(p.get("chain", cfg.chain))))
+        bounds.append((acc - p["n_steps"], acc))
+    total_steps = acc
+
     rng = np.random.default_rng(cfg.seed)
     g, v = cfg.grid, cfg.view
     win = 2 * v + 1
     world = World(cfg, rng)
+    world.chain_on = schedule[0][1]
     for _ in range(100):
         world.step(-1)
     if init_genomes is None:
@@ -533,7 +569,15 @@ def run(cfg, verbose=True, init_genomes=None):
     MEALS = np.zeros((cfg.n_meals + 1, 2))      # meal number in an agent's life (the v3 curve)
     t0 = time.time()
 
-    for t in range(cfg.n_steps):
+    phase_i = 0
+    for t in range(total_steps):
+        while t >= schedule[phase_i][0]:                 # phase boundary: nothing is rebuilt or reset
+            phase_i += 1
+            on = schedule[phase_i][1]
+            if on and not world.chain_on:
+                world.chain_start = t                    # recipe eras start when the chain does
+                world.recipe_changes.append(-t)          # negative marks 'chain on', not a change
+            world.chain_on = on
         if world.step(t):
             for a in agents:
                 a.since_recipe = 0
@@ -543,10 +587,18 @@ def run(cfg, verbose=True, init_genomes=None):
         pad = lambda arr: np.pad(np.asarray(arr, dtype=float), v, mode="wrap")
         pA, pB = pad(world.food[0]), pad(world.food[1])
         pO = pad(np.minimum(occ, 3) / 3.0)
-        pFood = pA + pB                                     # approach food of either type
-        pI = [pad(world.items == i) for i in range(cfg.n_items)]
-        pS = [pad(world.stations == s) for s in range(cfg.n_stations)]
-        pN = pad(world.nuts)
+        # the food_any channel exists only to drive the instinct; with no food scaffold it is dead,
+        # which makes phase 1's live inputs exactly v3.1's set (4 dirsums x 3 channels + 3 here + energy)
+        pFood = (pA + pB) if cfg.scaffold_food else np.zeros_like(pA)
+        if world.chain_on:
+            pI = [pad(world.items == i) for i in range(cfg.n_items)]
+            pS = [pad(world.stations == s) for s in range(cfg.n_stations)]
+            pN = pad(world.nuts)
+        else:
+            z = np.zeros_like(pA)
+            pI = [z] * cfg.n_items
+            pS = [z] * cfg.n_stations
+            pN = z
 
         rng.shuffle(agents)
         survivors, newborns = [], []
@@ -565,8 +617,11 @@ def run(cfg, verbose=True, init_genomes=None):
                 pb = None
                 attract = np.ones(cfg.n_items + cfg.n_stations)
 
-            # innate stage machine: it points at a class of thing, never at which one
-            if a.tool:
+            # the stage machine: it points at a CLASS of thing, never at which one.  With
+            # scaffold_chain off it is only an observation channel -- nothing is wired to it.
+            if not (world.chain_on and cfg.goal_channel):
+                goal = np.zeros((win, win))
+            elif a.tool:
                 goal = pN[sl]
             elif a.item >= 0:
                 goal = sum(attract[cfg.n_items + s] * pS[s][sl] for s in range(cfg.n_stations))
@@ -684,7 +739,7 @@ def run(cfg, verbose=True, init_genomes=None):
             old = np.sum([a.age_bins[1] for a in agents], axis=0)
             income = W["e_food"] + W["e_nut"]
             log.append(dict(
-                t=t + 1, pop=len(agents),
+                t=t + 1, phase=phase_i, chain=int(world.chain_on), pop=len(agents),
                 recipe_hit=(W["correct"] / W["attempts"]) if W["attempts"] else np.nan,
                 attempts_per_1k=1000.0 * W["attempts"] / max(W["steps"], 1),
                 attempts_per_life=W["attempts"] / max(W["deaths"], 1),   # births ~ deaths in steady state
@@ -731,5 +786,7 @@ def run(cfg, verbose=True, init_genomes=None):
                 print(f"t={L['t']:5d} pop={L['pop']:3d} hit={L['recipe_hit']:.3f} att/1k={L['attempts_per_1k']:.2f} "
                       f"nuts/1k={L['nuts_per_1k']:.2f} safe={L['safe_rate']:.2f} eta={L['eta1']:.3f}/{L['eta2']:.3f} "
                       f"lam2={L['lam2']:.3f} bridge={L['bridge_steps']:.0f} [{time.time()-t0:.0f}s]", flush=True)
-    return dict(log=log, flips=world.flips, recipe_changes=world.recipe_changes,
+    return dict(log=log, flips=world.flips,
+                recipe_changes=[c for c in world.recipe_changes if c >= 0],
+                chain_start=world.chain_start, phase_bounds=bounds, n_steps=total_steps,
                 cfg=asdict(cfg), final=snapshot(agents))
