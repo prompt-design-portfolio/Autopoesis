@@ -45,6 +45,11 @@ WORLD = dict(
     scaffold_food=False, scaffold_chain=False,
 )
 
+FAIL_COST = 0.05      # small enough not to change who survives (0.3 collapsed every v3.6
+                      # population that did not already know the recipe); large enough that a wrong
+                      # attempt yields m = -1 at the station.  The energy it costs is MEASURED as
+                      # e_fail_per_1k, so row 7's confound is bounded rather than assumed away.
+
 PHASE_STEPS = 8000
 STAGED = [dict(n_steps=PHASE_STEPS, chain=False), dict(n_steps=PHASE_STEPS, chain=True)]
 SCRATCH = [dict(n_steps=2 * PHASE_STEPS, chain=True)]
@@ -58,12 +63,19 @@ VARIANTS = {
                                  phases=STAGED),
     # the result condition
     "plastic (W2) staged":  dict(kw=dict(mode="plastic", plastic_layers="W2", **WORLD), phases=STAGED),
+    # the ORACLE arm.  fail_cost = 0.05 makes a wrong attempt cost energy, so m = -1 arrives AT
+    # the station instead of only +1 arriving later at the nut.  The recipe signal is immediate and
+    # the network still controls approach: if row 4 is null, this says whether the failure is the
+    # rule or the world.
+    "plastic (W2) + fail cost": dict(kw=dict(mode="plastic", plastic_layers="W2",
+                                             **dict(WORLD, fail_cost=FAIL_COST)), phases=STAGED),
     # is staging needed at all?  Same learner, full world from step 0, same total steps.
     "plastic (W2) scratch": dict(kw=dict(mode="plastic", plastic_layers="W2", **WORLD), phases=SCRATCH),
 }
 
 COLORS = {"fixed (staged)": "tab:red", "scrambled (staged)": "black",
-          "plastic (W2) staged": "tab:blue", "plastic (W2) scratch": "tab:orange"}
+          "plastic (W2) staged": "tab:blue", "plastic (W2) scratch": "tab:orange",
+          "plastic (W2) + fail cost": "tab:green"}
 
 CHANCE = 1.0 / 6.0
 MARGIN = 0.03
@@ -186,6 +198,18 @@ def transition_table(results, bin_size=500, span=2000):
                   f"{g(lambda w: half(w,'h_norm')):9.3f}{g(lambda w: per_1k(w,'n_attempts_raw')):9.2f}{mark}")
 
 
+def first_bin_drop(run_, bin_size=500):
+    """Safe rate in the last `bin_size` steps BEFORE the chain switches on, minus the first
+    `bin_size` steps after.  A basis shift shows up here, in the first bin; swamping and
+    depletion take longer than one bin to build."""
+    sw = run_.get("chain_start", 0)
+    if not sw:
+        return np.nan, np.nan, np.nan
+    pre, post = window(run_, sw - bin_size, sw), window(run_, sw, sw + bin_size)
+    a, b = safe(pre), safe(post)
+    return a, b, a - b
+
+
 # ---------------------------------------------------------------- summary
 
 ROWS = [
@@ -210,6 +234,8 @@ ROWS = [
     ("bridge_first",       lambda L: half(L, "bridge_first")),
     ("crop_safe",          lambda L: half(L, "crop_safe")),
     ("nut_share",          lambda L: half(L, "nut_share")),
+    ("trace_recency",      lambda L: half(L, "trace_recency")),
+    ("e_fail/1k",          lambda L: half(L, "e_fail_per_1k")),
     ("meal gain",          lambda L: float(curve(L, "meal")[-1] - curve(L, "meal")[0])),
     ("attempt gain",       lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0])),
 ]
@@ -278,10 +304,39 @@ def _decision_numbers(results):
     sp, sf = v(PL, P1, safe), v(F, P1, safe)
     pf = v(PL, P1, lambda L: half(L, "probe_adv_food"))
     e2p, e2f = v(PL, P1, lambda L: half(L, "eta2")), v(F, P1, lambda L: half(L, "eta2"))
-    print(f"  safe_rate  plastic - fixed:      {np.round(sp - sf, 3).tolist()}   >= +{MARGIN} in {n_ok(sp, sf)}/{nseed}   (v3.1: +0.08)")
-    print(f"    plastic {np.round(sp,3).tolist()}   fixed {np.round(sf,3).tolist()}   (v3.1: 0.60-0.66 vs 0.51-0.56)")
+    e2s = v(S, P1, lambda L: half(L, "eta2"))
+    fpop, finj = v(F, P1, lambda L: half(L, "pop")), v(F, P1, lambda L: half(L, "injections"))
+    excluded = (fpop < 80) | (finj > 0)
+    V31_FIXED = (0.51, 0.56)
+    print(f"  safe_rate  plastic {np.round(sp,3).tolist()}   fixed {np.round(sf,3).tolist()}"
+          f"   (v3.1: 0.60-0.66 vs 0.51-0.56)")
+    if excluded.any():
+        print(f"  ROW-0 FALLBACK: `fixed` phase 1 is EXCLUDED in seed(s) "
+              f"{np.where(excluded)[0].tolist()} (pop {np.round(fpop[excluded],0).tolist()}, "
+              f"injections {np.round(finj[excluded],1).tolist()}).  For those seeds the gate reads")
+        print(f"  plastic's safe rate against v3.1's PUBLISHED fixed range {V31_FIXED}, not against")
+        print(f"  this run's `fixed`, which is part injected random agents.")
+    per_seed_pass, per_seed_txt = [], []
+    for i in range(nseed):
+        if excluded[i]:
+            d = sp[i] - V31_FIXED[1]                      # the conservative end of the range
+            per_seed_pass.append(d >= MARGIN)
+            per_seed_txt.append(f"seed {i}: {sp[i]:.3f} - {V31_FIXED[1]} (published) = {d:+.3f}")
+        else:
+            d = sp[i] - sf[i]
+            per_seed_pass.append(d >= MARGIN)
+            per_seed_txt.append(f"seed {i}: {sp[i]:.3f} - {sf[i]:.3f} (measured) = {d:+.3f}")
+    print(f"  safe_rate margin, per seed:")
+    for txt, ok in zip(per_seed_txt, per_seed_pass):
+        print(f"    {txt}   {'PASS' if ok else 'FAIL'}")
+    print(f"    >= +{MARGIN} in {sum(per_seed_pass)}/{nseed}")
     print(f"  probe_adv (food) plastic:        {np.round(pf,3).tolist()}   (target >= 1.0; v3.1: 1.4-2.7)")
-    print(f"  eta2  plastic {np.round(e2p,3).tolist()}  vs fixed {np.round(e2f,3).tolist()}   above in {int(np.sum(e2p > e2f))}/{nseed}")
+    print(f"  eta2  plastic {np.round(e2p,3).tolist()}  fixed {np.round(e2f,3).tolist()}"
+          f"  scrambled {np.round(e2s,3).tolist()}")
+    print(f"    above fixed in {int(np.sum(e2p > e2f))}/{nseed}; above scrambled in {int(np.sum(e2p > e2s))}/{nseed}")
+    print("    `fixed`'s eta2 is a DEAD gene drifting over 0.045-0.24, so 'above fixed' is close to")
+    print("    a coin flip; `scrambled`, which v3.1 drove to ~0.02, is the better-powered comparison.")
+    print("    Read this row on the safe rate and the probe; eta2 is corroborating.")
     print("  If this does not reproduce, the finding is about observation size and everything below is void.")
 
     print("\nrow 2  TRANSITION -- does the grown population survive the chain, and keep its plasticity?")
@@ -295,6 +350,34 @@ def _decision_numbers(results):
               f"   fixed phase 2 {np.round(f2,3).tolist()}   above fixed in {int(np.sum(a2 > f2))}/{nseed}")
     print("  v3.6 had eta2 selected OFF and lam2 selected SHORT in the scaffolded world.  If that")
     print("  repeats here, the chain does it, not the scaffold; if it does not, the scaffold did.")
+    print("\n  SAFE RATE ACROSS THE SWITCH -- the acceptance checks saw 0.627 -> 0.500 with no")
+    print("  scaffold anywhere.  Four candidates, and the timing separates them:")
+    print("    (a) BASIS SHIFT: 39 of the 60 inputs go from zero to live in one step, so H2's learned")
+    print("        readout suddenly sits on a hidden basis that has moved -- v3.5's non-stationary")
+    print("        input mechanism, at scale.  IMMEDIATE: the drop is in the FIRST 500-step bin, and")
+    print("        h_norm is unchanged (H is intact; what it is read off has moved).")
+    print("    (b) MODULATOR SWAMPING: nuts supply a frequent sign-positive m.  GRADUAL, and nut_share")
+    print("        rises with it.")
+    print("    (c) TIME BUDGET: agents spend their steps on the chain rather than eating.  GRADUAL,")
+    print("        and meals/1k falls.")
+    print("    (d) DEPLETION: crop_safe falls as in v3.2's learner worlds.  GRADUAL.")
+    print(f"  {'condition':<26}{'pre':>8}{'post':>8}{'drop':>8}   per-seed drop (first bin after - last before)")
+    for n in names:
+        fb = np.array([first_bin_drop(r) for r in results[n]], dtype=float)
+        if not np.isfinite(fb).any():
+            print(f"  {n:<26}      --      --      --   (no transition)")
+            continue
+        print(f"  {n:<26}{np.nanmean(fb[:,0]):8.3f}{np.nanmean(fb[:,1]):8.3f}{np.nanmean(fb[:,2]):8.3f}"
+              f"   {np.round(fb[:,2],3).tolist()}")
+    print("  h_norm across the switch (unchanged => the basis moved, not H):")
+    for n in (PL, S):
+        h1, h2 = v(n, P1, lambda L: half(L, "h_norm")), v(n, P2, lambda L: half(L, "h_norm"))
+        print(f"    {n:<26} phase 1 {np.round(h1,3).tolist()} -> phase 2 {np.round(h2,3).tolist()}")
+    print("  the gradual candidates, second half of each phase:")
+    for lab, f in [("nut_share", lambda L: half(L, "nut_share")),
+                   ("crop_safe", lambda L: half(L, "crop_safe"))]:
+        vals = "  ".join(f"{nn}: {np.nanmean(v(nn, P2, f)):.2f}" for nn in names)
+        print(f"    {lab:<14} {vals}")
 
     print("\nrow 3  does approach behaviour for the chain evolve UNWIRED?")
     for n in (PL, S, F, SC):
@@ -332,6 +415,38 @@ def _decision_numbers(results):
         print(f"  {lab:<18} staged {np.round(a,3).tolist()}   scratch {np.round(b_,3).tolist()}")
     print("  Matching on population and attempts => staging is not needed.  Scratch collapsing")
     print("  (pop < 80 or injections > 0) while staged survives => staging is the method.")
+
+    print("\n" + "=" * 78)
+    print("row 7  ORACLE ARM -- is a null on row 4 the rule, or the world?")
+    print("  `plastic (W2) + fail cost` makes a wrong attempt cost energy, so m = -1 arrives AT the")
+    print("  station: the recipe signal is immediate, and the network still has to find the chain")
+    print("  itself.  If this arm learns the recipe and row 4 does not, the rule is fine and the")
+    print("  delayed credit is the obstacle.  If this arm is null too, the obstacle is upstream.")
+    print("=" * 78)
+    OR = "plastic (W2) + fail cost"
+    ho = v(OR, P2, hit)
+    print(f"  the result line:")
+    print(f"    {OR} - fixed:   {np.round(ho - hf, 3).tolist()}   >= +{MARGIN} in {n_ok(ho, hf)}/{nseed}")
+    print(f"    {OR} - scrambled: {np.round(ho - hs, 3).tolist()}   >= +{MARGIN} in {n_ok(ho, hs)}/{nseed}")
+    print(f"    {OR} - plastic:  {np.round(ho - hp, 3).tolist()}   >= +{MARGIN} in {n_ok(ho, hp)}/{nseed}")
+    print(f"    recipe_hit {np.round(ho,3).tolist()}   (chance {CHANCE:.3f})")
+    pro = v(OR, P2, lambda L: half(L, "probe_adv"))
+    ao2, ay2 = v(OR, P2, lambda L: half(L, "hit_old")), v(OR, P2, lambda L: half(L, "hit_young"))
+    ag2 = v(OR, P2, lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0]))
+    print(f"    probe_adv (recipe) {np.round(pro,3).tolist()}   hit_old - hit_young {np.round(ao2 - ay2,3).tolist()}"
+          f"   attempt-curve gain {np.round(ag2,3).tolist()}")
+    print("  the control on the energy change -- read this FIRST:")
+    ef = v(OR, P2, lambda L: half(L, "e_fail_per_1k"))
+    fd = v(F, P2, lambda L: per_1k(L, "n_attempts_raw"))
+    print(f"    energy paid for wrong attempts, per 1k agent-steps: {np.round(ef,3).tolist()}")
+    print(f"    against food income of ~0.7 per meal; `fixed (staged)` is the arm with no fail cost")
+    print(f"    and its attempts/1k is {np.round(fd,2).tolist()}, so the same attempts would have cost it")
+    print(f"    ~{np.round(fd * 5.0 / 6.0 * FAIL_COST, 3).tolist()} per 1k had it been charged.")
+    print("  LIMITATION, stated rather than assumed away: with `fixed (staged)` as the control there")
+    print("  is no `fixed + fail cost` arm, so this row cannot fully separate the -1 SIGNAL from the")
+    print("  0.05 ENERGY CHANGE the way v3.6's row 13 could.  The energy figure above bounds it: if")
+    print("  it is small against food income, the signal is the plausible cause; if the arm moves by")
+    print("  a lot and the energy is not small, add `fixed + fail cost` (one line) before claiming it.")
 
     print("\nrow 6  the scaffold genes, unwired -- do they drift, having nothing to reach?")
     for g in ("nav_dir", "nav_here"):

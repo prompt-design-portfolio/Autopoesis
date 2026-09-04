@@ -28,6 +28,12 @@ print("observation size:", sim.N_IN, " hidden:", A.WORLD["hidden"],
 print("\\nworld (v3.1 metabolism throughout; the chain from v3.6):")
 for k, v in A.WORLD.items():
     print(f"  {k:<20} {v}")
+print("\\n--- learning-rule self-test ---")
+print("one agent, one fixed observation, one chosen action; action_noise = 0 so act() is")
+print("deterministic and the logit checked belongs to the action that laid the trace.")
+if not sim.learning_rule_selftest():
+    raise SystemExit("the learning rule is not behaving; nothing below is meaningful")
+
 print("\\nconditions:")
 for name, spec in A.VARIANTS.items():
     ph = " -> ".join(f"{p['n_steps']} steps chain={p['chain']}" for p in spec["phases"])
@@ -39,7 +45,7 @@ CODE_RUN = '''# QUICK = True   exercises every cell below: 1 seed, 1500-step pha
 #                recipe_every dropped to 500 so recipe changes actually occur in phase 2.
 #                A smoke test, NOT a result -- 1500 steps is only a handful of generations,
 #                so row 0 will flag conditions as uninterpretable and row 1 will not reproduce.
-# QUICK = False  the real experiment: 4 conditions x 3 seeds, 8000-step phases (16000 total).
+# QUICK = False  the real experiment: 5 conditions x 3 seeds, 8000-step phases (16000 total).
 QUICK = True
 
 if QUICK:
@@ -77,7 +83,7 @@ nb = {
         code(CODE_SETUP),
         md("## 2. Run\n\n**Runtime.** A staged run is 16000 steps — twice a v3.6 run — but populations "
            "here are 170–260 rather than 300–450. Measured on a 4-core box: **3–6 min per run**, "
-           "so the grid of 4 × 3 = **12 runs is ~45–70 min**. Colab CPU may be slower.\n\nThe cell checkpoints to `results_v3_8.pkl` after every run, so a dropped "
+           "so the grid of 5 × 3 = **15 runs is ~60–90 min**. Colab CPU may be slower.\n\nThe cell checkpoints to `results_v3_8.pkl` after every run, so a dropped "
            "session costs one run. To resume, reload the pickle and re-run only the missing "
            "seeds, then merge.\n\n**Seeds 3–4 are held in reserve.** A positive on any row gets "
            "them before it is called. To append them later, with the same three files present:"

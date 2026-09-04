@@ -37,16 +37,18 @@ the cost of living changing. The transition is the thing being measured. What is
 
 ---
 
-## Conditions (4 × 3 seeds)
+## Conditions (5 × 3 seeds)
 
 | condition | phases | what it is for |
 |---|---|---|
 | `fixed (staged)` | 8000 off, 8000 on | baseline and gate. Also the drift reference for `eta1`/`eta2`/`lam2` and the scaffold genes. |
 | `scrambled (staged)` | 8000 off, 8000 on | **the control that carries the claim.** Same plasticity, same H magnitudes, random-sign modulator, no information. |
 | `plastic (W2) staged` | 8000 off, 8000 on | the result condition. |
+| `plastic (W2) + fail cost` | 8000 off, 8000 on | **the oracle arm.** `fail_cost = 0.05`, no scaffold, same phases: a wrong attempt costs energy, so `m = −1` arrives **at the station** while the network still has to find the chain itself. If row 4 is null, this says whether the failure is the rule or the world. |
 | `plastic (W2) scratch` | 16000 on | the control for whether staging is needed at all: same learner, same total steps, full world from step 0. |
 
-`fail_cost = 0` — pure delayed credit. Elimination is a later condition if this works.
+`fail_cost = 0` everywhere except the oracle arm — pure delayed credit is still the question row 4
+asks.
 
 **Runtime.** 16000 steps per run, measured at **3–6 min** (populations here are 170–260, smaller
 than v3.6's 300–450). The grid of 12 runs is **~45–70 min**.
@@ -84,10 +86,19 @@ is the first evidence for row 3.
 **One result that was not asked for, and that bears on v3.6.** Safe rate in `plastic (W2) staged`
 goes **0.627 in phase 1 → 0.500 in phase 2**, with *no scaffold anywhere in this notebook*. The
 v3.6 reading attributed the flat positive control to the food scaffold. That attribution is at best
-incomplete: **the chain switching on collapses food discrimination on its own.** Candidates, all
-distinguishable in the grid — nuts supplying a frequent sign-positive modulator that swamps the
-food signal (`nut_share` is printed), agents spending their time on the chain instead of eating,
-and depletion (`crop_safe`). This is n=2 from an acceptance check, not a result.
+incomplete: **the chain switching on collapses food discrimination on its own.**
+
+Four candidates, and **the timing separates them** — the transition table prints the first-bin drop
+per seed:
+
+| candidate | mechanism | signature |
+|---|---|---|
+| **(a) basis shift** | **39 of the 60 inputs go from zero to live in one step** (measured, not estimated: 16 live in phase 1, 55 in phase 2; the 5 dead in both are the `food_any` channel). `H2`'s learned readout suddenly sits on a hidden basis that has moved all at once — v3.5's non-stationary-input mechanism, at scale. | **immediate**: the drop is in the *first* 500-step bin, and `h_norm` is unchanged — `H` is intact, what it is read off has moved |
+| (b) modulator swamping | nuts supply a frequent sign-positive `m` | gradual, `nut_share` rises with it |
+| (c) time budget | agents spend steps on the chain rather than eating | gradual, meals/1k falls |
+| (d) depletion | `crop_safe` falls as in v3.2's learner worlds | gradual |
+
+This is n=2 from an acceptance check, not a result.
 
 Two other n=2 observations, recorded so they are not discovered later: `lam2` **lengthens** across
 the transition in both seeds (0.584→0.784, 0.682→0.720), the opposite of v3.6's shortening; and
@@ -106,12 +117,22 @@ called.** Rows are checked in order; each names the condition that attributes it
 | # | outcome | reading | what attributes it |
 |---|---|---|---|
 | **0** | any condition, **in either phase**, with pop < 80 or injections > 0 | uninterpretable in that phase; name it and exclude it there | pop and injections per phase, per seed |
-| **1** | **phase-1 gate.** safe rate `plastic` − `fixed` ≥ 0.03 in 3/3, `probe_adv` (food) ≥ 1.0, `eta2` above `fixed`'s | v3.1 is reproduced at 60 inputs and 24 hidden; everything below is readable. **If it fails, that is a finding about observation size — stop, and decide together.** Nothing in phase 2 can be read without it. | `fixed (staged)` phase 1; v3.1's own numbers (safe +0.08, `probe_adv` 1.4–2.7) |
-| **2** | **transition.** `plastic` phase-2 pop ≥ 80, no injections; and `eta2`/`lam2` stay above `fixed`'s | the grown population survives the chain and keeps its plasticity. If instead `eta2` is selected off and `lam2` short as in v3.6, **the chain does that, not the scaffold** — which is a different and more general finding than v3.6's. | `fixed (staged)` phase 2 for the drift reference; the phase-1 → phase-2 change within `plastic` |
+| **1** | **phase-1 gate.** safe rate `plastic` − `fixed` ≥ 0.03 in 3/3, `probe_adv` (food) ≥ 1.0, `eta2` above `fixed`'s | v3.1 is reproduced at 60 inputs and 24 hidden; everything below is readable. **If it fails, that is a finding about observation size — stop, and decide together.** Nothing in phase 2 can be read without it. **Row-0 fallback:** `fixed`'s phase-1 population hit 51 with injections in one acceptance seed, and row 0 would exclude it — but it is the gate's baseline. Where `fixed` phase 1 is excluded in a seed, that seed's gate reads `plastic`'s safe rate against **v3.1's published fixed range 0.51–0.56** (the conservative end, 0.56), and the summary prints which seeds used the fallback and which used the measured baseline. | `fixed (staged)` phase 1, or v3.1's published range where it is excluded; `probe_adv` 1.4–2.7 |
+| **2** | **transition.** `plastic` phase-2 pop ≥ 80, no injections; `eta2`/`lam2` stay above `fixed`'s; **and the safe-rate drop across the switch is attributed** (see below) | the grown population survives the chain and keeps its plasticity. If instead `eta2` is selected off and `lam2` short as in v3.6, **the chain does that, not the scaffold** — a more general finding than v3.6's. | `fixed (staged)` phase 2 for the drift reference; the phase-1 → phase-2 change within `plastic`; the transition table's first bin |
+| **7** | **oracle arm.** `plastic (W2) + fail cost` − `fixed` ≥ 0.03 in 3/3, with the energy it paid for wrong attempts small against food income | the recipe signal is immediate here, so if this arm learns and row 4 does not, **the rule is fine and delayed credit is the obstacle**. If this arm is null too, the obstacle is upstream of the credit structure — the world, or approach, or the basis. | `fixed (staged)` as the control on the energy change, with `e_fail_per_1k` measuring it. **Limitation, stated not assumed away:** without a `fixed + fail cost` arm this cannot separate the −1 *signal* from the 0.05 *energy change* as cleanly as v3.6's row 13 did; the measured energy bounds it, and the sixth arm is one line if the row fires. |
 | **3** | **approach evolves unwired.** attempts/1k above zero **and** rising from the first quarter of phase 2 to its second half, `has_tool` > 0 | the chain can be found without an instinct. **Flat at zero means row 4 cannot be read at all** — there are no attempts to compute a hit rate over, and a "null" on the recipe would be a null about navigation. | attempts/1k early vs late within phase 2; `has_tool`; `fixed` and `scrambled` as the unlearned comparison |
 | **4** | **the recipe** — v3.6's rows 3/6/8/10b applied to phase 2: `plastic` − `fixed` ≥ 0.03 **and** `plastic` − `scrambled` ≥ 0.03 in 3/3, `probe_adv` (recipe) > 0, **and — required — a within-life signature** (`hit_old` > `hit_young`, or the attempt-in-life curve rising) | the learner acquires the conjunction within life, in a world it grew into | `scrambled` carries the claim, not `fixed`; `probe_adv` is within-agent so it is not selection or composition; `bridge_first` and λ2^gap say whether a null is about trace length instead |
 | **5** | **staged vs from-scratch**, on the matched last quarter of the run | matching on population and attempts → **staging is not needed**, and the v3.6 failure was the scaffold alone. From-scratch collapsing (pop < 80 or injections > 0) while staged survives → **staging is the method**, and that is the transferable result. | `plastic (W2) scratch` against `plastic (W2) staged`, same absolute window |
 | **6** | `nav_dir`, `nav_here` per seed and per phase | nothing is wired to them here, so they are **dead genes** and this is the drift scale for a heritable scalar over a run (σ 0.2 × √generations ≈ 1.0). Any row-2 or row-4 claim that leans on a gene moving must clear this. | the genes' own spread across conditions, which have no reason to differ |
+
+**Two instruments added on review.** A **learning-rule self-test** runs in the setup cell and halts
+the notebook if it fails: one agent, one fixed observation, one chosen action, `action_noise = 0` so
+`act()` is deterministic — `m = +1` must raise that action's logit and `m = −1` lower it. It drives
+the real `act()` and `learn()`, not a re-implementation. And **`trace_recency`** logs, at each
+phase-1 meal, the share of the eligibility trace's L1 mass *not* attributable to steps older than
+five: `1 − ‖λ2⁵·e2(t−5)‖₁ / ‖e2(t)‖₁`. A trace dominated by the last few steps cannot carry credit
+back to a station attempt, and this measures that in phase 1, before the chain is there to confound
+it. Phase 1 only — the ring is cleared at the boundary.
 
 **Not claimed either way by this run:** anything about culture, records or symbols; elimination
 (`fail_cost` > 0) — that is a later condition, only if row 4 is positive; and any comparison of

@@ -156,6 +156,13 @@ class Config:
     pref_gain: float = 3.0
     veto_p: float = 0.8
     # logging
+    trace_recency: bool = True     # log, at each phase-1 meal, the share of the eligibility trace's
+                                   # L1 mass NOT attributable to steps older than `recency_k`:
+                                   #     1 - ||lam2^k * e2(t-k)||_1 / ||e2(t)||_1
+                                   # A trace dominated by the last few steps cannot carry credit back
+                                   # to a station attempt; this measures that directly, in phase 1,
+                                   # before the chain is there to confound it.
+    recency_k: int = 5
     n_attempts: int = 10           # attempt-number curves run 1..n_attempts
     n_meals: int = 10
     log_every: int = 50
@@ -289,7 +296,7 @@ class Agent:
                  "integrity", "repair", "nav_dir", "nav_here", "energy", "y", "x", "item", "tool", "B",
                  "lineage", "gen", "born", "injected",
                  "attempts", "successes", "eats", "safe_eats", "cracks",
-                 "since_recipe", "tool_made_t", "used_tool", "age_bins")
+                 "since_recipe", "tool_made_t", "used_tool", "age_bins", "e2_hist")
 
     def __init__(self, cfg, rng, lineage, y, x, injected=False):
         h = cfg.hidden
@@ -320,6 +327,7 @@ class Agent:
         self.since_recipe = 0
         self.tool_made_t = -1
         self.used_tool = False
+        self.e2_hist = []
         self.age_bins = np.zeros((2, 2))     # [young/old, attempts/correct]
 
     def child(self, cfg, rng, t):
@@ -351,6 +359,7 @@ class Agent:
         c.since_recipe = 0
         c.tool_made_t = -1
         c.used_tool = False
+        c.e2_hist = []
         c.age_bins = np.zeros((2, 2))
         return c
 
@@ -562,13 +571,15 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
 
     log = []
     W = dict(eats=0, safe=0, deaths=0, births=0, steps=0, inject=0, attempts=0, correct=0,
-             nuts=0, pickups=0, e_food=0.0, e_nut=0.0, bridge_sum=0.0, bridge_n=0, trace_w=0.0,
-             bridge1_sum=0.0, bridge1_n=0)
+             nuts=0, pickups=0, e_food=0.0, e_nut=0.0, e_fail=0.0, bridge_sum=0.0, bridge_n=0,
+             trace_w=0.0, bridge1_sum=0.0, bridge1_n=0, rec_sum=0.0, rec_n=0)
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
     ATT_R = np.zeros((cfg.n_attempts + 1, 2))   # attempts since the last recipe change
     MEALS = np.zeros((cfg.n_meals + 1, 2))      # meal number in an agent's life (the v3 curve)
     t0 = time.time()
 
+    track_recency = (cfg.trace_recency and cfg.mode == "plastic"
+                     and cfg.plastic_layers in ("both", "W2"))
     phase_i = 0
     for t in range(total_steps):
         while t >= schedule[phase_i][0]:                 # phase boundary: nothing is rebuilt or reset
@@ -578,6 +589,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 world.chain_start = t                    # recipe eras start when the chain does
                 world.recipe_changes.append(-t)          # negative marks 'chain on', not a change
             world.chain_on = on
+            for a in agents:
+                a.e2_hist = []        # the ring is phase-1 only; stale entries would be nonsense
         if world.step(t):
             for a in agents:
                 a.since_recipe = 0
@@ -636,6 +649,10 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                                  + [[c[v, v] for c in chans], [a.energy / cfg.max_energy], inv,
                                     [1.0 if a.tool else 0.0]])
             action = a.act(obs, cfg, rng)
+            if track_recency and not world.chain_on:
+                a.e2_hist.append(a.e2.copy())          # phase 1 only: the chain would confound it
+                if len(a.e2_hist) > cfg.recency_k + 1:
+                    a.e2_hist.pop(0)
 
             a.integrity = np.minimum(1.0, a.integrity - cfg.decay + a.repair * cfg.repair_gain)
             a.energy -= cfg.base_cost + a.repair * cfg.repair_cost * cfg.hidden
@@ -660,6 +677,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                         a.successes += 1; W["correct"] += 1
                     else:
                         a.energy -= cfg.fail_cost
+                        W["e_fail"] += cfg.fail_cost
                         if cfg.fail_cost > 0:
                             m = -1.0      # the modulator is the sign of the agent's own energy change,
                                           # so a fail_cost is exactly what signals a wrong attempt AT the
@@ -712,6 +730,11 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                     k = a.eats
                     if k <= cfg.n_meals:
                         MEALS[k, 0] += 1; MEALS[k, 1] += (m > 0)
+                    if track_recency and not world.chain_on and len(a.e2_hist) == cfg.recency_k + 1:
+                        tot = float(np.abs(a.e2).sum())
+                        if tot > 0:
+                            old = float(np.abs((a.lam2 ** cfg.recency_k) * a.e2_hist[0]).sum())
+                            W["rec_sum"] += 1.0 - old / tot; W["rec_n"] += 1
 
             if cfg.scramble and m != 0.0:
                 m = 1.0 if rng.random() < 0.5 else -1.0      # same magnitude, no information
@@ -769,7 +792,12 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 probe_adv_food=probe_advantage_food(agents, cfg, world.safe),
                 food_gain_innate=food_gain(agents, cfg, world.safe, False),
                 crop_safe=float(world.food[world.safe].sum() / max(1, world.food.sum())),
-                nut_share=(W["e_nut"] / income) if income > 0 else np.nan,     # share of energy income from nuts
+                nut_share=(W["e_nut"] / income) if income > 0 else np.nan,
+                e_fail_per_1k=1000.0 * W["e_fail"] / max(W["steps"], 1),   # energy paid for wrong
+                                                                          # attempts, so the
+                                                                          # fail-cost arm's world
+                                                                          # change is measured
+                trace_recency=(W["rec_sum"] / W["rec_n"]) if W["rec_n"] else np.nan,     # share of energy income from nuts
                 bridge_steps=(W["bridge_sum"] / W["bridge_n"]) if W["bridge_n"] else np.nan,
                 bridge_first=(W["bridge1_sum"] / W["bridge1_n"]) if W["bridge1_n"] else np.nan,
                 trace_weight=(W["trace_w"] / W["bridge_n"]) if W["bridge_n"] else np.nan,
@@ -790,3 +818,34 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 recipe_changes=[c for c in world.recipe_changes if c >= 0],
                 chain_start=world.chain_start, phase_bounds=bounds, n_steps=total_steps,
                 cfg=asdict(cfg), final=snapshot(agents))
+
+
+def learning_rule_selftest(seed=0, verbose=True):
+    """One agent, one fixed observation, one chosen action.  m = +1 must RAISE that action's
+    logit and m = -1 must LOWER it.  This drives the real act() and learn() rather than a
+    re-implementation of the rule: action_noise is set to 0 so act() is deterministic, so the
+    action whose logit is checked is the action the agent actually took and laid a trace on."""
+    cfg = Config(mode="plastic", plastic_layers="W2", action_noise=0.0,
+                 scaffold_food=False, scaffold_chain=False, trace_recency=False)
+    obs = np.zeros(N_IN)
+    obs[HERE + 0] = 1.0          # food type A underfoot
+    obs[ENERGY] = 0.5
+    out = []
+    for m in (1.0, -1.0):
+        rng = np.random.default_rng(seed)
+        a = Agent(cfg, rng, 0, 0, 0)
+        a.eta2 = 0.2
+        before = _forward(a, cfg, obs, learned=True)
+        action = a.act(obs, cfg, rng)          # deterministic; lays the eligibility trace
+        a.learn(m, cfg)
+        after = _forward(a, cfg, obs, learned=True)
+        delta = float(after[action] - before[action])
+        ok = (delta > 0) if m > 0 else (delta < 0)
+        out.append(ok)
+        if verbose:
+            print(f"  m = {m:+.0f}: chosen action {action}, its logit moved {delta:+.4f}  "
+                  f"{'OK' if ok else 'FAIL'}")
+    passed = all(out)
+    if verbose:
+        print(f"  learning rule self-test: {'PASS' if passed else 'FAIL'}")
+    return passed
