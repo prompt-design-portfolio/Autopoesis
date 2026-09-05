@@ -30,7 +30,7 @@ WORLD = dict(
     # phase 1 is v3.1, unchanged
     flip_every=300, eta_init=0.2, hidden=24,
     spawn_per_patch=3.0, food_value=0.7, poison_value=0.5,
-    repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=400, init_pop=300,
+    repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=800, init_pop=300,
     # phase 2 adds three preparations.  Nothing else changes -- no new inputs, no items,
     # stations or nuts.  The fact to be learned sits on EVERY meal.
     prep_value=1.5, prep_fail=0.5, prep_every=2000,
@@ -72,7 +72,6 @@ TYPE_BLIND = 0.5          # "always prep_k" for a k that is useful in this era: 
                           # chance only by tracking the era, not by holding one preparation.
 FULL = 1.0                # the conjunction: the right preparation for each type
 
-CHANCE = 1.0 / 6.0
 MARGIN = 0.03
 SEED_RULE = 4          # min(SEED_RULE, n_seeds): a 3-seed pass reads as 3/3
 
@@ -173,7 +172,7 @@ def smooth(y, k=5):
 def transition_table(results, bin_size=500, span=2000):
     """Population, safe rate, eta2, lam2, h_norm and attempts/1k in `bin_size` bins across the
     `span` steps either side of the chain switching on.  A from-scratch run has no switch."""
-    print(f"\nTRANSITION -- {bin_size}-step bins, {span} steps either side of the chain switching on")
+    print(f"\nTRANSITION -- {bin_size}-step bins, {span} steps either side of the preparations going live")
     for name, res in results.items():
         sw = res[0].get("chain_start", 0)
         if not sw:
@@ -242,6 +241,52 @@ def prep_hit(L):
     return k / n if n else np.nan
 
 
+def surv_curve(L):
+    """Hit on preparations 1-5 vs 6-10, over agents that REACHED 10 preparations.  Every agent
+    counted contributes both halves of its own curve, so a rise cannot be survivorship: it is the
+    same individuals, later in their own lives.  (`probe_adv` is computed over the LIVING and so
+    is itself partly survivorship-selected; this line is not.)"""
+    n = float(np.sum([r["n_surv"] for r in L]))
+    if not n:
+        return np.nan, np.nan, np.nan, 0
+    e = float(np.sum([r["n_surv_early"] for r in L])) / (5 * n)
+    l = float(np.sum([r["n_surv_late"] for r in L])) / (5 * n)
+    return e, l, l - e, int(n)
+
+
+def first_prep_hit(L):
+    """Hit on an agent's FIRST preparation: it has learned nothing, so this reads the innate
+    policy the population currently carries."""
+    return rate(L, "n_first_ok", "n_first")
+
+
+def shift_timing(run_, bin_size=250, span=2000):
+    """When the eat -> prep shift happens, in `bin_size` bins after the switch."""
+    sw = run_.get("chain_start", 0)
+    out = []
+    for lo in range(sw, sw + span, bin_size):
+        w = window(run_, lo, lo + bin_size)
+        if w:
+            out.append((lo - sw, round(float(half(w, "prep_share")), 3)))
+    return out
+
+
+def knockout(results, name, steps=3000, seed_offset=1000):
+    """Replay late genomes with eta_scale = 0 in a fresh world: same brains, no learning.  If the
+    standing advantage lives in H, it falls to the type-blind floor."""
+    from sim import Config, run as _run
+    out = []
+    for i, r in enumerate(results[name]):
+        cfg = dict(r["cfg"]); cfg.pop("seed", None); cfg.pop("n_steps", None)
+        cfg["eta_scale"] = 0.0
+        rr = _run(Config(seed=seed_offset + i, **cfg), verbose=False,
+                  init_genomes=r["final"], phases=[dict(n_steps=steps, chain=True)])
+        L = rr["log"][len(rr["log"]) // 2:]
+        out.append((prep_hit(L), rate(L, "n_ok0", "n_prep0"), rate(L, "n_ok1", "n_prep1"),
+                    half(L, "pop")))
+    return out
+
+
 def first_era(run_, era=2000):
     """The FIRST mapping era of phase 2 -- steps 0..era after the switch.  Rig check 2(a) is read
     here and only here: once the mapping is known, preparation pays 1.5 on ANY food, the
@@ -261,15 +306,16 @@ def summary(results):
     w = 24
     nseed = len(results[names[0]])
     print("=" * (20 + w * len(names)))
-    print(f"v3.9 -- the rig fixed (audit A, B, D, F).  {nseed} seeds.  Chance recipe hit "
-          f"{CHANCE:.3f}, chance safe rate 0.500, random-policy action share 1/6 = {1/6:.3f}")
+    print(f"v3.10 -- the preparation world.  {nseed} seeds.  Prep hit: chance {CHANCE:.3f}, "
+          f"type-blind {TYPE_BLIND:.2f}, full {FULL:.2f}.  Chance safe rate 0.500.  Random-policy "
+          f"action share 1/5 in phase 1, 1/8 in phase 2.")
     print("=" * (20 + w * len(names)))
 
     for label, sel in [("PHASE 1 (food only) -- second half", lambda r: phase_half(r, 0)),
                        ("PHASE 2 (chain on) -- second half", lambda r: phase_half(r, 1))]:
         print(f"\n### {label}")
         if label.startswith("PHASE 1"):
-            print("    food only: no items, stations or nuts, so `interact` is a permanent no-op.")
+            print("    food only: the three preparations are masked, so phase 1 is v3.1's five actions.")
         print(f"{'metric':<20}" + "".join(f"{n:>{w}}" for n in names))
         for lab, f in ROWS:
             print(f"{lab:<20}" + "".join(f"{np.nanmean(ps(results, n, sel, f)):>{w}.3f}" for n in names))
@@ -353,22 +399,25 @@ def _decision_numbers(results):
     print(f"  prep_gain innate (fixed) {np.round(v(F,P2,lambda L: half(L,'prep_gain_innate')),3).tolist()}")
 
     print("\nrow 2  RIG CHECKS -- nothing below is read until these are clean.")
-    print("  (a) food learning survives the switch, read in the FIRST MAPPING ERA ONLY (steps")
-    print("      0-2000 after it), when nobody knows the mapping and `eat` is still the right")
-    print("      action.  After that a good learner abandons raw eating and probe_adv (food)")
-    print("      decays for a GOOD reason, not a broken transition.")
-    for n in (PL, S, F):
-        pe = v(n, first_era, lambda L: half(L, "probe_adv_food"))
-        se = v(n, first_era, safe)
-        mark = ("   PASS" if np.all(pe >= 1.0) else "   FAIL") if n == PL else ""
-        print(f"    {n:<22} probe_adv (food) {np.round(pe,3).tolist()}  safe {np.round(se,3).tolist()}{mark}")
-    print("      diagnostic -- PREP SHARE OF MEALS BY ERA (a learner with the mapping shifts from")
-    print("      `eat` to `prep`; the shift is itself an efficiency signature):")
+    print("  (a) food learning survives the switch.  READ ON SAFE RATE in the first mapping era")
+    print("      (plastic - fixed >= 0.03); the corrected probe in the first 500 steps is")
+    print("      CORROBORATING.  The v3.1 probe form was contaminated here -- it subtracts the best")
+    print("      OTHER action, and with three preparations live that term moves with food type.")
+    sfe, sffe = v(PL, first_era, safe), v(F, first_era, safe)
+    print(f"    safe (first era)  plastic {np.round(sfe,3).tolist()}  fixed {np.round(sffe,3).tolist()}"
+          f"   diff {np.round(sfe - sffe,3).tolist()}   >= +{MARGIN} in {n_ok(sfe, sffe)}/{nseed}"
+          f"   {'PASS' if n_ok(sfe, sffe) >= rule else 'FAIL'}")
+    first500 = lambda r: window(r, r.get("chain_start", 0), r.get("chain_start", 0) + 500)
+    for n in (PL, S):
+        print(f"    corroborating: {n:<14} probe_adv (food), first 500 steps "
+              f"{np.round(v(n, first500, lambda L: half(L,'probe_adv_food')),3).tolist()}"
+              f"   first era {np.round(v(n, first_era, lambda L: half(L,'probe_adv_food')),3).tolist()}")
+    print("      EAT -> PREP SHIFT TIMING (prep share in 250-step bins after the switch):")
     for n in names:
-        shares = []
-        for r in results[n]:
-            shares.append([round(float(half(w, "prep_share")), 3) for w in era_windows(r)])
-        print(f"    {n:<22} {shares[0]}" + (f"  (seed 0 of {len(shares)})" if len(shares) > 1 else ""))
+        print(f"    {n:<22} {shift_timing(results[n][0])}")
+    print("      PREP SHARE BY ERA:")
+    for n in names:
+        print(f"    {n:<22} {[round(float(half(w,'prep_share')),3) for w in era_windows(results[n][0])]}")
     print("  (b) the opportunity exists:  prepared meals per life >= 3 in `fixed`")
     plf = v(F, P2, lambda L: half(L, "prep_per_life"))
     print(f"    fixed prep/life {np.round(plf,2).tolist()}   {'PASS' if np.all(plf >= 3.0) else 'FAIL'}")
@@ -401,12 +450,46 @@ def _decision_numbers(results):
     ao, ay = v(PL, P2, lambda L: half(L, "hit_old")), v(PL, P2, lambda L: half(L, "hit_young"))
     ag = v(PL, P2, lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0]))
     print(f"  probe_adv (prep) {np.round(pr,3).tolist()}   (> 0 in {int(np.sum(pr > 0))}/{nseed})")
+    print("    NOTE: probe_adv is computed over the LIVING, so it is itself partly")
+    print("    survivorship-selected.  The survivor curve below is not.")
     print(f"  within-life signature -- at least one, in {rule}/{nseed}:")
     print(f"    hit-in-life curve gain {np.round(ag,3).tolist()}   (> 0 in {int(np.sum(ag > 0))}/{nseed})")
     print(f"    hit_old - hit_young    {np.round(ao - ay,3).tolist()}   (> 0 in {int(np.sum(ao > ay))}/{nseed})")
+
+    print("\n  SURVIVORSHIP DIAGNOSTICS -- REQUIRED.  `plastic - scrambled` on hit rate is a")
+    print("  SURVIVORSHIP-CONTAMINATED contrast (agents whose random H happens to help live")
+    print("  longer, enriching the standing population without anything being learned).  It stays")
+    print("  required, but the ATTRIBUTION is carried by the within-agent lines below.")
+    print("  (i) SURVIVOR CURVE -- preps 1-5 vs 6-10, over agents that REACHED 10 preparations.")
+    print("      Every agent counted contributes both halves of its own curve, so a rise is the")
+    print("      same individuals later in their own lives, not a different sample.")
+    print("      REQUIRED: rising in plastic, flat in scrambled.")
+    print(f"    {'arm':<22}{'preps 1-5':>11}{'preps 6-10':>12}{'rise':>9}{'n agents':>10}")
+    for n in names:
+        rows = [surv_curve(P2(r)) for r in results[n]]
+        e = np.nanmean([x[0] for x in rows]); l = np.nanmean([x[1] for x in rows])
+        d = np.array([x[2] for x in rows], dtype=float); nn = int(np.sum([x[3] for x in rows]))
+        print(f"    {n:<22}{e:>11.3f}{l:>12.3f}{np.nanmean(d):>9.3f}{nn:>10d}   per seed {np.round(d,3).tolist()}")
+    print("  (ii) FIRST-PREPARATION HIT -- the agent has learned nothing, so this reads the innate")
+    print("       policy the population carries (and shows the type-blind floor directly).")
+    for n in names:
+        print(f"    {n:<22} {np.round(v(n, P2, first_prep_hit),3).tolist()}")
     if CEIL in results:
         hc = v(CEIL, P2, prep_hit)
         print(f"  ceiling {np.round(hc,3).tolist()}   (reference: hand-wired exact credit, forced argmax)")
+
+    print("\nrow 3b  KNOCKOUT -- late genomes replayed with eta_scale = 0 in a fresh world.")
+    print("        Same brains, no learning.  If the standing advantage lives in H, BOTH plastic")
+    print("        and scrambled fall to the type-blind floor; what separates them is then the")
+    print("        survivor curve, which is learning, not luck.")
+    print(f"    {'arm':<22}{'prep hit':>10}{'hit|A':>9}{'hit|B':>9}{'pop':>8}")
+    for n in (PL, S):
+        try:
+            for i, (h, a_, b_, p) in enumerate(knockout(results, n)):
+                print(f"    {n + ' seed ' + str(i):<22}{h:>10.3f}{a_:>9.3f}{b_:>9.3f}{p:>8.0f}")
+        except Exception as exc:
+            print(f"    {n:<22} knockout failed: {type(exc).__name__}: {exc}")
+    print(f"    reference levels: chance {CHANCE:.3f}, type-blind {TYPE_BLIND:.2f}")
 
     print("\nrow 4  GENE ROWS (corroborating only)")
     for g in ("eta2", "lam2", "eta1"):

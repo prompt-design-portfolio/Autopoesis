@@ -135,7 +135,7 @@ class Config:
     nav_here_init: tuple = (2.0, 6.0)   # founders' interact gene ~ U(...)
     nav_sigma: float = 0.2              # per-generation mutation, ~2% of nav_max, as eta's 0.01 is of 0.5
     nav_max: float = 12.0
-    scaffold_chain: bool = True    # whether the instinct approaches items/stations/nuts and interacts
+    scaffold_chain: bool = False   # RETIRED in v3.10 and forced False; see wire_nav.  Was: whether the instinct approaches items/stations/nuts and interacts
                                    # with them.  v3.8 sets this False: the chain has to be found
                                    # unwired, so nav_dir/nav_here stay in the genome but reach nothing.
     goal_channel: bool = False     # retired with the chain; channel 10 is dead.  Kept:  # keep the stage-machine 'goal' OBSERVATION (points at items when
@@ -343,7 +343,7 @@ class Agent:
                  "integrity", "repair", "nav_dir", "nav_here", "energy", "y", "x", "item", "tool", "B",
                  "lineage", "gen", "born", "injected",
                  "attempts", "successes", "eats", "safe_eats", "cracks",
-                 "since_recipe", "tool_made_t", "used_tool", "age_bins", "e2_hist")
+                 "since_recipe", "tool_made_t", "used_tool", "age_bins", "e2_hist", "prep_hist")
 
     def __init__(self, cfg, rng, lineage, y, x, injected=False):
         h = cfg.hidden
@@ -375,6 +375,7 @@ class Agent:
         self.tool_made_t = -1
         self.used_tool = False
         self.e2_hist = []
+        self.prep_hist = []                  # outcomes of this agent's first n_attempts preparations
         self.age_bins = np.zeros((2, 2))     # [young/old, attempts/correct]
 
     def child(self, cfg, rng, t):
@@ -407,6 +408,7 @@ class Agent:
         c.tool_made_t = -1
         c.used_tool = False
         c.e2_hist = []
+        c.prep_hist = []
         c.age_bins = np.zeros((2, 2))
         return c
 
@@ -481,11 +483,10 @@ def wire_nav(W1, W2, nav_dir, nav_here, scaffold_food=True, scaffold_chain=True)
     inputs are normalised by v*(2v+1) = 10, so nav_dir buys ~10x less activation than nav_here
     at the same value; the two are separate genes for that reason."""
     if scaffold_chain:
-        for d in range(4):
-            W1[GOAL_CH * 4 + d, 4 + d] = nav_dir
-            W2[4 + d, d] = nav_here
-        W1[HERE + GOAL_CH, 9] = nav_here
-        W2[9, INTERACT] = nav_here
+        raise ValueError("scaffold_chain is retired in v3.10: there is no chain to scaffold. "
+                         "It used to wire W2[9, INTERACT], and with INTERACT = None that "
+                         "assigned the WHOLE of row 9 -- a silent landmine behind a default-True "
+                         "flag.  Failing loudly instead.")
     if scaffold_food:
         for d in range(4):
             W1[APPETITE_CH * 4 + d, d] = nav_dir
@@ -689,7 +690,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              trace_w=0.0, bridge1_sum=0.0, bridge1_n=0, rec_sum=0.0, rec_n=0,
              e_bonus=0.0, noops=0, raw_meals=0, prep_meals=0,
              on_food=0, on_food_eat=0, on_food_prep=0,
-             prep_n0=0, prep_ok0=0, prep_n1=0, prep_ok1=0)
+             prep_n0=0, prep_ok0=0, prep_n1=0, prep_ok1=0,
+             first_n=0, first_ok=0, surv_n=0, surv_early=0, surv_late=0)
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
     ATT_R = np.zeros((cfg.n_attempts + 1, 2))   # attempts since the last recipe change
     MEALS = np.zeros((cfg.n_meals + 1, 2))      # meal number in an agent's life (the v3 curve)
@@ -823,6 +825,16 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 k = a.attempts
                 if k <= cfg.n_attempts:
                     ATT[k, 0] += 1; ATT[k, 1] += ok
+                if k == 1:
+                    W["first_n"] += 1; W["first_ok"] += ok      # first-preparation hit
+                if len(a.prep_hist) < cfg.n_attempts:
+                    a.prep_hist.append(bool(ok))
+                    if len(a.prep_hist) == cfg.n_attempts:
+                        # SURVIVOR CURVE: this agent reached 10 preparations.  Conditioning on that
+                        # removes the survivorship that inflates a population-level hit rate --
+                        # every agent counted here contributes both halves of its own curve.
+                        W["surv_n"] += 1
+                        W["surv_early"] += sum(a.prep_hist[:5]); W["surv_late"] += sum(a.prep_hist[5:])
                 a.since_recipe += 1
                 kr = a.since_recipe
                 if kr <= cfg.n_attempts:
@@ -897,6 +909,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 prep_hit1=(W["prep_ok1"] / W["prep_n1"]) if W["prep_n1"] else np.nan,
                 n_prep0=W["prep_n0"], n_ok0=W["prep_ok0"], n_prep1=W["prep_n1"], n_ok1=W["prep_ok1"],
                 prep_per_life=W["prep_meals"] / max(W["deaths"], 1),
+                n_first=W["first_n"], n_first_ok=W["first_ok"],
+                n_surv=W["surv_n"], n_surv_early=W["surv_early"], n_surv_late=W["surv_late"],
                 noops_per_1k=1000.0 * W["noops"] / max(W["steps"], 1),
                 e_bonus_per_1k=1000.0 * W["e_bonus"] / max(W["steps"], 1),     # share of energy income from nuts
                 att_n=ATT[1:, 0].tolist(), att_correct=ATT[1:, 1].tolist(),
@@ -908,9 +922,9 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 W[k] = 0 if isinstance(W[k], int) else 0.0
             if verbose and (t + 1) % (cfg.log_every * 20) == 0:
                 L = log[-1]
-                print(f"t={L['t']:5d} pop={L['pop']:3d} hit={L['recipe_hit']:.3f} att/1k={L['attempts_per_1k']:.2f} "
-                      f"nuts/1k={L['nuts_per_1k']:.2f} safe={L['safe_rate']:.2f} eta={L['eta1']:.3f}/{L['eta2']:.3f} "
-                      f"lam2={L['lam2']:.3f} bridge={L['bridge_steps']:.0f} [{time.time()-t0:.0f}s]", flush=True)
+                print(f"t={L['t']:5d} pop={L['pop']:3d} prep_hit={L['recipe_hit']:.3f} "
+                      f"prep/life={L['prep_per_life']:.1f} share={L['prep_share']:.2f} "
+                      f"safe={L['safe_rate']:.2f} eta2={L['eta2']:.3f} [{time.time()-t0:.0f}s]", flush=True)
     return dict(log=log, flips=world.flips,
                 recipe_changes=[c for c in world.recipe_changes if c >= 0],
                 chain_start=world.chain_start, phase_bounds=bounds, n_steps=total_steps,

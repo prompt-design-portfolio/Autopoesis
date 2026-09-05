@@ -89,16 +89,18 @@ nb = {
         md("## 1. Setup\n\nThe sim and the analysis are imported, not inlined. This cell fails "
            "loudly if either file is missing."),
         code(CODE_SETUP),
-        md("## 2. Run\n\n**Runtime.** A staged run is 16000 steps — twice a v3.6 run — but populations "
-           "here are 170–260 rather than 300–450. Measured on a 4-core box: **3–6 min per run**, "
-           "so the grid of 5 × 3 = **15 runs**; see the pre-check timings. Colab CPU may be slower.\n\nThe cell checkpoints to `results_v3_10.pkl` after every run, so a dropped "
+        md("## 2. Run\n\n**Runtime.** A staged run is 16000 steps — twice a v3.6 run — and `max_pop` is "
+           "now **800** (raised from 400 so `plastic` is not sitting on the cap), so cost scales with "
+           "the standing population rather than with steps alone. Measured wall clock is printed by "
+           "the acceptance run in the reading cell; budget from that number × 15 for the 5 × 3 grid, "
+           "and expect Colab CPU to be slower than a local box.\n\nThe cell checkpoints to `results_v3_10.pkl` after every run, so a dropped "
            "session costs one run. To resume, reload the pickle and re-run only the missing "
            "seeds, then merge.\n\n**Seeds 3–4 are held in reserve.** A positive on any row gets "
            "them before it is called. To append them later, with the same three files present:"
            "\n\n```python\nimport pickle\nbase = pickle.load(open(\"results_v3_10.pkl\", \"rb\"))\n"
            "more = A.run_experiment(seeds=[3, 4], save_path=\"results_seeds34.pkl\")\n"
            "for k in base:\n    base[k] += more[k]          # seed order stays [0,1,2,3,4]\n"
-           "pickle.dump(base, open(\"results_v3_8_all.pkl\", \"wb\"))\nresults = base\n```\n\n"
+           "pickle.dump(base, open(\"results_v3_10_all.pkl\", \"wb\"))\nresults = base\n```\n\n"
            "The seed criterion adapts automatically: `min(4, n_seeds)`, so 3 seeds reads 3/3 and "
            "5 seeds reads 4/5."),
         code(CODE_RUN),
