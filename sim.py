@@ -109,6 +109,13 @@ class Config:
                                       # no tool state in this build.
     pickup_cost: float = 0.02
     prep_fail: float = 0.5        # a WRONG preparation costs this (poison-sized) and fires m = -1.
+    frozen: bool = False          # FROZEN REPLAY: births, deaths and injection are all disabled.
+                                  # Energy is still tracked and still spent -- the metabolism runs
+                                  # -- it is simply not lethal.  Nothing about the POPULATION can
+                                  # change, so the only thing that can move a hit rate over the
+                                  # window is H.  That is what makes the replay an attribution.
+    era_snap_keep: int = 2        # era-boundary snapshots retained (rolling, most recent last)
+    era_snap_max: int = 300       # agents sampled per snapshot, to bound the pickle
     force_mapping: tuple = None   # DIAGNOSTIC ONLY: pin the mapping and stop all redraws, so a
                                   # replay can be run against a KNOWN mapping.  A knockout that
                                   # re-seeds the world gets that seed's FIRST mapping, which is
@@ -726,6 +733,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     ATT_F = np.zeros((cfg.n_attempts + 1, 2))   # ... both, founder-free
     ATT_R_F = np.zeros((cfg.n_attempts + 1, 2))
     MEALS = np.zeros((cfg.n_meals + 1, 2))      # meal number in an agent's life (the v3 curve)
+    era_snaps = []                                   # rolling era-boundary genome snapshots
+    prev_mapping = tuple(int(x) for x in world.mapping)
     t0 = time.time()
 
     track_recency = (cfg.trace_recency and cfg.mode == "plastic"
@@ -742,6 +751,18 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             for a in agents:
                 a.e2_hist = []        # the ring is phase-1 only; stale entries would be nonsense
         if world.step(t):
+            # ERA BOUNDARY.  Snapshot the genomes HERE, not at the end of the run: a population
+            # sampled mid-era has only partly sorted to the mapping in force, which is what made
+            # the run-end knockout unreadable (v3.11 `fixed` seed 0 scored 0.24 on its own
+            # mapping).  At a boundary the population has just lived a whole era under
+            # `prev_mapping`, so that is the mapping it is sorted for.
+            if not cfg.frozen and world.chain_on:
+                samp = agents if len(agents) <= cfg.era_snap_max else [
+                    agents[i] for i in rng.choice(len(agents), cfg.era_snap_max, replace=False)]
+                era_snaps.append(dict(t=t, mapping=prev_mapping, n_pop=len(agents),
+                                      genomes=snapshot(samp)))
+                del era_snaps[:-cfg.era_snap_keep]
+            prev_mapping = tuple(int(x) for x in world.mapping)
             for a in agents:
                 a.since_recipe = 0
                 # SURVIVOR-CONDITIONED SINCE-REMAP: an agent qualifies only if it made SR_W
@@ -923,6 +944,9 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             a.learn(m, cfg)
 
             a.energy = min(a.energy, cfg.max_energy)
+            if cfg.frozen:
+                survivors.append(a)          # energy tracked, not lethal; no birth, no death
+                continue
             if a.energy <= 0:
                 W["deaths"] += 1
                 continue
@@ -934,10 +958,11 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
 
         agents = survivors + newborns
         W["steps"] += len(agents)
-        while len(agents) < cfg.min_pop:
-            agents.append(Agent(cfg, rng, next_lineage, *rng.integers(0, g, 2), injected=True))
-            next_lineage += 1
-            W["inject"] += 1
+        if not cfg.frozen:
+            while len(agents) < cfg.min_pop:
+                agents.append(Agent(cfg, rng, next_lineage, *rng.integers(0, g, 2), injected=True))
+                next_lineage += 1
+                W["inject"] += 1
 
         if (t + 1) % cfg.log_every == 0:
             young = np.sum([a.age_bins[0] for a in agents], axis=0)
@@ -1026,6 +1051,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 # the mapping the surviving genomes were last selected under.  A replay that
                 # re-seeds the world does NOT get this mapping, so a genome test has to pin it.
                 final_mapping=tuple(int(x) for x in world.mapping),
+                era_snaps=era_snaps,     # genomes at era boundaries, with the mapping just lived
                 cfg=asdict(cfg), final=snapshot(agents))
 
 

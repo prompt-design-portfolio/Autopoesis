@@ -217,3 +217,73 @@ The window is 10 steps because 50 was not short enough — `max_gen` reached 4.0
 four generations of selection on the pinned mapping, i.e. sorting rather than the genome.
 `knockout_window_selftest` holds the line: a **non-plastic** genome's per-type hits must swap when
 the mapping swaps, which they do not if the window allows re-evolution.
+
+---
+
+## 13. The v3.11 grid, read — and row 3b's failure as an instrument
+
+**Rows 1a, 2 and 3 pass 3/3.** The full write-up with per-seed numbers is `v3_11_finding.md`.
+
+### What carries the attribution
+
+Not the population hit rate. Two within-agent lines:
+
+- **Survivor curve** (preparations 1–2 vs 6–10, over agents that reached 10; every agent
+  contributes both halves of its own curve): **rising in `plastic (W2)` 3/3, falling in the
+  controls 3/3.**
+- **First-preparation hit, late in the era** (the genome, before anything is learned):
+  **`plastic` sits at its type-blind level; the controls sit at 0.73–0.82.**
+
+The inversion is the result: **the learner's genome is the worst of the arms and its standing
+performance is built within life; the non-learners' genomes are the best and theirs is built by
+selection.** Comparable places, opposite routes.
+
+### Row 3b failed as an instrument — no conclusion was drawn from it
+
+It did not return a negative. It could not return anything, for two independent reasons, both mine:
+
+1. **A 10-step window cannot show learning that takes ~5 preparations.** The since-remap curve
+   recovers by preparation 5; in 10 steps an agent makes one or two. The window had been cut to 10
+   to stop the replayed population re-evolving — and in fixing that, I cut it below the timescale
+   of the thing being measured.
+2. **A run-end snapshot sits mid-era and is only partly sorted.** The run ends ~300 steps into an
+   era. `fixed` seed 0 scored **0.24 on its own mapping**, when a genome selected under that
+   mapping should be near its type-blind level.
+
+### The cap check, and the population column
+
+The cap check is recorded: no outcome arm above 90% of `max_pop` = 800 in phase 2's second half.
+
+**The population column is not read.** Population is an outcome of the economy, not a measure of
+the learner, and across v3.10–v3.11 it was twice the thing that moved when a parameter changed — to
+the cap at `prep_value` 1.5, to the floor at 1.0. It is reported, it gates row 0 at `pop < 80`, and
+nothing in the claim rests on it.
+
+## 14. Row 3b rebuilt: the frozen-population replay
+
+Genomes are snapshotted at **every era boundary**, so the population has just lived a whole era
+under that mapping and is sorted for it. One snapshot is replayed for **300 steps** with **births,
+deaths and injection all disabled** — energy is tracked and spent, the metabolism runs, it is
+simply not lethal — on the **matched** mapping and on a **shuffled** one, with learning **off**
+(`eta 0`) and **on** (`eta 1`).
+
+**Nothing can change over the window except `H`.** Not the population's composition, not its size,
+not which lineages are present. A hit rate that moves under `eta 1` and does not move under `eta 0`
+is within-life learning and can be nothing else — not sorting, not survivorship, not founder
+replacement.
+
+**Requirement: `eta1 − eta0` ≥ 0.10 on the shuffled mapping in every seed.**
+
+`analysis.frozen_selftest` guards it, and it is the test the old knockout never had. Measured on a
+`plastic` run at the last era boundary:
+
+```
+eta 0: hit 0.688 -> 0.678  (drift +0.009)   pop [300]   max_gen [0]
+eta 1: hit 0.773 -> 0.892  (drift +0.118)   pop [300]   max_gen [0]
+```
+
+`pop` and `max_gen` are single-valued across the window: no agent was born, none died. With
+learning off the hit does not move; with it on, it climbs.
+
+This is **v3.12's D6 claim line**. The v3.11 `plastic` arm will be re-run at 3 seeds with per-remap
+snapshots as an **addendum** once the v3.12 build is done. It gates nothing.

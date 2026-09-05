@@ -463,83 +463,109 @@ def shift_timing(run_, bin_size=250, span=2000):
     return out
 
 
-KO_STEPS = 10       # the knockout replay window, in steps.  50 was still too long: max_gen
-                    # reached 4.0 inside it, i.e. four generations of selection on the pinned
-                    # mapping, which is sorting and not the genome.  At 10 steps a standing
-                    # population of several hundred still lays down well over a thousand
-                    # preparation events, so the rate is not sample-starved.
+FROZEN_STEPS = 300      # the frozen-replay window.  ~5 preparations is what within-life learning
+                        # needs to show (the since-remap curve recovers by preparation 5), and a
+                        # 10-step window cannot contain that -- which is why the v3.11 knockout
+                        # failed as an instrument rather than returning a negative result.
 
 
-def knockout(results, name, steps=None, seed_offset=1000):
-    """Replay late genomes with eta_scale = 0: same brains, no learning, MAPPING PINNED.
+def frozen_replay(run_, mapping, eta, steps=FROZEN_STEPS, snap=-1, seed_offset=7000):
+    """Replay one era-boundary snapshot with the POPULATION FROZEN.
 
-    THE MAPPING IS THE WHOLE POINT.  World.__init__ draws the mapping from the world rng, so the
-    old form of this row -- replay under a fresh seed -- scored the genomes against a mapping they
-    had never been selected on and reported it as "the genome carries nothing".  Measured on
-    plastic seed 0 at prep_every 700, the same genomes score:
+    Births, deaths and injection are all off; energy is tracked and spent but is not lethal.  So
+    nothing can change over the window except H.  A hit rate that moves under `eta = 1` and does
+    not move under `eta = 0` is within-life learning and can be nothing else -- not sorting, not
+    survivorship, not founder replacement.
 
-        0.844 (A 0.899, B 0.798)  against their OWN final mapping   -- a real conjunction
-        0.296 (A 0.546, B 0.093)  against that mapping SHUFFLED     -- below chance, as a
-                                                                       committed genome should be
-
-    Both are reported, because the PAIR is the signature: a genome holding the conjunction for one
-    mapping scores high on it and below chance on the swap.  A genome holding nothing scores near
-    its type-blind level on both.  `replay_mapping_selftest` in sim.py guards the pinning.
-
-    THE WINDOW IS KO_STEPS AND NOTHING MORE.  eta_scale = 0 stops learning but NOT reproduction, and this
-    population turns over fast: max_gen reached 4.4 within 500 steps of a replay, which is enough
-    generations for selection to re-adapt to the pinned mapping.  A 500-step read at prep_every
-    350 showed a NON-PLASTIC `fixed` genome scoring 0.775 on its own mapping and 0.730 on the
-    swap, with its per-type hits failing to swap -- impossible for a policy that cannot change,
-    and the signature of re-evolution.  pop and max_gen are printed so that stays visible: if
-    max_gen has moved, the number is not the genome.
+    The snapshot is taken at an ERA BOUNDARY, so the population has just lived a whole era under
+    `snap["mapping"]` and is sorted for it.  `mapping` is what to pin for the replay: pass that one
+    for MATCHED, any other for SHUFFLED.
     """
     from sim import Config, run as _run
+    sn = run_["era_snaps"][snap]
+    cfg = dict(run_["cfg"]); cfg.pop("seed", None); cfg.pop("n_steps", None)
+    cfg.update(eta_scale=float(eta), force_mapping=tuple(mapping), frozen=True,
+               log_every=max(10, steps // 6))
+    rr = _run(Config(seed=seed_offset + int(run_["cfg"]["seed"]), **cfg), verbose=False,
+              init_genomes=sn["genomes"], phases=[dict(n_steps=steps, chain=True)])
+    return rr
+
+
+def frozen_curve(rr):
+    """Hit per log bin across the frozen window, plus first-bin and last-bin values."""
+    c = [prep_hit([w]) for w in rr["log"]]
+    return c, (c[0] if c else np.nan), (c[-1] if c else np.nan)
+
+
+def shuffle_mapping(m, rng=None):
+    """A valid mapping that differs from `m` in every type, so no genotype sorted for `m` retains
+    any advantage.  With T = 2 that is the swap; with T = 3 it is a derangement."""
+    m = tuple(int(x) for x in m)
+    if len(m) == 2:
+        return (m[1], m[0])
+    return tuple(m[(i + 1) % len(m)] for i in range(len(m)))
+
+
+def frozen_knockout(results, name, steps=FROZEN_STEPS, snap=-1):
+    """The attribution line: matched and shuffled mapping, learning off and on, population frozen.
+
+    Returns one row per seed with the four cells and the within-window curves.
+    """
     out = []
-    for i, r in enumerate(results[name]):
-        fm = tuple(r["final_mapping"])
-        n_steps = int(steps if steps is not None else KO_STEPS)
-        row = dict(seed=r["cfg"]["seed"], mapping=fm)
-        for tag, mp in (("matched", fm), ("shuffled", (fm[1], fm[0]))):
-            for eta in (0.0, 1.0):
-                cfg = dict(r["cfg"]); cfg.pop("seed", None); cfg.pop("n_steps", None)
-                cfg["eta_scale"], cfg["force_mapping"] = eta, mp
-                cfg["log_every"] = n_steps      # exactly one bin, and it is the whole replay
-                rr = _run(Config(seed=r["cfg"]["seed"], **cfg), verbose=False,
-                          init_genomes=r["final"], phases=[dict(n_steps=n_steps, chain=True)])
-                L = rr["log"][:1]                  # the FIRST log bin only
-                row[f"{tag}_{int(eta)}"] = (prep_hit(L), hit_a(L), hit_b(L),
-                                            half(L, "pop"), half(L, "max_gen"))
+    for r in results[name]:
+        if not r.get("era_snaps"):
+            out.append(dict(seed=r["cfg"]["seed"], missing=True))
+            continue
+        sn = r["era_snaps"][snap]
+        fm = tuple(sn["mapping"])
+        row = dict(seed=r["cfg"]["seed"], mapping=fm, t=sn["t"], n_pop=sn["n_pop"],
+                   n_snap=len(sn["genomes"]), missing=False)
+        for tag, mp in (("matched", fm), ("shuffled", shuffle_mapping(fm))):
+            for eta in (0, 1):
+                rr = frozen_replay(r, mp, eta, steps=steps, snap=snap)
+                curve_, first, last = frozen_curve(rr)
+                row[f"{tag}_{eta}"] = dict(hit=prep_hit(rr["log"]), curve=curve_,
+                                           first=first, last=last,
+                                           pop=half(rr["log"], "pop"),
+                                           gen=half(rr["log"], "max_gen"))
         out.append(row)
     return out
 
 
-def knockout_window_selftest(seed=0, verbose=True):
-    """The second knockout bug: the replay window was long enough for the population to RE-EVOLVE.
+def frozen_selftest(seed=0, verbose=True):
+    """With learning OFF, a frozen replay's hit rate must not move across the window.
 
-    eta_scale = 0 stops learning, not reproduction.  At 500 steps the replayed population reached
-    max_gen 4.4 -- enough generations for selection to re-adapt to whatever mapping is pinned, so
-    the "genome" number was partly a fresh adaptation.  The tell was a NON-PLASTIC `fixed` genome
-    scoring 0.775 on its own mapping and 0.730 on the swap: a policy that cannot change must have
-    its per-type hits SWAP when the mapping swaps.
-
-    That is the test.  Replay a `fixed` population against its own mapping and the swap; the sign
-    of (hit|A - hit|B) must flip.  It does not flip if the window lets the population re-evolve.
+    If it does, something other than H is changing -- the population, the mapping, or the arm's
+    composition -- and the eta = 1 side cannot then be read as learning.  This is the test the
+    v3.11 knockout never had: it used a live population, where selection moved the number and the
+    reading was attributed to the genome anyway.
     """
     from sim import Config, run as _run
-    kw = dict(WORLD); kw.update(mode="fixed")
+    kw = dict(WORLD); kw.update(mode="plastic", plastic_layers="W2")
     src = _run(Config(seed=seed, **kw), verbose=False,
-               phases=[dict(n_steps=1500, chain=False), dict(n_steps=1500, chain=True)])
-    got = knockout({"fixed": [src]}, "fixed")[0]
-    # learning-off cells: a `fixed` genome has no H at all, so eta 0 is the honest comparison
-    (_, ma, mb, _, mg), (_, sa, sb, _, sg) = got["matched_0"], got["shuffled_0"]
-    swapped = np.sign(ma - mb) == -np.sign(sa - sb)
+               phases=[dict(n_steps=1500, chain=False), dict(n_steps=2100, chain=True)])
+    if not src.get("era_snaps"):
+        print("  frozen self-test: FAIL (no era snapshots -- the run never crossed a boundary)")
+        return False
+    checks, lines = [], []
+    for eta in (0, 1):
+        rr = frozen_replay(src, src["era_snaps"][-1]["mapping"], eta)
+        curve_, first, last = frozen_curve(rr)
+        pops = {w["pop"] for w in rr["log"]}
+        gens = {w["max_gen"] for w in rr["log"]}
+        drift = abs(last - first)
+        lines.append(f"  eta {eta}: hit {first:.3f} -> {last:.3f}  (drift {drift:+.3f})"
+                     f"   pop {sorted(pops)}   max_gen {sorted(gens)}")
+        if eta == 0:
+            checks += [drift <= 0.05, len(pops) == 1, len(gens) == 1]
     if verbose:
-        print(f"  mapping {got['mapping']}   matched A {ma:.3f} B {mb:.3f} (gen {mg:.1f})"
-              f"   shuffled A {sa:.3f} B {sb:.3f} (gen {sg:.1f})")
-        print(f"  a non-plastic genome's per-type hits swap with the mapping: {bool(swapped)}")
-    print(f"  knockout-window self-test: {'PASS' if swapped else 'FAIL'}")
-    return bool(swapped)
+        for l in lines:
+            print(l)
+        print("  required: with eta 0 the hit does not move (drift <= 0.05), and pop and max_gen")
+        print("  are single-valued across the window -- nothing but H can change.")
+    passed = all(checks)
+    print(f"  frozen-replay self-test: {'PASS' if passed else 'FAIL'}")
+    return passed
 
 
 def late_first_prep(L, ff=False):
@@ -902,37 +928,55 @@ def _decision_numbers(results):
         hc = v(CEIL, P2, prep_hit)
         print(f"  ceiling {np.round(hc,3).tolist()}   (reference: hand-wired exact credit, forced argmax)")
 
-    print("\nrow 3b  THE ATTRIBUTION LINE -- late genomes replayed on the matched mapping and on")
-    print("        a shuffled one, with learning OFF (eta 0) and ON (eta 1).  One 50-step window.")
-    print("        The SHUFFLED pair is the attribution: on a mapping the genome was never sorted")
-    print("        for, learning-off is the genetic floor and learning-on is what the rule adds")
-    print("        within a life.  REQUIRED: eta 1 above eta 0 on SHUFFLED by >= 0.10 in EVERY")
-    print("        seed.  pop and max_gen print beside every number -- eta_scale = 0 stops")
-    print("        learning but NOT reproduction, so a moved max_gen means the number is not the")
-    print("        genome.  sim.replay_mapping_selftest and analysis.knockout_window_selftest")
-    print("        guard the pinning and the window.")
-    print(f"    {'arm / seed':<18}{'map':>7}{'MATCHED eta0':>13}{'eta1':>7}{'gen':>6}"
-          f"{'|':>3}{'SHUFFLED eta0':>14}{'eta1':>7}{'gen':>6}{'eta1-eta0':>11}")
-    ok_all, seen = [], False
+    print("\nrow 3b  THE ATTRIBUTION LINE -- FROZEN-POPULATION REPLAY.")
+    print("        Genomes snapshotted at an ERA BOUNDARY, so the population has just lived a")
+    print("        whole era under that mapping and is sorted for it.  Replayed for 300 steps")
+    print("        with births, deaths and injection ALL DISABLED -- energy is tracked and spent")
+    print("        but is not lethal -- on the matched mapping and on a shuffled one, with")
+    print("        learning off (eta 0) and on (eta 1).  NOTHING CAN CHANGE BUT H.")
+    print("        The SHUFFLED pair carries the claim: on a mapping no genotype was sorted for,")
+    print("        eta 0 is the genetic floor and eta 1 is what the rule adds within a life.")
+    print("        REQUIRED: eta1 - eta0 >= 0.10 on SHUFFLED in EVERY seed.")
+    print("        Why 300 steps: within-life learning needs ~5 preparations to show (the")
+    print("        since-remap curve recovers by preparation 5).  The v3.11 10-step window could")
+    print("        not contain that, so it failed as an INSTRUMENT rather than returning a")
+    print("        negative -- and its run-end snapshot sat mid-era, only partly sorted")
+    print("        (`fixed` seed 0 scored 0.24 on its own mapping).  analysis.frozen_selftest")
+    print("        holds the line: with eta 0 the hit must not move across the window.")
+    gaps = []
     for n in (PL, S, F):
         if n not in results:
             continue
         try:
-            for k in knockout(results, n):
-                m0, m1 = k["matched_0"], k["matched_1"]
-                s0, s1 = k["shuffled_0"], k["shuffled_1"]
-                gain = s1[0] - s0[0]
-                if n == PL:
-                    ok_all.append(gain >= 0.10); seen = True
-                mark = "" if n != PL else ("  PASS" if gain >= 0.10 else "  FAIL")
-                print(f"    {n + ' s' + str(k['seed']):<18}{str(k['mapping']):>7}"
-                      f"{m0[0]:>13.3f}{m1[0]:>7.3f}{m1[4]:>6.1f}{'|':>3}"
-                      f"{s0[0]:>14.3f}{s1[0]:>7.3f}{s1[4]:>6.1f}{gain:>+11.3f}{mark}")
+            rows = frozen_knockout(results, n)
         except Exception as exc:
-            print(f"    {n:<18} knockout failed: {type(exc).__name__}: {exc}")
-    if seen:
+            print(f"    {n:<20} frozen replay failed: {type(exc).__name__}: {exc}")
+            continue
+        for k in rows:
+            if k.get("missing"):
+                print(f"    {n + ' s' + str(k['seed']):<20} no era snapshots in this run -- it")
+                print(f"    {'':<20} predates them.  Re-run with the current sim.py.")
+                continue
+            m0, m1 = k["matched_0"], k["matched_1"]
+            s0, s1 = k["shuffled_0"], k["shuffled_1"]
+            gap = s1["hit"] - s0["hit"]
+            if n == PL:
+                gaps.append(gap)
+            print(f"    {n + ' s' + str(k['seed']):<20} boundary t={k['t']}  map {k['mapping']}"
+                  f"  snapshot {k['n_snap']} of {k['n_pop']} agents  pop {m0['pop']:.0f} frozen")
+            print(f"    {'':<20}   MATCHED   eta0 {m0['hit']:.3f}  eta1 {m1['hit']:.3f}"
+                  f"   gap {m1['hit']-m0['hit']:+.3f}")
+            print(f"    {'':<20}   SHUFFLED  eta0 {s0['hit']:.3f}  eta1 {s1['hit']:.3f}"
+                  f"   gap {gap:+.3f}"
+                  + ("   PASS" if (n == PL and gap >= 0.10) else ("   FAIL" if n == PL else "")))
+            print(f"    {'':<20}   shuffled curves  eta0 {np.round(s0['curve'],3).tolist()}")
+            print(f"    {'':<20}                    eta1 {np.round(s1['curve'],3).tolist()}")
+    if gaps:
         print(f"    REQUIREMENT (plastic, shuffled, eta1 - eta0 >= 0.10): "
-              f"{sum(ok_all)}/{len(ok_all)}   {'PASS' if all(ok_all) else 'FAIL'}")
+              f"{sum(g >= 0.10 for g in gaps)}/{len(gaps)}   "
+              f"{'PASS' if all(g >= 0.10 for g in gaps) else 'FAIL'}")
+        print(f"    THE CLAIM LINE.  Record this number: it is the v3.11 reference the v3.12")
+        print(f"    result must not shrink below.   mean gap {np.mean(gaps):+.3f}")
     print(f"    reference levels: chance {CHANCE:.3f}, type-blind {TYPE_BLIND:.2f}")
 
     print("\nrow 4  GENE ROWS (corroborating only)")

@@ -50,12 +50,12 @@ print("from the source's final mapping -- the condition that made the old knocko
 if not sim.replay_mapping_selftest():
     raise SystemExit("the replay does not carry the mapping it is given; row 3b is meaningless")
 
-print("\\n--- knockout-window self-test ---")
-print("eta_scale = 0 stops learning, not reproduction.  A NON-PLASTIC genome's per-type hits")
-print("must swap when the mapping swaps; they do not if the replay window lets the population")
-print("re-evolve.  This is the check that row 3b reads the genome and not a fresh adaptation.")
-if not A.knockout_window_selftest():
-    raise SystemExit("the knockout window is too long; row 3b would read re-selection")
+print("\\n--- frozen-replay self-test ---")
+print("row 3b replays an era-boundary snapshot with births, deaths and injection disabled, so")
+print("nothing can change but H.  With learning OFF the hit rate must not move across the")
+print("window; if it does, the eta 1 side cannot be read as learning.")
+if not A.frozen_selftest():
+    raise SystemExit("the frozen replay is not frozen; row 3b would not be an attribution")
 
 print("\\n--- learning-rule self-test ---")
 print("one agent, one fixed observation, one chosen action; action_noise = 0 so act() is")
