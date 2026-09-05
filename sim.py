@@ -401,7 +401,10 @@ class Agent:
         c.y, c.x = self.y, self.x
         c.item, c.tool = -1, False           # nothing carried is inherited
         c.B = np.zeros(N_PAIRS)              # no memory is inherited either
-        c.lineage, c.gen, c.born, c.injected = self.lineage, self.gen + 1, t, self.injected
+        # NOT c.injected: an injected agent is a fresh random genome dropped in to hold the
+        # population off the floor, and its OWN events dilute every population metric.  Its
+        # children are ordinary selected descendants, so the tag stops at the founder.
+        c.lineage, c.gen, c.born, c.injected = self.lineage, self.gen + 1, t, False
         c.attempts = c.successes = 0
         c.eats = c.safe_eats = c.cracks = 0
         c.since_recipe = 0
@@ -692,8 +695,18 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              on_food=0, on_food_eat=0, on_food_prep=0,
              prep_n0=0, prep_ok0=0, prep_n1=0, prep_ok1=0,
              first_n=0, first_ok=0, surv_n=0, surv_early=0, surv_late=0)
+    # FOUNDER-FREE mirror.  Injected agents are fresh random genomes; their own events dilute
+    # every event-weighted metric toward chance, and the dilution is heaviest in exactly the arms
+    # that need injecting -- so a non-learning arm reads as MORE random the worse it does.  WF
+    # accumulates the same events with injected agents' own events excluded.  Their children are
+    # not tagged, so descent back into the population is counted from the first generation.
+    WF = {k: 0 for k in ("eats", "safe", "attempts", "correct", "prep_n0", "prep_ok0",
+                         "prep_n1", "prep_ok1", "first_n", "first_ok",
+                         "surv_n", "surv_early", "surv_late")}
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
     ATT_R = np.zeros((cfg.n_attempts + 1, 2))   # attempts since the last recipe change
+    ATT_F = np.zeros((cfg.n_attempts + 1, 2))   # ... both, founder-free
+    ATT_R_F = np.zeros((cfg.n_attempts + 1, 2))
     MEALS = np.zeros((cfg.n_meals + 1, 2))      # meal number in an agent's life (the v3 curve)
     t0 = time.time()
 
@@ -796,11 +809,16 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 W["on_food_eat"] += (action == EAT)
                 W["on_food_prep"] += (action >= PREP0)
 
+            fnd = not a.injected                 # this agent's own events count founder-free
             if event in ("eat_safe", "eat_poison"):
                 W["eats"] += 1; a.eats += 1
                 W["raw_meals"] += 1
+                if fnd:
+                    WF["eats"] += 1
                 if event == "eat_safe":
                     W["safe"] += 1; W["e_food"] += cfg.food_value; a.safe_eats += 1
+                    if fnd:
+                        WF["safe"] += 1
                 k = a.eats
                 if k <= cfg.n_meals:
                     MEALS[k, 0] += 1; MEALS[k, 1] += (event == "eat_safe")
@@ -813,6 +831,9 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 ok, ft = info["ok"], info["ftype"]
                 a.attempts += 1; W["attempts"] += 1; W["prep_meals"] += 1
                 W[f"prep_n{ft}"] += 1; W[f"prep_ok{ft}"] += ok
+                if fnd:
+                    WF["attempts"] += 1; WF["correct"] += ok
+                    WF[f"prep_n{ft}"] += 1; WF[f"prep_ok{ft}"] += ok
                 if ok:
                     W["correct"] += 1; a.successes += 1; W["e_bonus"] += cfg.prep_value
                 else:
@@ -825,8 +846,12 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 k = a.attempts
                 if k <= cfg.n_attempts:
                     ATT[k, 0] += 1; ATT[k, 1] += ok
+                    if fnd:
+                        ATT_F[k, 0] += 1; ATT_F[k, 1] += ok
                 if k == 1:
                     W["first_n"] += 1; W["first_ok"] += ok      # first-preparation hit
+                    if fnd:
+                        WF["first_n"] += 1; WF["first_ok"] += ok
                 if len(a.prep_hist) < cfg.n_attempts:
                     a.prep_hist.append(bool(ok))
                     if len(a.prep_hist) == cfg.n_attempts:
@@ -835,10 +860,16 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                         # every agent counted here contributes both halves of its own curve.
                         W["surv_n"] += 1
                         W["surv_early"] += sum(a.prep_hist[:5]); W["surv_late"] += sum(a.prep_hist[5:])
+                        if fnd:
+                            WF["surv_n"] += 1
+                            WF["surv_early"] += sum(a.prep_hist[:5])
+                            WF["surv_late"] += sum(a.prep_hist[5:])
                 a.since_recipe += 1
                 kr = a.since_recipe
                 if kr <= cfg.n_attempts:
                     ATT_R[kr, 0] += 1; ATT_R[kr, 1] += ok
+                    if fnd:
+                        ATT_R_F[kr, 0] += 1; ATT_R_F[kr, 1] += ok
             elif event == "noop":
                 W["noops"] += 1
 
@@ -915,11 +946,25 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 e_bonus_per_1k=1000.0 * W["e_bonus"] / max(W["steps"], 1),     # share of energy income from nuts
                 att_n=ATT[1:, 0].tolist(), att_correct=ATT[1:, 1].tolist(),
                 rec_n=ATT_R[1:, 0].tolist(), rec_correct=ATT_R[1:, 1].tolist(),
+                # founder-free: the same events with injected agents' own events excluded
+                f_n_eats=WF["eats"], f_n_safe=WF["safe"],
+                f_n_attempts_raw=WF["attempts"], f_n_correct=WF["correct"],
+                f_n_prep0=WF["prep_n0"], f_n_ok0=WF["prep_ok0"],
+                f_n_prep1=WF["prep_n1"], f_n_ok1=WF["prep_ok1"],
+                f_n_first=WF["first_n"], f_n_first_ok=WF["first_ok"],
+                f_n_surv=WF["surv_n"], f_n_surv_early=WF["surv_early"],
+                f_n_surv_late=WF["surv_late"],
+                f_att_n=ATT_F[1:, 0].tolist(), f_att_correct=ATT_F[1:, 1].tolist(),
+                f_rec_n=ATT_R_F[1:, 0].tolist(), f_rec_correct=ATT_R_F[1:, 1].tolist(),
+                n_founder_prep=W["attempts"] - WF["attempts"],
+                n_founder_eats=W["eats"] - WF["eats"],
                 meal_n=MEALS[1:, 0].tolist(), meal_safe=MEALS[1:, 1].tolist(),
             ))
-            ATT[:] = 0; ATT_R[:] = 0; MEALS[:] = 0
+            ATT[:] = 0; ATT_R[:] = 0; MEALS[:] = 0; ATT_F[:] = 0; ATT_R_F[:] = 0
             for k in W:
                 W[k] = 0 if isinstance(W[k], int) else 0.0
+            for k in WF:
+                WF[k] = 0
             if verbose and (t + 1) % (cfg.log_every * 20) == 0:
                 L = log[-1]
                 print(f"t={L['t']:5d} pop={L['pop']:3d} prep_hit={L['recipe_hit']:.3f} "
@@ -929,6 +974,51 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 recipe_changes=[c for c in world.recipe_changes if c >= 0],
                 chain_start=world.chain_start, phase_bounds=bounds, n_steps=total_steps,
                 cfg=asdict(cfg), final=snapshot(agents))
+
+
+def founder_tag_selftest(seed=0, verbose=True):
+    """The founder tag must sit on the INJECTED agent and stop there.
+
+    Three claims, each checked rather than asserted:
+      1. an injected agent is tagged, an ordinary one is not;
+      2. an injected agent's CHILD is not tagged (its descendants are selected, not dropped in);
+      3. in a real run the founder-free counts never exceed the all-agents counts, and they are
+         EQUAL exactly when nothing was injected -- which is the check that the gate is wired to
+         the tag and not to something that merely correlates with it.
+    """
+    cfg = Config(mode="fixed", scaffold_food=False)
+    rng = np.random.default_rng(seed)
+    inj = Agent(cfg, rng, 0, 0, 0, injected=True)
+    nat = Agent(cfg, rng, 1, 0, 0)
+    kid = inj.child(cfg, rng, 10)
+    out = [inj.injected is True, nat.injected is False, kid.injected is False]
+    if verbose:
+        print(f"  injected agent tagged: {out[0]}   ordinary agent untagged: {out[1]}"
+              f"   injected agent's child untagged: {out[2]}")
+
+    # min_pop far above what a non-learner can sustain, so injection fires CONSTANTLY and the
+    # exclusion path is actually exercised -- a self-test that passes on a run with no injections
+    # proves nothing about the gate.
+    r = run(Config(seed=seed, mode="fixed", n_steps=1200, chain=True, scaffold_food=False,
+                   prep_value=1.0, prep_fail=0.5, prep_every=700, max_pop=800,
+                   min_pop=300, init_pop=50),
+            verbose=False)
+    le = sum(w["f_n_attempts_raw"] <= w["n_attempts_raw"] and w["f_n_eats"] <= w["n_eats"]
+             for w in r["log"]) == len(r["log"])
+    eq = all((w["f_n_attempts_raw"] == w["n_attempts_raw"]) == (w["n_founder_prep"] == 0)
+             for w in r["log"])
+    inj_total = sum(w["injections"] for w in r["log"])
+    fs = sum(w["n_founder_prep"] for w in r["log"]) / max(1, sum(w["n_attempts_raw"] for w in r["log"]))
+    fired = sum(w["n_founder_prep"] for w in r["log"]) > 0     # the path was exercised
+    out += [le, eq, fired]
+    if verbose:
+        print(f"  founder-free counts never exceed all-agents: {le}")
+        print(f"  equal exactly when no founder event occurred: {eq}")
+        print(f"  founder events actually occurred, so the gate was exercised: {fired}")
+        print(f"  ({inj_total} injections over 1200 steps; founder share of preparations {fs:.3f})")
+    passed = all(out)
+    print(f"  founder-tag self-test: {'PASS' if passed else 'FAIL'}")
+    return passed
 
 
 def learning_rule_selftest(seed=0, verbose=True):

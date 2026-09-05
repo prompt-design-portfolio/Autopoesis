@@ -88,3 +88,43 @@ whole rig is now built to read:
 
 `plastic` learns it within life on a genome that is **worse** than `fixed`'s; `fixed` evolves it
 into the genome. Four instruments, two of them within-agent, all agreeing.
+
+---
+
+## 10. Founder dilution, and why a floor population is not a broken arm
+
+When a population falls to `min_pop` the world injects fresh **random** genomes to hold it off the
+floor. Those agents forage and prepare like anyone else, and their events land in the same
+event-weighted totals as everyone's — so an arm that needs injecting has its metrics pulled toward
+chance **in proportion to how badly it is doing**. A non-learner therefore reads as *more random*
+the worse it does, which is a metric artifact, not a fact about the arm. That is founder dilution,
+and it is what made phase-2 `fixed` look uninterpretable in the v3.11 pre-check.
+
+The fix is at the metric, not the world. Injected agents carry `injected=True`; **their children do
+not** — a founder's descendants are ordinary selected lineages and count from the first generation.
+Every event-weighted number is reported **founder-free**, with the injected agents' own events
+excluded: prep hit, per-type hit, survivor curve, since-remap curve, first-preparation hit and safe
+rate. The **founder share of events** prints per arm and per phase so the size of the removed
+dilution is visible, and the all-agents version prints alongside for this build.
+
+**Row 0 excludes on `pop < 80` over the half and nothing else. Injections are reported, not
+exclusionary.**
+
+### The verdict this makes readable
+
+A non-learning population sits at the floor in this world **because value comes only through
+knowledge.** With `prep_value` 1.0 against `prep_fail` 0.5 the chance EV of a preparation is exactly
+zero, and raw eating pays +0.10 at chance against +0.70 knowing the flip. An arm that learns
+neither fact has no income to grow on. That is not a rig failure — it is **the same verdict v3.1
+gave**, arrived at again in a world where the fact to be learned sits on every meal. The v3.10
+`prep_value` of 1.5 had been concealing it by paying a *chance* preparation +0.167, which let
+`fixed` grow to the population cap on knowledge it did not have.
+
+The **row-0 fallback for phase 1 stays as is**: where phase-1 `fixed` is excluded on population,
+that seed's row 1a reads against v3.1's published range, conservative end 0.56.
+
+### One consequence for reading the gates
+
+Once encounters are skewed, `max(share_A, share_B)` — not 0.5 — is the level a type-blind policy
+reaches, because "always prep_k" for the commoner type beats 0.5 with no type knowledge at all.
+Each arm's own type-blind level now prints beside its hit rate, and gate 1b is read against it.

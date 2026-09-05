@@ -182,8 +182,27 @@ def hit(L):
     return rate(L, "n_correct", "n_attempts_raw")
 
 
-def safe(L):
-    return rate(L, "n_safe", "n_eats")
+# FOUNDER-FREE.  Injected agents are fresh random genomes dropped in to hold the population off
+# the floor.  Their own events pull every event-weighted metric toward chance, and the pull is
+# heaviest in exactly the arms that need injecting -- so a non-learning arm reads as MORE random
+# the worse it does.  That is founder dilution, and it is a metric artifact, not a fact about the
+# arm.  Every metric below takes ff=True to exclude injected agents' OWN events; their children
+# are not tagged, so a founder's descendants count from the first generation.
+def _k(key, ff):
+    """Founder-free log keys are the all-agents names with an `f_` prefix, verbatim."""
+    return ("f_" + key) if ff else key
+
+
+def safe(L, ff=False):
+    return rate(L, _k("n_safe", ff), _k("n_eats", ff))
+
+
+def founder_share(L, what="prep"):
+    """Share of events contributed by injected agents themselves -- the size of the dilution."""
+    key, den = (("n_founder_prep", "n_attempts_raw") if what == "prep"
+                else ("n_founder_eats", "n_eats"))
+    d = float(np.sum([r[den] for r in L]))
+    return float(np.sum([r[key] for r in L]) / d) if d > 0 else np.nan
 
 
 def per_1k(L, key):
@@ -191,9 +210,10 @@ def per_1k(L, key):
     return float(1000.0 * np.sum([r[key] for r in L]) / s) if s > 0 else np.nan
 
 
-def curve(L, key):
-    n = np.sum([r[key + "_n"] for r in L], axis=0)
-    c = np.sum([r[key + ("_safe" if key == "meal" else "_correct")] for r in L], axis=0)
+def curve(L, key, ff=False):
+    p = "f_" + key if (ff and key in ("att", "rec")) else key      # no founder-free meal curve
+    n = np.sum([r[p + "_n"] for r in L], axis=0)
+    c = np.sum([r[p + ("_safe" if key == "meal" else "_correct")] for r in L], axis=0)
     return np.where(n > 0, c / np.maximum(n, 1), np.nan)
 
 
@@ -250,6 +270,15 @@ def first_bin_drop(run_, bin_size=500):
 # ---------------------------------------------------------------- summary
 
 ROWS = [
+    # FOUNDER-FREE first -- injected agents' own events excluded.  That is the primary reading.
+    ("safe_rate  FF",       lambda L: safe(L, True)),
+    ("prep hit  FF",        lambda L: prep_hit(L, True)),
+    ("prep hit | A  FF",    lambda L: hit_a(L, True)),
+    ("prep hit | B  FF",    lambda L: hit_b(L, True)),
+    ("type-blind level",    lambda L: type_blind_level(L, True)),
+    ("founder share prep",  lambda L: founder_share(L, "prep")),
+    ("founder share eats",  lambda L: founder_share(L, "eat")),
+    # ... and the all-agents versions alongside, for this build.
     ("safe_rate",           safe),
     ("prep hit",            lambda L: prep_hit(L)),
     ("prep hit | type A",   lambda L: rate(L, "n_ok0", "n_prep0")),
@@ -277,30 +306,54 @@ ROWS = [
 ]
 
 
-def prep_hit(L):
+def prep_hit(L, ff=False):
     """Event-weighted prep hit over both food types."""
-    n = float(np.sum([r["n_prep0"] + r["n_prep1"] for r in L]))
-    k = float(np.sum([r["n_ok0"] + r["n_ok1"] for r in L]))
+    a, b = (("f_n_prep0", "f_n_prep1"), ("f_n_ok0", "f_n_ok1")) if ff else \
+           (("n_prep0", "n_prep1"), ("n_ok0", "n_ok1"))
+    n = float(np.sum([r[a[0]] + r[a[1]] for r in L]))
+    k = float(np.sum([r[b[0]] + r[b[1]] for r in L]))
     return k / n if n else np.nan
 
 
-def surv_curve(L):
+def hit_a(L, ff=False):
+    return rate(L, _k("n_ok0", ff), _k("n_prep0", ff))
+
+
+def hit_b(L, ff=False):
+    return rate(L, _k("n_ok1", ff), _k("n_prep1", ff))
+
+
+def type_share_a(L, ff=False):
+    """Share of preparations made on food type A.  The type-blind level is max(share, 1 - share),
+    NOT 0.5: with skewed encounters, "always prep_k" for the commoner type beats 0.5 without any
+    type knowledge at all."""
+    a = float(np.sum([r[_k("n_prep0", ff)] for r in L]))
+    b = float(np.sum([r[_k("n_prep1", ff)] for r in L]))
+    return a / (a + b) if (a + b) else np.nan
+
+
+def type_blind_level(L, ff=False):
+    sa = type_share_a(L, ff)
+    return max(sa, 1.0 - sa) if np.isfinite(sa) else np.nan
+
+
+def surv_curve(L, ff=False):
     """Hit on preparations 1-5 vs 6-10, over agents that REACHED 10 preparations.  Every agent
     counted contributes both halves of its own curve, so a rise cannot be survivorship: it is the
     same individuals, later in their own lives.  (`probe_adv` is computed over the LIVING and so
     is itself partly survivorship-selected; this line is not.)"""
-    n = float(np.sum([r["n_surv"] for r in L]))
+    n = float(np.sum([r[_k("n_surv", ff)] for r in L]))
     if not n:
         return np.nan, np.nan, np.nan, 0
-    e = float(np.sum([r["n_surv_early"] for r in L])) / (5 * n)
-    l = float(np.sum([r["n_surv_late"] for r in L])) / (5 * n)
+    e = float(np.sum([r[_k("n_surv_early", ff)] for r in L])) / (5 * n)
+    l = float(np.sum([r[_k("n_surv_late", ff)] for r in L])) / (5 * n)
     return e, l, l - e, int(n)
 
 
-def first_prep_hit(L):
+def first_prep_hit(L, ff=False):
     """Hit on an agent's FIRST preparation: it has learned nothing, so this reads the innate
     policy the population currently carries."""
-    return rate(L, "n_first_ok", "n_first")
+    return rate(L, _k("n_first_ok", ff), _k("n_first", ff))
 
 
 def shift_timing(run_, bin_size=250, span=2000):
@@ -380,7 +433,9 @@ def summary(results):
     print("\nper seed:")
     for lab, f, sel, tag in [("safe_rate", safe, lambda r: phase_half(r, 0), "phase 1"),
                              ("probe_adv (food)", lambda L: half(L, "probe_adv_food"), lambda r: phase_half(r, 0), "phase 1"),
-                             ("prep hit", prep_hit, lambda r: phase_half(r, 1), "phase 2"),
+                             ("prep hit  FF", lambda L: prep_hit(L, True), lambda r: phase_half(r, 1), "phase 2"),
+                             ("founder share of preps", lambda L: founder_share(L, "prep"), lambda r: phase_half(r, 1), "phase 2"),
+                             ("prep hit (all agents)", prep_hit, lambda r: phase_half(r, 1), "phase 2"),
                              ("prep hit | A", lambda L: rate(L, "n_ok0", "n_prep0"), lambda r: phase_half(r, 1), "phase 2"),
                              ("prep hit | B", lambda L: rate(L, "n_ok1", "n_prep1"), lambda r: phase_half(r, 1), "phase 2"),
                              ("prep/life", lambda L: half(L, "prep_per_life"), lambda r: phase_half(r, 1), "phase 2"),
@@ -410,8 +465,16 @@ def _decision_numbers(results):
     has_null = NULL in results
     v = lambda n, sel, f: ps(results, n, sel, f)
     n_ok = lambda a, b: int(np.sum(np.asarray(a) - np.asarray(b) >= MARGIN))
-    hitA = lambda L: rate(L, "n_ok0", "n_prep0")
-    hitB = lambda L: rate(L, "n_ok1", "n_prep1")
+    # FOUNDER-FREE is the primary reading everywhere below; the all-agents value is printed
+    # beside it, in (parentheses), for this build only.
+    hitA, hitB = hit_a, hit_b
+    FF = lambda f: (lambda L: f(L, True))
+    def pair(n, sel, f):
+        """(founder-free per seed, all-agents per seed) for one arm."""
+        return v(n, sel, FF(f)), v(n, sel, f)
+    def show(n, sel, f, fmt="{:.3f}"):
+        a, b = pair(n, sel, f)
+        return (f"{np.round(a,3).tolist()}  (all {np.round(b,3).tolist()})")
 
     print("\n" + "-" * 78)
     print(f"DECISION NUMBERS (a difference counts when it is >= {MARGIN} in {rule}/{nseed} seeds)")
@@ -426,17 +489,16 @@ def _decision_numbers(results):
     print("-" * 78)
 
     print("\nrow 0  uninterpretable?  Per phase.  `random policy` is EXEMPT.")
-    print("  EXCLUDE on pop < 80, or on SUSTAINED injection -- mean >= 1 per window over the half.")
-    print("  (The v3.10 acceptance excluded phase-2 `fixed` at pop 675/789 against a cap of 800 on")
-    print("   0.1 injections per window in one seed.  A near-cap arm is not uninterpretable: the")
-    print("   floor test and the injection test are separate conditions and the injection one has")
-    print("   to mean a population being propped up, not a single event in ten windows.)")
+    print("  EXCLUDE on pop < 80 over the half.  INJECTIONS ARE REPORTED, NOT EXCLUSIONARY:")
+    print("  the problem injection causes is founder DILUTION of the metrics, not population size,")
+    print("  and that is fixed at the metric (every event-weighted number below is founder-free)")
+    print("  rather than by discarding the arm.  A non-learning population sits at the floor in")
+    print("  this world because value comes only through knowledge -- the same verdict v3.1 gave.")
     for lab, sel in [("phase 1", P1), ("phase 2", P2)]:
         for n in names:
             pop, inj = v(n, sel, lambda L: half(L, "pop")), v(n, sel, lambda L: half(L, "injections"))
-            low, prop = np.nanmin(pop) < 80, np.nanmax(inj) >= 1.0
-            why = ", ".join([w for w, b in (("pop < 80", low), ("injections sustained", prop)) if b])
-            flag = "  (null arm, exempt)" if n == NULL else (f"  <-- EXCLUDE ({why})" if why else "")
+            low = np.nanmin(pop) < 80
+            flag = "  (null arm, exempt)" if n == NULL else ("  <-- EXCLUDE (pop < 80)" if low else "")
             print(f"  {lab}  {n:<22} pop {np.round(pop,0).tolist()}  inj {np.round(inj,1).tolist()}{flag}")
 
     cap = WORLD["max_pop"]
@@ -457,13 +519,25 @@ def _decision_numbers(results):
     else:
         print(f"    PASS: worst arm at {worst*100:.0f}% of the cap.")
 
+    print("\n  FOUNDER SHARE OF EVENTS -- the size of the dilution the founder-free numbers remove.")
+    print("  An injected agent is a fresh random genome; its own events are excluded below, its")
+    print("  children's are not.  A high share is not a reason to discard the arm, but it does say")
+    print("  how far the all-agents number has been pulled toward chance.")
+    print(f"    {'arm':<22}{'phase 1 eats':>16}{'phase 2 eats':>16}{'phase 2 preps':>16}")
+    for n in names:
+        print(f"    {n:<22}"
+              f"{np.nanmean(v(n, P1, lambda L: founder_share(L, 'eat'))):>16.3f}"
+              f"{np.nanmean(v(n, P2, lambda L: founder_share(L, 'eat'))):>16.3f}"
+              f"{np.nanmean(v(n, P2, lambda L: founder_share(L, 'prep'))):>16.3f}")
+
     print("\nrow 1a  PHASE-1 GATE = v3.1.  A STOP ROW: if it fails, nothing below is read.")
-    sp, sf = v(PL, P1, safe), v(F, P1, safe)
+    sp, sf = v(PL, P1, FF(safe)), v(F, P1, FF(safe))          # founder-free
     pf = v(PL, P1, lambda L: half(L, "probe_adv_food"))
     fpop, finj = v(F, P1, lambda L: half(L, "pop")), v(F, P1, lambda L: half(L, "injections"))
     excluded = (fpop < 80) | (finj > 0)
     V31_HI = 0.56
     print(f"  safe_rate  plastic {np.round(sp,3).tolist()}   fixed {np.round(sf,3).tolist()}   (v3.1: 0.60-0.66 vs 0.51-0.56)")
+    print(f"  all-agents  plastic {np.round(v(PL,P1,safe),3).tolist()}   fixed {np.round(v(F,P1,safe),3).tolist()}")
     if excluded.any():
         print(f"  ROW-0 FALLBACK in seed(s) {np.where(excluded)[0].tolist()}: those read against v3.1's"
               f" published range, conservative end {V31_HI}.")
@@ -474,8 +548,14 @@ def _decision_numbers(results):
 
     print("\nrow 1b  MAPPING GATE -- genes may hold a type-blind preparation, but must not track the")
     print("        CONJUNCTION.  Gate fires at `fixed` prep hit > 0.55 in 3/3.")
-    hf, hfa, hfb = v(F, P2, prep_hit), v(F, P2, hitA), v(F, P2, hitB)
+    hf, hfa, hfb = v(F, P2, FF(prep_hit)), v(F, P2, FF(hitA)), v(F, P2, FF(hitB))
+    tbl = v(F, P2, FF(type_blind_level))
     print(f"  fixed prep hit {np.round(hf,3).tolist()}   per type A {np.round(hfa,3).tolist()}  B {np.round(hfb,3).tolist()}")
+    print(f"  all-agents     {np.round(v(F,P2,prep_hit),3).tolist()}   per type A "
+          f"{np.round(v(F,P2,hitA),3).tolist()}  B {np.round(v(F,P2,hitB),3).tolist()}")
+    print(f"  ITS OWN TYPE-BLIND LEVEL = max(share_A, share_B) {np.round(tbl,3).tolist()}"
+          f"   -- NOT 0.5 when encounters are skewed.  fixed - its own level"
+          f" {np.round(hf - tbl,3).tolist()}")
     fired = int(np.sum(hf > 0.55))
     print(f"  above 0.55 in {fired}/{nseed}" + ("   <-- GATE FIRES: shorten prep_every toward the flip"
           " period, judged against `fixed` only, before reading below."
@@ -501,13 +581,17 @@ def _decision_numbers(results):
             print(f"    {'':<22} (A,B) {shown}{tail_}")
 
     print(f"\n  GATE 1b, two parts, both judged against `fixed` (and `scrambled`) ONLY:")
-    fp_f, fp_s = v(F, P2, first_prep_hit), (v(S, P2, first_prep_hit) if S in results else None)
+    fp_f = v(F, P2, FF(first_prep_hit))
+    fp_s = v(S, P2, FF(first_prep_hit)) if S in results else None
     print(f"    (i)  fixed prep hit <= 0.55      {np.round(hf,3).tolist()}"
           f"   {'PASS' if np.all(hf <= 0.55) else 'FAIL'}")
     print(f"    (ii) first-prep hit <= ~0.55 -- the INNATE policy, before any learning at all.")
-    print(f"         fixed     {np.round(fp_f,3).tolist()}   {'PASS' if np.all(fp_f <= 0.55) else 'FAIL'}")
+    print(f"         fixed     {np.round(fp_f,3).tolist()}   {'PASS' if np.all(fp_f <= 0.55) else 'FAIL'}"
+          f"   (all {np.round(v(F,P2,first_prep_hit),3).tolist()}, its type-blind level {np.round(tbl,3).tolist()})")
     if fp_s is not None:
-        print(f"         scrambled {np.round(fp_s,3).tolist()}   {'PASS' if np.all(fp_s <= 0.55) else 'FAIL'}")
+        tbs = v(S, P2, FF(type_blind_level))
+        print(f"         scrambled {np.round(fp_s,3).tolist()}   {'PASS' if np.all(fp_s <= 0.55) else 'FAIL'}"
+              f"   (all {np.round(v(S,P2,first_prep_hit),3).tolist()}, its type-blind level {np.round(tbs,3).tolist()})")
     print("    (ii) is the sharper of the two: the standing hit rate mixes genome with whatever")
     print("    the living have learned, while the first preparation of a life is genome alone.")
     print("  PRIMARY INSTRUMENT for this row: prep_gain innate -- the GENOME's preference for the")
@@ -524,7 +608,7 @@ def _decision_numbers(results):
     print("      (plastic - fixed >= 0.03); the corrected probe in the first 500 steps is")
     print("      CORROBORATING.  The v3.1 probe form was contaminated here -- it subtracts the best")
     print("      OTHER action, and with three preparations live that term moves with food type.")
-    sfe, sffe = v(PL, first_era, safe), v(F, first_era, safe)
+    sfe, sffe = v(PL, first_era, FF(safe)), v(F, first_era, FF(safe))
     print(f"    safe (first era)  plastic {np.round(sfe,3).tolist()}  fixed {np.round(sffe,3).tolist()}"
           f"   diff {np.round(sfe - sffe,3).tolist()}   >= +{MARGIN} in {n_ok(sfe, sffe)}/{nseed}"
           f"   {'PASS' if n_ok(sfe, sffe) >= rule else 'FAIL'}")
@@ -556,7 +640,7 @@ def _decision_numbers(results):
     print("\n" + "=" * 78)
     print("row 3  THE CONJUNCTION -- a dense, immediate, two-sided task")
     print("=" * 78)
-    hp, hs = v(PL, P2, prep_hit), v(S, P2, prep_hit)
+    hp, hs = v(PL, P2, FF(prep_hit)), v(S, P2, FF(prep_hit))
     pl, fl = v(PL, P2, lambda L: half(L, "prep_per_life")), plf
     print("  ABSTENTION CHECK FIRST -- prepared meals not below 0.8x `fixed`.")
     print(f"    prep/life plastic {np.round(pl,2).tolist()}  fixed {np.round(fl,2).tolist()}"
@@ -565,14 +649,19 @@ def _decision_numbers(results):
     print(f"    plastic - fixed:     {np.round(hp - hf,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hf)}/{nseed}")
     print(f"    plastic - scrambled: {np.round(hp - hs,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hs)}/{nseed}   <- scrambled carries it")
     print(f"    prep hit  plastic {np.round(hp,3).tolist()}  fixed {np.round(hf,3).tolist()}  scrambled {np.round(hs,3).tolist()}")
-    print(f"  PER TYPE -- a conjunction is BOTH above {TYPE_BLIND:.2f}, not one at 1.0 and one at 0:")
+    print(f"    all-agents        {np.round(v(PL,P2,prep_hit),3).tolist()}        "
+          f"{np.round(v(F,P2,prep_hit),3).tolist()}            {np.round(v(S,P2,prep_hit),3).tolist()}")
+    print(f"  PER TYPE -- a conjunction is BOTH above {TYPE_BLIND:.2f}, not one at 1.0 and one at 0.")
+    print("  Each arm's OWN type-blind level is printed too: with skewed encounters the level is")
+    print("  max(share_A, share_B), and a hit at that level carries no type knowledge.")
     for n in names:
-        a_, b_ = v(n, P2, hitA), v(n, P2, hitB)
+        a_, b_ = v(n, P2, FF(hitA)), v(n, P2, FF(hitB))
+        print(f"    {'':<22} its type-blind level {np.round(v(n,P2,FF(type_blind_level)),3).tolist()}")
         both = int(np.sum((a_ > TYPE_BLIND) & (b_ > TYPE_BLIND)))
         print(f"    {n:<22} A {np.round(a_,3).tolist()}  B {np.round(b_,3).tolist()}   both > {TYPE_BLIND} in {both}/{nseed}")
     pr = v(PL, P2, lambda L: half(L, "probe_adv"))
     ao, ay = v(PL, P2, lambda L: half(L, "hit_old")), v(PL, P2, lambda L: half(L, "hit_young"))
-    ag = v(PL, P2, lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0]))
+    ag = v(PL, P2, lambda L: float(curve(L, "att", True)[-1] - curve(L, "att", True)[0]))
     print(f"  probe_adv (prep) {np.round(pr,3).tolist()}   (> 0 in {int(np.sum(pr > 0))}/{nseed})")
     print("    NOTE: probe_adv is computed over the LIVING, so it is itself partly")
     print("    survivorship-selected.  The survivor curve below is not.")
@@ -583,7 +672,7 @@ def _decision_numbers(results):
     print("  means the era is shorter than the learner needs.")
     print(f"    {'arm':<22}{'prep 1':>9}{'prep 5':>9}{'prep 10':>9}{'1->5':>8}{'1->10':>8}")
     for n in names:
-        C = np.array([curve(P2(r), "rec") for r in results[n]], dtype=float)
+        C = np.array([curve(P2(r), "rec", True) for r in results[n]], dtype=float)
         m = np.nanmean(C, 0)
         if len(m) >= 10:
             print(f"    {n:<22}{m[0]:>9.3f}{m[4]:>9.3f}{m[9]:>9.3f}"
@@ -604,14 +693,16 @@ def _decision_numbers(results):
     print("      REQUIRED: rising in plastic, flat in scrambled.")
     print(f"    {'arm':<22}{'preps 1-5':>11}{'preps 6-10':>12}{'rise':>9}{'n agents':>10}")
     for n in names:
-        rows = [surv_curve(P2(r)) for r in results[n]]
+        rows = [surv_curve(P2(r), True) for r in results[n]]
         e = np.nanmean([x[0] for x in rows]); l = np.nanmean([x[1] for x in rows])
         d = np.array([x[2] for x in rows], dtype=float); nn = int(np.sum([x[3] for x in rows]))
         print(f"    {n:<22}{e:>11.3f}{l:>12.3f}{np.nanmean(d):>9.3f}{nn:>10d}   per seed {np.round(d,3).tolist()}")
     print("  (ii) FIRST-PREPARATION HIT -- the agent has learned nothing, so this reads the innate")
     print("       policy the population carries (and shows the type-blind floor directly).")
     for n in names:
-        print(f"    {n:<22} {np.round(v(n, P2, first_prep_hit),3).tolist()}")
+        print(f"    {n:<22} {np.round(v(n, P2, FF(first_prep_hit)),3).tolist()}"
+              f"   (all {np.round(v(n, P2, first_prep_hit),3).tolist()},"
+              f" its type-blind level {np.round(v(n, P2, FF(type_blind_level)),3).tolist()})")
     if CEIL in results:
         hc = v(CEIL, P2, prep_hit)
         print(f"  ceiling {np.round(hc,3).tolist()}   (reference: hand-wired exact credit, forced argmax)")

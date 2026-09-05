@@ -36,6 +36,13 @@ if not sim.world_semantics_selftest():
 print("\\n--- density ---")
 print("no density to assert: the opportunity is every food cell")
 
+print("\\n--- founder-tag self-test ---")
+print("injected agents are fresh random genomes; their OWN events are excluded from every")
+print("event-weighted metric, their children's are not.  The test forces injection so the")
+print("exclusion path is actually exercised -- passing on a run with no injections proves nothing.")
+if not sim.founder_tag_selftest():
+    raise SystemExit("the founder tag is not wired correctly; every founder-free number is suspect")
+
 print("\\n--- learning-rule self-test ---")
 print("one agent, one fixed observation, one chosen action; action_noise = 0 so act() is")
 print("deterministic and the logit checked belongs to the action that laid the trace.")
