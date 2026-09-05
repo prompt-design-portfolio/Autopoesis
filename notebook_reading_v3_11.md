@@ -159,3 +159,61 @@ come into phase and cannot be tracked by a single periodic cue.
 distinct mappings from 6 to 12, which makes carrying standing genotypes for all of them
 substantially more expensive — it attacks the mechanism directly rather than the time available to
 it.
+
+---
+
+## 12. The v3.11 acceptance at `prep_every` 700, and why 350 was reverted
+
+**Every within-life line was positive in 2/2, and gate 1b fired anyway.** The mechanism is now
+measured rather than inferred, and it is not one a shorter era can beat.
+
+### Genes track the mapping by survival sorting over standing variation
+
+There are only **six** distinct mappings. A population of several hundred carries genotypes for
+several of them at once, so a remap requires no mutation and no adaptation: **survival sorting
+promotes whichever genotype already matches**, and it completes well inside a third of an era.
+
+| measurement | value |
+|---|---|
+| `fixed` first-preparation hit, **late in the era** | **0.82** |
+| genome-only hit (`eta = 0`), **matched** mapping | **0.844** (A 0.899, B 0.798) |
+| genome-only hit (`eta = 0`), **shuffled** mapping | **0.296** (A 0.546, B 0.093) |
+
+The pair is the whole story: the genome holds the conjunction **for the mapping it was sorted
+under, and only for that one** — below chance on the swap.
+
+### 350 shortened the learner's payoff window without touching the sorting
+
+The pre-registered prediction failed in **both** directions:
+
+| | predicted at 350 | observed |
+|---|---|---|
+| `fixed` | 0.52–0.56 | **0.642** |
+| `plastic (W2)` | 0.65–0.70 | **0.575** |
+
+So the learner lost to the non-learner, and `prep_gain innate` for `fixed` went *up* over the
+change (0.149 at 700 → 0.379 at 350). Sorting is not rate-limited by generations — only by how
+fast the mismatched fraction dies, which is fast. **`prep_every` is back to 700**, and the fix is
+the size of the mapping space, not the speed of the world: see `spec_v3_12.md`.
+
+### Gate 1b is now a measured genetic baseline, not a stop
+
+The row no longer halts the reading. It reports how much of the standing hit rate the genome
+already carries — `fixed`'s late first-preparation hit, the per-era A+B sum, and row 3b's
+matched/shuffled genome hit with learning off — and **the learner's contribution is read above
+it**.
+
+### Row 3b is the attribution line
+
+For each `plastic` seed, the late genomes are replayed on the **matched** mapping and on a
+**shuffled** one, with learning **off** (`eta 0`) and **on** (`eta 1`), in a single 10-step window,
+with `pop` and `max_gen` beside every number.
+
+**The shuffled pair carries the claim.** On a mapping no genotype was sorted for, learning-off is
+the genetic floor and learning-on is what the rule adds within a life.
+**Required: `eta 1` − `eta 0` ≥ 0.10 on the shuffled mapping in every seed.**
+
+The window is 10 steps because 50 was not short enough — `max_gen` reached 4.0 inside it, which is
+four generations of selection on the pinned mapping, i.e. sorting rather than the genome.
+`knockout_window_selftest` holds the line: a **non-plastic** genome's per-type hits must swap when
+the mapping swaps, which they do not if the window allows re-evolution.

@@ -193,7 +193,9 @@ class Config:
     seed: int = 0
 
 
-SR_W = 8            # survivor-conditioned since-remap: preparations required each side of a remap
+SR_W = 4            # survivor-conditioned since-remap: preparations required each side of a
+                    # remap.  8 was too wide -- at prep_every 350 an era barely held it and
+                    # n fell to 3 agent-remaps in `scrambled`.  Corroborating only.
 SURV_EARLY = 2      # survivor curve early half: preparations 1-2 (late half is 6-10)
 N_ACTIONS = 8            # 0-3 move, 4 eat, 5-7 prep_1..3.  v3.10: the recipe chain is gone; the
 EAT = 4                  # fact to be learned sits on EVERY meal, so there is no approach behaviour

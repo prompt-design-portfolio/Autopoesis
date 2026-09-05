@@ -70,29 +70,26 @@ for name, spec in A.VARIANTS.items():
     print(f"  {'':<24} {({k: v for k, v in spec['kw'].items() if k not in A.WORLD})}")
 '''
 
-CODE_RUN = '''# MODE picks the stage.  All three write the SAME checkpoint, and each stage SKIPS any
-# (arm, seed) already in it -- so run "acceptance", read it, then set MODE = "grid" and run this
-# cell again in the same session: it adds only what acceptance did not do.
+CODE_RUN = '''# MODE picks the stage.  All stages share ONE checkpoint and each SKIPS any (arm, seed)
+# already in it, so "grid" continues from the acceptance checkpoint rather than redoing it.
 #
-#   "quick"       smoke test.  1 seed, 1500-step phases, 3 arms, prep_every 300 so remaps
-#                 actually occur.  NOT a result -- a handful of generations, so row 0 will
-#                 flag conditions and row 1 will not reproduce.  Read it only to confirm
-#                 every cell below produces the output it should.        ~5 min
-#   "acceptance"  fixed / scrambled / plastic (W2) x seeds 0-1, full 8000-step phases.
-#                 The stopping rule is read here FIRST.                  ~60-75 min
-#   "grid"        continues from the acceptance checkpoint: adds `random policy` and
-#                 `fixed + B (ceiling)` for seeds 0-1, and all five arms for seed 2.
-#                 Six of the fifteen runs are already done, so this is nine runs. ~75-90 min
-#
-# Wall clock measured on a 4-core box at max_pop 800 with prep_value 1.5 (16000 steps per run):
-# random 3.1 min, fixed 10.9, scrambled 11.5, plastic 14.7, ceiling 13.3.  prep_value 1.0 lowers
-# the standing population, so these are UPPER bounds; Colab CPU typically runs 1.5-2x slower.
-# If the cap check fails and max_pop goes to 1200, scale by roughly 1200/800.
-MODE = "quick"
+#   "quick"       smoke test, 3 arms, 1 seed, 1500-step phases.            ~5 min
+#   "acceptance"  fixed / scrambled / plastic (W2) x seeds 0-1, full.      ~60-75 min
+#   "grid"        continues: adds `random policy` and `fixed + B (ceiling)`
+#                 for seeds 0-1, and all five arms for seed 2.  Nine runs.  ~75-90 min
+MODE = "grid"
 
 CKPT = "results_v3_11.pkl"
 CORE = ["fixed", "scrambled", "plastic (W2)"]
 ALL  = list(A.VARIANTS)
+
+# REFRESH: (arm, seed) pairs to re-run even though the checkpoint has them.  Fill this from the
+# audit printed below.  A checkpoint written before a field exists CANNOT be re-analysed for the
+# reads that depend on it -- those counters are accumulated inside the sim, not derived from the
+# log -- and `final_mapping` in particular is not reconstructable offline, because World shares
+# its rng with the agents.  Leave empty to continue without those lines (they print `nan`).
+REFRESH = []
+# REFRESH = [(a, s) for a in CORE for s in (0, 1)]     # <- to recover every read-side line
 
 if MODE == "quick":
     SEEDS, PHASE_STEPS, ARMS, OVERRIDES = [0], 1500, CORE, dict(prep_every=300, recipe_every=500)
@@ -104,13 +101,18 @@ elif MODE == "grid":
 else:
     raise SystemExit(f"MODE must be quick / acceptance / grid, not {MODE!r}")
 
+existing = A.load(CKPT)
+if existing:
+    A.checkpoint_audit(existing)
+    print()
+
 variants = {k: A.VARIANTS[k] for k in ARMS}
 results = A.run_experiment(seeds=SEEDS, phase_steps=PHASE_STEPS, variants=variants,
-                           results=A.load(CKPT), save_path=CKPT, **OVERRIDES)
+                           results=existing, save_path=CKPT, refresh=REFRESH, **OVERRIDES)
 print("\nin the checkpoint:", {k: sorted(r["cfg"]["seed"] for r in v) for k, v in results.items()})
 '''
 
-CODE_SUMMARY = 'A.summary(results)\n'
+CODE_SUMMARY = 'A.checkpoint_audit(results)\nA.summary(results)\n'
 CODE_TRANSITION = 'A.transition_table(results, bin_size=500, span=2000)\n'
 CODE_CURVES = ('A.curves(results, "meal", "meal number in an agent\'s life")        # phase 1\n'
                'A.curves(results, "att",  "attempt number in an agent\'s life")     # phase 2\n'
@@ -133,25 +135,34 @@ nb = {
            "loudly if either file is missing."),
         code(CODE_SETUP),
         md("## 2. Run \u2014 staged\n\n"
-           "`MODE` picks the stage. All three stages write the **same checkpoint** and each one "
-           "**skips any (arm, seed) already in it**, so you can run `\"acceptance\"`, read the "
-           "stopping rule, then set `MODE = \"grid\"` and re-run this cell **in the same "
-           "session** \u2014 it does only the nine runs acceptance did not.\n\n"
+           "`MODE` picks the stage. All stages share **one checkpoint** and each **skips any "
+           "(arm, seed) already in it**, so `\"grid\"` continues from the acceptance checkpoint "
+           "rather than redoing it.\n\n"
            "| stage | arms | seeds | runs | est. wall clock |\n|---|---|---|---|---|\n"
            "| `quick` | 3 core | 0 | 3 | ~5 min |\n"
-           "| `acceptance` | fixed, scrambled, plastic (W2) | 0\u20131 | 6 | **~60\u201375 min** |\n"
+           "| `acceptance` | fixed, scrambled, plastic (W2) | 0\u20131 | 6 | ~60\u201375 min |\n"
            "| `grid` | + random policy, ceiling | 0\u20132 | 9 more | **~75\u201390 min** |\n\n"
-           "**Where the estimate comes from.** Measured on a 4-core box at `max_pop` 800 with "
-           "`prep_value` 1.5, per 16000-step run: random 3.1 min, fixed 10.9, scrambled 11.5, "
-           "plastic 14.7, ceiling 13.3. `prep_value` 1.0 lowers the standing population, so "
-           "these are **upper bounds**. Colab CPU typically runs 1.5\u20132\u00d7 slower than "
-           "that, and if the cap check fails and `max_pop` goes to 1200, scale by ~1200/800.\n\n"
-           "The cell checkpoints after **every run**, so a dropped session costs one run. To "
-           "resume, just re-run the cell \u2014 `A.load(CKPT)` picks up what is already there "
-           "and skips it.\n\n**Seeds 3\u20134 are held in reserve.** A positive on any row gets "
-           "them before it is called: set `SEEDS = [3, 4]` after the grid and re-run this cell; "
-           "the checkpoint merges them and the seed criterion adapts automatically "
-           "(`min(4, n_seeds)`, so 3 seeds reads 3/3 and 5 seeds reads 4/5)."),
+           "### Read the checkpoint audit before you read anything else\n\n"
+           "The cell prints an audit of the checkpoint it loads. Runs written **before** a field "
+           "existed cannot be re-analysed for the reads that depend on it \u2014 those counters "
+           "are accumulated inside the sim, not derived from the log \u2014 and `final_mapping` "
+           "is not reconstructable offline at all, because `World` shares its rng with the "
+           "agents, so the mapping draw sequence depends on every action-noise draw in the "
+           "run.\n\n"
+           "The affected reads are **row 3b (the attribution line)**, **first-preparation hit "
+           "late-in-era**, **the survivor-conditioned since-remap curve**, and **the survivor "
+           "halves 1\u20132 vs 6\u201310** (older runs recorded the 1\u20135 split under the "
+           "same name). They print `nan` rather than a wrong number.\n\n"
+           "To recover them, put the affected pairs in `REFRESH` \u2014 for the v3.11 "
+           "acceptance checkpoint that is the three core arms at seeds 0\u20131, six runs, "
+           "roughly an extra 60\u201375 min. Everything else (founder-free hit rates, rig check "
+           "2(a) on whole-phase safe rate, the abstention rule, the per-era A+B sums, "
+           "`prep_gain innate`) reads correctly off the existing checkpoint without a "
+           "refresh.\n\n"
+           "The cell checkpoints after **every run**, so a dropped session costs one run; just "
+           "re-run it to resume. **Seeds 3\u20134 are held in reserve** \u2014 set "
+           "`SEEDS = [3, 4]` after the grid and re-run; the seed criterion adapts "
+           "(`min(4, n_seeds)`)."),
         code(CODE_RUN),
         md("## 3. The printed summary\n\nPhase 1 and phase 2 blocks separately, then per-seed "
            "values, then the decision numbers in the order of the table above.\n\n**Read row 1 "
