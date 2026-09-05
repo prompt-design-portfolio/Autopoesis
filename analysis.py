@@ -271,9 +271,15 @@ def shift_timing(run_, bin_size=250, span=2000):
     return out
 
 
-def knockout(results, name, steps=3000, seed_offset=1000):
-    """Replay late genomes with eta_scale = 0 in a fresh world: same brains, no learning.  If the
-    standing advantage lives in H, it falls to the type-blind floor."""
+def knockout(results, name, steps=3000, seed_offset=1000, early=500):
+    """Replay late genomes with eta_scale = 0 in a fresh world: same brains, no learning.
+
+    READ THE FIRST WINDOW.  eta_scale = 0 removes learning but NOT reproduction and mutation, so
+    over `steps` the replayed population RE-EVOLVES against the new mapping: measured on the v3.10
+    acceptance run, max_gen went 4-8 -> 9-35 across 3000 steps and the hit rate climbed with it
+    (plastic seed 0: 0.485 -> 0.657).  The second half therefore measures re-selection in the new
+    world, not the genome.  Both windows and both max_gen values are returned so the contamination
+    stays visible rather than being taken on trust."""
     from sim import Config, run as _run
     out = []
     for i, r in enumerate(results[name]):
@@ -281,9 +287,11 @@ def knockout(results, name, steps=3000, seed_offset=1000):
         cfg["eta_scale"] = 0.0
         rr = _run(Config(seed=seed_offset + i, **cfg), verbose=False,
                   init_genomes=r["final"], phases=[dict(n_steps=steps, chain=True)])
-        L = rr["log"][len(rr["log"]) // 2:]
-        out.append((prep_hit(L), rate(L, "n_ok0", "n_prep0"), rate(L, "n_ok1", "n_prep1"),
-                    half(L, "pop")))
+        E, L = window(rr, 0, early), rr["log"][len(rr["log"]) // 2:]
+        out.append(dict(
+            hit=prep_hit(E), a=rate(E, "n_ok0", "n_prep0"), b=rate(E, "n_ok1", "n_prep1"),
+            pop=half(E, "pop"), gen=half(E, "max_gen"),
+            late_hit=prep_hit(L), late_gen=half(L, "max_gen")))
     return out
 
 
@@ -396,7 +404,28 @@ def _decision_numbers(results):
           if fired >= rule else "   gate clear."))
     print("  Read the per-type split: one type high and the other near 0 is type-blind (allowed);")
     print("  both above 0.5 in `fixed` would be genes holding the conjunction (not allowed).")
-    print(f"  prep_gain innate (fixed) {np.round(v(F,P2,lambda L: half(L,'prep_gain_innate')),3).tolist()}")
+    print("  READ IT PER ERA.  The phase half spans TWO mapping eras, so a genome that switches")
+    print("  its preparation between them averages into a FALSE one-high-one-low reading.  A pure")
+    print("  mixture of type-blind genotypes has P(hit|A) + P(hit|B) <= 1; a SUM ABOVE 1 means the")
+    print("  genomes are conditioning on food type, whatever the phase-half aggregate says.")
+    for n in (F, PL, S):
+        if n not in results:
+            continue
+        for i, r in enumerate(results[n]):
+            rows = [(round(rate(w, "n_ok0", "n_prep0"), 2), round(rate(w, "n_ok1", "n_prep1"), 2))
+                    for w in era_windows(r) if w]
+            both = sum(1 for a_, b_ in rows if a_ > TYPE_BLIND and b_ > TYPE_BLIND)
+            sums = [round(a_ + b_, 2) for a_, b_ in rows]
+            print(f"    {n + ' seed ' + str(i):<22} (A,B) by era {rows}")
+            print(f"    {'':<22} sums {sums}   both > {TYPE_BLIND} in {both}/{len(rows)} eras")
+    print("  PRIMARY INSTRUMENT for this row: prep_gain innate -- the GENOME's preference for the")
+    print("  correct preparation on a synthetic 'type f underfoot' observation.  No gating and no")
+    print("  declining enter it, so unlike the A+B sum it localises the type-conditioning to the")
+    print("  CHOICE of preparation.  `random policy` is the zero; `fixed + B` sits near zero")
+    print("  because its knowledge is in the private table, not in synapses -- that is the check")
+    print("  that the instrument reads synapses and nothing else.")
+    for n in names:
+        print(f"    {n:<22} {np.round(v(n, P2, lambda L: half(L, 'prep_gain_innate')), 3).tolist()}")
 
     print("\nrow 2  RIG CHECKS -- nothing below is read until these are clean.")
     print("  (a) food learning survives the switch.  READ ON SAFE RATE in the first mapping era")
@@ -482,14 +511,22 @@ def _decision_numbers(results):
     print("        Same brains, no learning.  If the standing advantage lives in H, BOTH plastic")
     print("        and scrambled fall to the type-blind floor; what separates them is then the")
     print("        survivor curve, which is learning, not luck.")
-    print(f"    {'arm':<22}{'prep hit':>10}{'hit|A':>9}{'hit|B':>9}{'pop':>8}")
+    print("        READ THE FIRST WINDOW.  eta_scale = 0 stops learning but NOT reproduction, so")
+    print("        the replay RE-EVOLVES: the late columns are printed only to show that drift,")
+    print("        and are NOT the genome.  A rising hit with a rising max_gen is re-selection.")
+    print(f"    {'arm':<22}{'hit':>8}{'hit|A':>8}{'hit|B':>8}{'A+B':>7}{'pop':>7}{'gen':>7}"
+          f"{'| late hit':>11}{'late gen':>10}")
     for n in (PL, S):
         try:
-            for i, (h, a_, b_, p) in enumerate(knockout(results, n)):
-                print(f"    {n + ' seed ' + str(i):<22}{h:>10.3f}{a_:>9.3f}{b_:>9.3f}{p:>8.0f}")
+            for i, k in enumerate(knockout(results, n)):
+                print(f"    {n + ' seed ' + str(i):<22}{k['hit']:>8.3f}{k['a']:>8.3f}{k['b']:>8.3f}"
+                      f"{k['a'] + k['b']:>7.2f}{k['pop']:>7.0f}{k['gen']:>7.1f}"
+                      f"{k['late_hit']:>11.3f}{k['late_gen']:>10.1f}")
         except Exception as exc:
             print(f"    {n:<22} knockout failed: {type(exc).__name__}: {exc}")
-    print(f"    reference levels: chance {CHANCE:.3f}, type-blind {TYPE_BLIND:.2f}")
+    print(f"    reference levels: chance {CHANCE:.3f}, type-blind {TYPE_BLIND:.2f}.  A+B <= 1 is a")
+    print("    mixture of type-blind genotypes carrying NO type knowledge; A+B > 1 is conjunction")
+    print("    held in the genome.")
 
     print("\nrow 4  GENE ROWS (corroborating only)")
     for g in ("eta2", "lam2", "eta1"):
