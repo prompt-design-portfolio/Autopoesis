@@ -1,0 +1,16 @@
+source: plastic seed 0, prep_every 700, 16000 steps, 12.7 min
+  final mapping (1, 0)   mapping over phase 2 (last 8 windows) [(2, 0), (2, 0), (1, 0), (1, 0), (1, 0), (1, 0), (1, 0), (1, 0)]
+  LIVE standing hit (founder-free) 0.747   A 0.672  B 0.811
+  FIRST-PREP hit (founder-free)    0.490   (its type-blind level 0.540)
+
+REPLAY: same world seed (0), mapping PINNED (no redraws), 500 steps, first window.
+  matched mapping = (1, 0)   shuffled = (0, 1)
+
+  condition                                    hit   hit|A   hit|B       n    pop  1st-prep
+  eta=0 genome only, MATCHED mapping         0.844   0.899   0.798    9640    799     0.817
+  eta=1 relearns,    MATCHED mapping         0.935   0.929   0.940    9461    799     0.788
+  eta=0 genome only, SHUFFLED mapping        0.296   0.546   0.093    5877    254     0.252
+  eta=1 relearns,    SHUFFLED mapping        0.529   0.442   0.576    7403    617     0.178
+
+  reference: chance 0.333, type-blind 0.500 at balanced encounters
+  total 15.0 min

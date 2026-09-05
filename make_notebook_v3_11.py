@@ -43,6 +43,20 @@ print("exclusion path is actually exercised -- passing on a run with no injectio
 if not sim.founder_tag_selftest():
     raise SystemExit("the founder tag is not wired correctly; every founder-free number is suspect")
 
+print("\\n--- replay-mapping self-test ---")
+print("a knockout that re-seeds the world does NOT get the mapping its genomes were selected")
+print("under.  This checks that force_mapping pins it, and that a re-seeded replay can differ")
+print("from the source's final mapping -- the condition that made the old knockout misread.")
+if not sim.replay_mapping_selftest():
+    raise SystemExit("the replay does not carry the mapping it is given; row 3b is meaningless")
+
+print("\\n--- knockout-window self-test ---")
+print("eta_scale = 0 stops learning, not reproduction.  A NON-PLASTIC genome's per-type hits")
+print("must swap when the mapping swaps; they do not if the replay window lets the population")
+print("re-evolve.  This is the check that row 3b reads the genome and not a fresh adaptation.")
+if not A.knockout_window_selftest():
+    raise SystemExit("the knockout window is too long; row 3b would read re-selection")
+
 print("\\n--- learning-rule self-test ---")
 print("one agent, one fixed observation, one chosen action; action_noise = 0 so act() is")
 print("deterministic and the logit checked belongs to the action that laid the trace.")

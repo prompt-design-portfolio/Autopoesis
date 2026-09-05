@@ -109,6 +109,10 @@ class Config:
                                       # no tool state in this build.
     pickup_cost: float = 0.02
     prep_fail: float = 0.5        # a WRONG preparation costs this (poison-sized) and fires m = -1.
+    force_mapping: tuple = None   # DIAGNOSTIC ONLY: pin the mapping and stop all redraws, so a
+                                  # replay can be run against a KNOWN mapping.  A knockout that
+                                  # re-seeds the world gets that seed's FIRST mapping, which is
+                                  # not the mapping the replayed genomes were selected under.
     prep_every: int = 2000        # the food -> preparation mapping is redrawn this often,
                                   # independently of the safe/poison flip.
     fail_cost: float = 0.0        # retired with the chain
@@ -189,6 +193,8 @@ class Config:
     seed: int = 0
 
 
+SR_W = 8            # survivor-conditioned since-remap: preparations required each side of a remap
+SURV_EARLY = 2      # survivor curve early half: preparations 1-2 (late half is 6-10)
 N_ACTIONS = 8            # 0-3 move, 4 eat, 5-7 prep_1..3.  v3.10: the recipe chain is gone; the
 EAT = 4                  # fact to be learned sits on EVERY meal, so there is no approach behaviour
 PREP0 = 5                # to evolve.  Preparations are masked in phase 1, which is therefore
@@ -250,8 +256,10 @@ class World:
                     dy, dx = rng.integers(-r, r + 1, size=2)
                     self.station_offsets.append((pi, int(dy), int(dx), st))
         self._place_stations()
-        self.mapping = self._draw_mapping(None)   # food type -> preparation index (0..K-1)
+        self.mapping = (tuple(int(x) for x in cfg.force_mapping) if cfg.force_mapping
+                        else self._draw_mapping(None))   # food type -> preparation index (0..K-1)
         self.flips, self.recipe_changes = [], []
+        self.last_remap = 0            # step of the most recent mapping redraw
         self.chain_on = cfg.chain      # set per phase by run()
         self.chain_start = 0           # step at which the chain switched on; recipe eras are measured
                                        # from here, so phase 2 gets whole eras rather than a part-era
@@ -292,6 +300,7 @@ class World:
     def new_recipe(self, t):
         self.mapping = self._draw_mapping(self.mapping)
         self.recipe_changes.append(t)
+        self.last_remap = t
 
     def step(self, t):
         cfg, g, rng = self.cfg, self.cfg.grid, self.rng
@@ -302,7 +311,8 @@ class World:
         if t > 0 and t % cfg.flip_every == 0:
             self.safe = 1 - self.safe
             self.flips.append(t)
-        if self.chain_on and t > self.chain_start and (t - self.chain_start) % cfg.prep_every == 0:
+        if (self.chain_on and not cfg.force_mapping and t > self.chain_start
+                and (t - self.chain_start) % cfg.prep_every == 0):
             self.new_recipe(t)
             changed_recipe = True
         # rot
@@ -343,7 +353,8 @@ class Agent:
                  "integrity", "repair", "nav_dir", "nav_here", "energy", "y", "x", "item", "tool", "B",
                  "lineage", "gen", "born", "injected",
                  "attempts", "successes", "eats", "safe_eats", "cracks",
-                 "since_recipe", "tool_made_t", "used_tool", "age_bins", "e2_hist", "prep_hist")
+                 "since_recipe", "tool_made_t", "used_tool", "age_bins", "e2_hist", "prep_hist",
+                 "sr_hist", "sr_pre")
 
     def __init__(self, cfg, rng, lineage, y, x, injected=False):
         h = cfg.hidden
@@ -372,6 +383,8 @@ class Agent:
         self.attempts = self.successes = 0
         self.eats = self.safe_eats = self.cracks = 0
         self.since_recipe = 0
+        self.sr_hist = []        # this agent's preparation outcomes since the last remap it lived through
+        self.sr_pre = None       # ok count over its last SR_W preparations BEFORE that remap
         self.tool_made_t = -1
         self.used_tool = False
         self.e2_hist = []
@@ -408,6 +421,7 @@ class Agent:
         c.attempts = c.successes = 0
         c.eats = c.safe_eats = c.cracks = 0
         c.since_recipe = 0
+        c.sr_hist, c.sr_pre = [], None
         c.tool_made_t = -1
         c.used_tool = False
         c.e2_hist = []
@@ -694,7 +708,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              e_bonus=0.0, noops=0, raw_meals=0, prep_meals=0,
              on_food=0, on_food_eat=0, on_food_prep=0,
              prep_n0=0, prep_ok0=0, prep_n1=0, prep_ok1=0,
-             first_n=0, first_ok=0, surv_n=0, surv_early=0, surv_late=0)
+             first_n=0, first_ok=0, surv_n=0, surv_early=0, surv_late=0,
+             srm_n=0, srm_pre=0, srm_post=0, first_n_late=0, first_ok_late=0)
     # FOUNDER-FREE mirror.  Injected agents are fresh random genomes; their own events dilute
     # every event-weighted metric toward chance, and the dilution is heaviest in exactly the arms
     # that need injecting -- so a non-learning arm reads as MORE random the worse it does.  WF
@@ -702,7 +717,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     # not tagged, so descent back into the population is counted from the first generation.
     WF = {k: 0 for k in ("eats", "safe", "attempts", "correct", "prep_n0", "prep_ok0",
                          "prep_n1", "prep_ok1", "first_n", "first_ok",
-                         "surv_n", "surv_early", "surv_late")}
+                         "surv_n", "surv_early", "surv_late", "srm_n", "srm_pre", "srm_post",
+                         "first_n_late", "first_ok_late")}
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
     ATT_R = np.zeros((cfg.n_attempts + 1, 2))   # attempts since the last recipe change
     ATT_F = np.zeros((cfg.n_attempts + 1, 2))   # ... both, founder-free
@@ -726,6 +742,13 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
         if world.step(t):
             for a in agents:
                 a.since_recipe = 0
+                # SURVIVOR-CONDITIONED SINCE-REMAP: an agent qualifies only if it made SR_W
+                # preparations BEFORE this remap and goes on to make SR_W after it.  Both halves
+                # then come from the SAME agent across the SAME remap, so a change cannot be a
+                # different sample -- which is what the population-level since-remap curve is open
+                # to, since the agents alive at preparation 1 are not those alive at 10.
+                a.sr_pre = (sum(a.sr_hist[-SR_W:]) if len(a.sr_hist) >= SR_W else None)
+                a.sr_hist = []
         occ = np.zeros((g, g))
         for a in agents:
             occ[a.y, a.x] += 1
@@ -852,18 +875,38 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                     W["first_n"] += 1; W["first_ok"] += ok      # first-preparation hit
                     if fnd:
                         WF["first_n"] += 1; WF["first_ok"] += ok
+                    # ... split by WHERE IN THE ERA it fell.  A first preparation made just after
+                    # a remap is scored against a mapping the agent's lineage has not been
+                    # selected on yet, so the raw first-prep hit conflates the genome's quality
+                    # with how recently the mapping moved.  `late` is the genome reading.
+                    if (t - world.last_remap) >= cfg.prep_every // 3:
+                        W["first_n_late"] += 1; W["first_ok_late"] += ok
+                        if fnd:
+                            WF["first_n_late"] += 1; WF["first_ok_late"] += ok
                 if len(a.prep_hist) < cfg.n_attempts:
                     a.prep_hist.append(bool(ok))
                     if len(a.prep_hist) == cfg.n_attempts:
                         # SURVIVOR CURVE: this agent reached 10 preparations.  Conditioning on that
                         # removes the survivorship that inflates a population-level hit rate --
                         # every agent counted here contributes both halves of its own curve.
+                        # SURVIVOR CURVE halves are preparations 1-2 against 6-10: the first
+                        # two are before within-life learning could have taken hold, so this is
+                        # the agent's own naive rate against its own settled rate.
                         W["surv_n"] += 1
-                        W["surv_early"] += sum(a.prep_hist[:5]); W["surv_late"] += sum(a.prep_hist[5:])
+                        W["surv_early"] += sum(a.prep_hist[:SURV_EARLY])
+                        W["surv_late"] += sum(a.prep_hist[5:])
                         if fnd:
                             WF["surv_n"] += 1
-                            WF["surv_early"] += sum(a.prep_hist[:5])
+                            WF["surv_early"] += sum(a.prep_hist[:SURV_EARLY])
                             WF["surv_late"] += sum(a.prep_hist[5:])
+                a.sr_hist.append(bool(ok))
+                if a.sr_pre is not None and len(a.sr_hist) == SR_W:
+                    W["srm_n"] += 1
+                    W["srm_pre"] += a.sr_pre; W["srm_post"] += sum(a.sr_hist)
+                    if fnd:
+                        WF["srm_n"] += 1
+                        WF["srm_pre"] += a.sr_pre; WF["srm_post"] += sum(a.sr_hist)
+                    a.sr_pre = None                 # record once per remap per agent
                 a.since_recipe += 1
                 kr = a.since_recipe
                 if kr <= cfg.n_attempts:
@@ -939,9 +982,12 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 prep_hit0=(W["prep_ok0"] / W["prep_n0"]) if W["prep_n0"] else np.nan,
                 prep_hit1=(W["prep_ok1"] / W["prep_n1"]) if W["prep_n1"] else np.nan,
                 n_prep0=W["prep_n0"], n_ok0=W["prep_ok0"], n_prep1=W["prep_n1"], n_ok1=W["prep_ok1"],
+                map_a=int(world.mapping[0]), map_b=int(world.mapping[1]),
                 prep_per_life=W["prep_meals"] / max(W["deaths"], 1),
                 n_first=W["first_n"], n_first_ok=W["first_ok"],
+                n_first_late=W["first_n_late"], n_first_ok_late=W["first_ok_late"],
                 n_surv=W["surv_n"], n_surv_early=W["surv_early"], n_surv_late=W["surv_late"],
+                n_srm=W["srm_n"], n_srm_pre=W["srm_pre"], n_srm_post=W["srm_post"],
                 noops_per_1k=1000.0 * W["noops"] / max(W["steps"], 1),
                 e_bonus_per_1k=1000.0 * W["e_bonus"] / max(W["steps"], 1),     # share of energy income from nuts
                 att_n=ATT[1:, 0].tolist(), att_correct=ATT[1:, 1].tolist(),
@@ -952,8 +998,10 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 f_n_prep0=WF["prep_n0"], f_n_ok0=WF["prep_ok0"],
                 f_n_prep1=WF["prep_n1"], f_n_ok1=WF["prep_ok1"],
                 f_n_first=WF["first_n"], f_n_first_ok=WF["first_ok"],
+                f_n_first_late=WF["first_n_late"], f_n_first_ok_late=WF["first_ok_late"],
                 f_n_surv=WF["surv_n"], f_n_surv_early=WF["surv_early"],
                 f_n_surv_late=WF["surv_late"],
+                f_n_srm=WF["srm_n"], f_n_srm_pre=WF["srm_pre"], f_n_srm_post=WF["srm_post"],
                 f_att_n=ATT_F[1:, 0].tolist(), f_att_correct=ATT_F[1:, 1].tolist(),
                 f_rec_n=ATT_R_F[1:, 0].tolist(), f_rec_correct=ATT_R_F[1:, 1].tolist(),
                 n_founder_prep=W["attempts"] - WF["attempts"],
@@ -973,7 +1021,54 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     return dict(log=log, flips=world.flips,
                 recipe_changes=[c for c in world.recipe_changes if c >= 0],
                 chain_start=world.chain_start, phase_bounds=bounds, n_steps=total_steps,
+                # the mapping the surviving genomes were last selected under.  A replay that
+                # re-seeds the world does NOT get this mapping, so a genome test has to pin it.
+                final_mapping=tuple(int(x) for x in world.mapping),
                 cfg=asdict(cfg), final=snapshot(agents))
+
+
+def replay_mapping_selftest(seeds=(0, 1, 2, 3, 4, 5), verbose=True):
+    """The bug this exists to catch: a knockout that RE-SEEDS the world does not get the mapping
+    its replayed genomes were selected under.
+
+    World.__init__ draws the mapping from the world rng, so a replay under a fresh seed gets that
+    seed's FIRST mapping -- while the source population was last selected under the source run's
+    LAST mapping, after however many redraws.  Scoring a committed genome against a mapping it has
+    never seen and reporting the result as "the genome carries nothing" is exactly what the v3.10
+    and v3.11 knockouts did: plastic seed 0 read 0.296 against a shuffled mapping and 0.844
+    against its own.
+
+    Three claims:
+      1. force_mapping pins the mapping: the run reports it, every window carries it, no redraws;
+      2. WITHOUT force_mapping, a re-seeded replay's mapping differs from the source's final
+         mapping for at least one seed -- which is the condition that made the old reading wrong;
+      3. the two are distinguishable, i.e. a source run whose final mapping is pinned reproduces
+         it and an unpinned one need not.
+    """
+    src = run(Config(seed=0, mode="fixed", n_steps=2400, chain=True, scaffold_food=False,
+                     prep_every=350, prep_value=1.0, prep_fail=0.5), verbose=False)
+    fm = src["final_mapping"]
+
+    pinned = run(Config(seed=99, mode="fixed", n_steps=600, chain=True, scaffold_food=False,
+                        prep_every=350, force_mapping=fm), verbose=False)
+    c1 = (pinned["final_mapping"] == fm
+          and all((w["map_a"], w["map_b"]) == fm for w in pinned["log"])
+          and not pinned["recipe_changes"])
+
+    drawn = []
+    for sd in seeds:
+        w = World(Config(seed=sd, prep_every=350), np.random.default_rng(sd))
+        drawn.append(tuple(int(x) for x in w.mapping))
+    c2 = any(m != fm for m in drawn)
+
+    out = [c1, c2]
+    if verbose:
+        print(f"  source final mapping {fm}; re-seeded worlds draw {drawn}")
+        print(f"  force_mapping pins it, no redraws: {c1}")
+        print(f"  a re-seeded replay can differ from it (the bug condition): {c2}")
+    passed = all(out)
+    print(f"  replay-mapping self-test: {'PASS' if passed else 'FAIL'}")
+    return passed
 
 
 def founder_tag_selftest(seed=0, verbose=True):

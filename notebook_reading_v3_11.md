@@ -128,3 +128,34 @@ that seed's row 1a reads against v3.1's published range, conservative end 0.56.
 Once encounters are skewed, `max(share_A, share_B)` — not 0.5 — is the level a type-blind policy
 reaches, because "always prep_k" for the commoner type beats 0.5 with no type knowledge at all.
 Each arm's own type-blind level now prints beside its hit rate, and gate 1b is read against it.
+
+---
+
+## 11. Why gate 1b fired at `prep_every` = 700: standing polymorphism
+
+The v3.11 acceptance had **every within-life line positive in 2/2** and gate 1b firing anyway. The
+mechanism is not mutation and not within-life learning in `fixed`. It is **standing polymorphism**.
+
+There are only **six** distinct mappings of two food types onto three preparations. A population of
+several hundred carries genotypes for several of them **at the same time**. So when the mapping is
+redrawn, nothing has to be invented: **lineage selection promotes whichever genotype already
+matches**, and at 700 steps an era is long enough — more than a generation — for it to do so.
+
+Two signatures, both in the printed output:
+
+- **The per-era `(A, B)` pairs flip between eras** rather than drifting. A genome slowly acquiring
+  a conjunction would improve monotonically; a population switching between standing genotypes
+  shows the high type jumping from A to B and back as the mapping moves.
+- **First-preparation hit of 0.67–0.72.** That is measured on an agent's very first preparation,
+  before it has learned anything, so it reads the innate policy the standing population carries —
+  and it is well above the type-blind level.
+
+This is why `prep_every` goes to **350**: below a generation, so a matching lineage cannot be
+selected up inside an era. It is also deliberately **not a multiple of `flip_every` = 300**, so the
+fast fact (which type is safe) and the slow fact (which preparation goes with which type) do not
+come into phase and cannot be tracked by a single periodic cue.
+
+**If the gate still fires at 350, the next change is K = 4 preparations.** That takes the number of
+distinct mappings from 6 to 12, which makes carrying standing genotypes for all of them
+substantially more expensive — it attacks the mechanism directly rather than the time available to
+it.

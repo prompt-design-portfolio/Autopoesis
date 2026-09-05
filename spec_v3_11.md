@@ -119,7 +119,7 @@ v3.1 metabolism: `base_cost` 0.006 · `move_cost` 0.002 · `start_energy` 1.5 ·
 `repro_threshold` 3.0 · `repro_cost` 1.5 · `max_energy` 5.0 · **`max_pop` 800** · `init_pop` 300 ·
 `min_pop` 40 · food +0.7 / poison −0.5 · `flip_every` 300 · `eta_init` 0.2.
 
-Preparation: **`prep_value` 1.0** · **`prep_fail` 0.5** · **`prep_every` 700** · K = 3.
+Preparation: **`prep_value` 1.0** · **`prep_fail` 0.5** · **`prep_every` 350** · K = 3.
 *(v3.11: both changed after the v3.10 acceptance run. See "Changes after the v3.10 acceptance".)*
 
 Expected value of a preparation at chance: `1/3 × 1.0 − 2/3 × 0.5 = **0.000**`, against `+0.1` for a
@@ -174,13 +174,17 @@ before it is called.
 **Pre-registered prediction, refined after the v3.10 acceptance and recorded before the v3.11
 run:**
 
-1. **`fixed` at or below 0.5**, with the **type-blind split** — one type high, the other **near
-   zero**. The v3.10 acceptance had it at 0.625/0.699 with the wrong type at 0.377, which is a
-   partial genetic conjunction; at `prep_every` = 700 that second number should collapse toward 0.
+1. **`fixed` at 0.52–0.56** — its own type-blind level and no more. At `prep_every` = 700 gate 1b
+   still fired (first-prep hit 0.67–0.72), because of **standing polymorphism**: the population
+   carries genotypes for several of the six possible mappings at once, so a remap needs no
+   mutation — lineage selection just promotes whichever genotype already matches. 350 is below a
+   generation, so a lineage cannot be selected up within an era.
 2. **`scrambled` ≈ `fixed`.** Its elevation in v3.10 was the same genetic era-tracking, not lucky
    `H`: survivor halves matched `fixed` to three decimals and first-prep hit was 0.821/0.607. It
    should track `fixed` again, and its `probe_adv` should stay at zero.
-3. **`plastic (W2)` above 0.5 on both types** — the conjunction, not a type-blind guess.
+3. **`plastic (W2)` at 0.65–0.70**, and above 0.5 on **both types** — the conjunction, not a
+   type-blind guess. It should lose less to the shorter era than `fixed` does, because it
+   relearns within a life rather than waiting on a generation.
 4. **The since-remap curve dips and recovers within ~5 preparations** in `plastic`: at a remap the
    learned `H` is wrong, so a learner pays for the change and earns it back. Flat means nothing is
    relearned within a life; never recovering means 700 steps is shorter than the learner needs,
@@ -273,3 +277,36 @@ worse than raw eating until the mapping is known, and strictly better once it is
 
 Rule fixes: **row 0** as above · **row 3b** reads its first 500 steps · **the pre-registered
 prediction** refined to four numbered clauses.
+
+
+---
+
+## Changes after the v3.11 acceptance run at `prep_every` 700
+
+Every within-life line was positive in 2/2, and gate 1b still fired.
+
+**Why it fired: standing polymorphism.** There are six possible distinct mappings, and the
+population carries genotypes for several of them at once. A remap therefore needs no mutation and
+no new adaptation — **lineage selection simply promotes whichever genotype already matches**, and
+it can do that inside a single era. The signature is in the per-era `(A, B)` pairs, which *flip*
+between eras rather than drifting, and in a first-preparation hit of **0.67–0.72**: that is the
+innate policy of the standing population, measured before the agent has learned anything.
+
+| change | from → to | why | check |
+|---|---|---|---|
+| `prep_every` | 700 → **350** | below a generation, so a matching lineage cannot be selected up within an era. Deliberately **not a multiple of `flip_every` = 300**, so the fast fact and the slow fact do not come into phase | gate 1b re-read at 2 seeds. **If it still fires, the next change is K = 4 preparations** — which takes the number of distinct mappings from 6 to 12 and makes standing polymorphism across all of them much more expensive |
+
+Rule changes, all in the reading and none in the world:
+
+- **Rig check 2(a)** reads on **whole-phase founder-free safe rate**, `plastic` − `fixed` ≥ 0.03.
+  At 350 an era is far too few meal events to read a rate on.
+- **Abstention** fires only if prepared meals per life < 0.8× `fixed` **and** (hit ≤ `fixed`
+  **or** pop ≤ `fixed`). Preparing less while scoring and living better is a learner declining bad
+  bets, not one abstaining from the task.
+- **Survivor curve** halves become preparations **1–2 against 6–10**: the first two are before
+  within-life learning could have taken hold, so it is the agent's own naive rate against its own
+  settled rate.
+- **New: survivor-conditioned since-remap curve.** Only agents that made **8 preparations both
+  before and after the same remap** are counted, each contributing its own rate either side. The
+  population-level since-remap curve is open to the objection that the agents alive at preparation
+  1 are not the ones alive at 10; this line is not.

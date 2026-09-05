@@ -42,11 +42,13 @@ WORLD = dict(
     # preparation payoff up to the cap without it.  (v3.10 acceptance ran prep_value 1.5, where a
     # chance preparation paid +0.17 and every outcome arm sat at 675-799 against a cap of 800.)
     prep_value=1.0, prep_fail=0.5,
-    # 700, from the v3.10 acceptance: at 2000 there are ~12 generations per era and selection uses
-    # them -- `fixed` tracked the era and, in seed 0, held the conjunction genetically in 2 of 4
-    # eras (prep_gain innate 0.995 / 1.611 against `random policy`'s -0.10).  Judged against
-    # `fixed` only, per rule 9.
-    prep_every=700,
+    # 350, from the v3.11 acceptance at 700, where gate 1b still fired.  The mechanism is
+    # STANDING POLYMORPHISM: the population carries genotypes for several of the six possible
+    # mappings at once, so a remap needs no mutation -- lineage selection just promotes whichever
+    # genotype already matches, within the era.  350 is BELOW a generation, and deliberately not a
+    # multiple of flip_every (300) so the two facts do not come into phase.  Judged against
+    # `fixed` only, per rule 9.  If the gate still fires at 350, the next change is K = 4.
+    prep_every=350,
     scaffold_food=False, scaffold_chain=False, goal_channel=False,
 )
 
@@ -338,16 +340,32 @@ def type_blind_level(L, ff=False):
 
 
 def surv_curve(L, ff=False):
-    """Hit on preparations 1-5 vs 6-10, over agents that REACHED 10 preparations.  Every agent
+    """Hit on preparations 1-2 vs 6-10, over agents that REACHED 10 preparations.  Every agent
     counted contributes both halves of its own curve, so a rise cannot be survivorship: it is the
     same individuals, later in their own lives.  (`probe_adv` is computed over the LIVING and so
     is itself partly survivorship-selected; this line is not.)"""
     n = float(np.sum([r[_k("n_surv", ff)] for r in L]))
     if not n:
         return np.nan, np.nan, np.nan, 0
-    e = float(np.sum([r[_k("n_surv_early", ff)] for r in L])) / (5 * n)
+    from sim import SURV_EARLY
+    e = float(np.sum([r[_k("n_surv_early", ff)] for r in L])) / (SURV_EARLY * n)
     l = float(np.sum([r[_k("n_surv_late", ff)] for r in L])) / (5 * n)
     return e, l, l - e, int(n)
+
+
+def surv_remap(L, ff=False):
+    """SURVIVOR-CONDITIONED since-remap.  Only agents that made SR_W preparations BOTH before and
+    after the same remap are counted, and each contributes its own rate on either side.  The
+    population-level since-remap curve is open to the objection that the agents alive at
+    preparation 1 are not the ones alive at 10; this is not, because it is the same agent across
+    the same remap."""
+    from sim import SR_W
+    n = float(np.sum([r[_k("n_srm", ff)] for r in L]))
+    if not n:
+        return np.nan, np.nan, np.nan, 0
+    pre = float(np.sum([r[_k("n_srm_pre", ff)] for r in L])) / (SR_W * n)
+    post = float(np.sum([r[_k("n_srm_post", ff)] for r in L])) / (SR_W * n)
+    return pre, post, post - pre, int(n)
 
 
 def first_prep_hit(L, ff=False):
@@ -367,28 +385,81 @@ def shift_timing(run_, bin_size=250, span=2000):
     return out
 
 
-def knockout(results, name, steps=3000, seed_offset=1000, early=500):
-    """Replay late genomes with eta_scale = 0 in a fresh world: same brains, no learning.
+def knockout(results, name, steps=None, seed_offset=1000):
+    """Replay late genomes with eta_scale = 0: same brains, no learning, MAPPING PINNED.
 
-    READ THE FIRST WINDOW.  eta_scale = 0 removes learning but NOT reproduction and mutation, so
-    over `steps` the replayed population RE-EVOLVES against the new mapping: measured on the v3.10
-    acceptance run, max_gen went 4-8 -> 9-35 across 3000 steps and the hit rate climbed with it
-    (plastic seed 0: 0.485 -> 0.657).  The second half therefore measures re-selection in the new
-    world, not the genome.  Both windows and both max_gen values are returned so the contamination
-    stays visible rather than being taken on trust."""
+    THE MAPPING IS THE WHOLE POINT.  World.__init__ draws the mapping from the world rng, so the
+    old form of this row -- replay under a fresh seed -- scored the genomes against a mapping they
+    had never been selected on and reported it as "the genome carries nothing".  Measured on
+    plastic seed 0 at prep_every 700, the same genomes score:
+
+        0.844 (A 0.899, B 0.798)  against their OWN final mapping   -- a real conjunction
+        0.296 (A 0.546, B 0.093)  against that mapping SHUFFLED     -- below chance, as a
+                                                                       committed genome should be
+
+    Both are reported, because the PAIR is the signature: a genome holding the conjunction for one
+    mapping scores high on it and below chance on the swap.  A genome holding nothing scores near
+    its type-blind level on both.  `replay_mapping_selftest` in sim.py guards the pinning.
+
+    THE WINDOW IS ONE LOG BIN.  eta_scale = 0 stops learning but NOT reproduction, and this
+    population turns over fast: max_gen reached 4.4 within 500 steps of a replay, which is enough
+    generations for selection to re-adapt to the pinned mapping.  A 500-step read at prep_every
+    350 showed a NON-PLASTIC `fixed` genome scoring 0.775 on its own mapping and 0.730 on the
+    swap, with its per-type hits failing to swap -- impossible for a policy that cannot change,
+    and the signature of re-evolution.  pop and max_gen are printed so that stays visible: if
+    max_gen has moved, the number is not the genome.
+    """
     from sim import Config, run as _run
     out = []
     for i, r in enumerate(results[name]):
-        cfg = dict(r["cfg"]); cfg.pop("seed", None); cfg.pop("n_steps", None)
-        cfg["eta_scale"] = 0.0
-        rr = _run(Config(seed=seed_offset + i, **cfg), verbose=False,
-                  init_genomes=r["final"], phases=[dict(n_steps=steps, chain=True)])
-        E, L = window(rr, 0, early), rr["log"][len(rr["log"]) // 2:]
-        out.append(dict(
-            hit=prep_hit(E), a=rate(E, "n_ok0", "n_prep0"), b=rate(E, "n_ok1", "n_prep1"),
-            pop=half(E, "pop"), gen=half(E, "max_gen"),
-            late_hit=prep_hit(L), late_gen=half(L, "max_gen")))
+        fm = tuple(r["final_mapping"])
+        n_steps = int(steps if steps is not None else r["cfg"]["log_every"])
+        row = dict(seed=r["cfg"]["seed"], mapping=fm)
+        for tag, mp in (("matched", fm), ("shuffled", (fm[1], fm[0]))):
+            cfg = dict(r["cfg"]); cfg.pop("seed", None); cfg.pop("n_steps", None)
+            cfg["eta_scale"], cfg["force_mapping"] = 0.0, mp
+            rr = _run(Config(seed=r["cfg"]["seed"], **cfg), verbose=False,
+                      init_genomes=r["final"], phases=[dict(n_steps=n_steps, chain=True)])
+            L = rr["log"][:1]                      # the FIRST log bin only
+            row[tag] = (prep_hit(L), hit_a(L), hit_b(L), half(L, "pop"), half(L, "max_gen"))
+        out.append(row)
     return out
+
+
+def knockout_window_selftest(seed=0, verbose=True):
+    """The second knockout bug: the replay window was long enough for the population to RE-EVOLVE.
+
+    eta_scale = 0 stops learning, not reproduction.  At 500 steps the replayed population reached
+    max_gen 4.4 -- enough generations for selection to re-adapt to whatever mapping is pinned, so
+    the "genome" number was partly a fresh adaptation.  The tell was a NON-PLASTIC `fixed` genome
+    scoring 0.775 on its own mapping and 0.730 on the swap: a policy that cannot change must have
+    its per-type hits SWAP when the mapping swaps.
+
+    That is the test.  Replay a `fixed` population against its own mapping and the swap; the sign
+    of (hit|A - hit|B) must flip.  It does not flip if the window lets the population re-evolve.
+    """
+    from sim import Config, run as _run
+    kw = dict(WORLD); kw.update(mode="fixed")
+    src = _run(Config(seed=seed, **kw), verbose=False,
+               phases=[dict(n_steps=1500, chain=False), dict(n_steps=1500, chain=True)])
+    got = knockout({"fixed": [src]}, "fixed")[0]
+    (_, ma, mb, _, mg), (_, sa, sb, _, sg) = got["matched"], got["shuffled"]
+    swapped = np.sign(ma - mb) == -np.sign(sa - sb)
+    if verbose:
+        print(f"  mapping {got['mapping']}   matched A {ma:.3f} B {mb:.3f} (gen {mg:.1f})"
+              f"   shuffled A {sa:.3f} B {sb:.3f} (gen {sg:.1f})")
+        print(f"  a non-plastic genome's per-type hits swap with the mapping: {bool(swapped)}")
+    print(f"  knockout-window self-test: {'PASS' if swapped else 'FAIL'}")
+    return bool(swapped)
+
+
+def late_first_prep(L, ff=False):
+    """First-preparation hit restricted to first preparations made at least a third of an era
+    AFTER a remap.  The raw first-prep hit conflates the genome's quality with how recently the
+    mapping moved: an agent whose first preparation lands just after a remap is scored against a
+    mapping its lineage has not been selected on.  Measured on plastic seed 0 at prep_every 700,
+    the raw number was 0.490 while the same genomes against their own mapping scored 0.817."""
+    return rate(L, _k("n_first_ok_late", ff), _k("n_first_late", ff))
 
 
 def _era_len(run_, era=None):
@@ -581,8 +652,8 @@ def _decision_numbers(results):
             print(f"    {'':<22} (A,B) {shown}{tail_}")
 
     print(f"\n  GATE 1b, two parts, both judged against `fixed` (and `scrambled`) ONLY:")
-    fp_f = v(F, P2, FF(first_prep_hit))
-    fp_s = v(S, P2, FF(first_prep_hit)) if S in results else None
+    fp_f = v(F, P2, FF(late_first_prep))          # late-in-era: the genome reading
+    fp_s = v(S, P2, FF(late_first_prep)) if S in results else None
     print(f"    (i)  fixed prep hit <= 0.55      {np.round(hf,3).tolist()}"
           f"   {'PASS' if np.all(hf <= 0.55) else 'FAIL'}")
     print(f"    (ii) first-prep hit <= ~0.55 -- the INNATE policy, before any learning at all.")
@@ -604,12 +675,14 @@ def _decision_numbers(results):
         print(f"    {n:<22} {np.round(v(n, P2, lambda L: half(L, 'prep_gain_innate')), 3).tolist()}")
 
     print("\nrow 2  RIG CHECKS -- nothing below is read until these are clean.")
-    print("  (a) food learning survives the switch.  READ ON SAFE RATE in the first mapping era")
-    print("      (plastic - fixed >= 0.03); the corrected probe in the first 500 steps is")
-    print("      CORROBORATING.  The v3.1 probe form was contaminated here -- it subtracts the best")
-    print("      OTHER action, and with three preparations live that term moves with food type.")
-    sfe, sffe = v(PL, first_era, FF(safe)), v(F, first_era, FF(safe))
-    print(f"    safe (first era)  plastic {np.round(sfe,3).tolist()}  fixed {np.round(sffe,3).tolist()}"
+    print("  (a) food learning survives the switch.  READ ON WHOLE-PHASE FOUNDER-FREE SAFE RATE")
+    print("      (plastic - fixed >= 0.03).  At prep_every 350 a single era is ~350 steps, far too")
+    print("      few meal events to read a rate on, so the window is the whole of phase 2.  The")
+    print("      corrected probe in the first 500 steps is CORROBORATING.  The v3.1 probe form was")
+    print("      contaminated here -- it subtracts the best OTHER action, and with three")
+    print("      preparations live that term moves with food type.")
+    sfe, sffe = v(PL, P2, FF(safe)), v(F, P2, FF(safe))
+    print(f"    safe (whole phase 2)  plastic {np.round(sfe,3).tolist()}  fixed {np.round(sffe,3).tolist()}"
           f"   diff {np.round(sfe - sffe,3).tolist()}   >= +{MARGIN} in {n_ok(sfe, sffe)}/{nseed}"
           f"   {'PASS' if n_ok(sfe, sffe) >= rule else 'FAIL'}")
     first500 = lambda r: window(r, r.get("chain_start", 0), r.get("chain_start", 0) + 500)
@@ -642,9 +715,17 @@ def _decision_numbers(results):
     print("=" * 78)
     hp, hs = v(PL, P2, FF(prep_hit)), v(S, P2, FF(prep_hit))
     pl, fl = v(PL, P2, lambda L: half(L, "prep_per_life")), plf
-    print("  ABSTENTION CHECK FIRST -- prepared meals not below 0.8x `fixed`.")
+    print("  ABSTENTION CHECK FIRST.  Fires only if prepared meals per life < 0.8x `fixed`")
+    print("  AND (hit <= fixed OR pop <= fixed): preparing less while scoring and living BETTER is")
+    print("  a learner declining bad bets, not one abstaining from the task.")
+    popp, popf = v(PL, P2, lambda L: half(L, "pop")), v(F, P2, lambda L: half(L, "pop"))
+    ratio = pl / np.maximum(fl, 1e-9)
+    abst = (ratio < 0.80) & ((hp <= hf) | (popp <= popf))
     print(f"    prep/life plastic {np.round(pl,2).tolist()}  fixed {np.round(fl,2).tolist()}"
-          f"   ratio {np.round(pl / np.maximum(fl, 1e-9), 2).tolist()}   (abstention if < 0.80)")
+          f"   ratio {np.round(ratio,2).tolist()}   (< 0.80 in {int(np.sum(ratio < 0.80))}/{nseed})")
+    print(f"    hit  plastic {np.round(hp,3).tolist()}  fixed {np.round(hf,3).tolist()}"
+          f"      pop  plastic {np.round(popp,0).tolist()}  fixed {np.round(popf,0).tolist()}")
+    print(f"    ABSTENTION FIRES in {int(np.sum(abst))}/{nseed} seed(s) {np.where(abst)[0].tolist()}")
     print("  the result lines:")
     print(f"    plastic - fixed:     {np.round(hp - hf,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hf)}/{nseed}")
     print(f"    plastic - scrambled: {np.round(hp - hs,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hs)}/{nseed}   <- scrambled carries it")
@@ -697,36 +778,53 @@ def _decision_numbers(results):
         e = np.nanmean([x[0] for x in rows]); l = np.nanmean([x[1] for x in rows])
         d = np.array([x[2] for x in rows], dtype=float); nn = int(np.sum([x[3] for x in rows]))
         print(f"    {n:<22}{e:>11.3f}{l:>12.3f}{np.nanmean(d):>9.3f}{nn:>10d}   per seed {np.round(d,3).tolist()}")
-    print("  (ii) FIRST-PREPARATION HIT -- the agent has learned nothing, so this reads the innate")
-    print("       policy the population carries (and shows the type-blind floor directly).")
+    print("  (ii) SURVIVOR-CONDITIONED SINCE-REMAP -- the same agent across the same remap.")
+    print("       Counted only if it made 8 preparations BEFORE a remap and 8 after it, so a fall")
+    print("       and recovery cannot be a change of sample.  The population-level since-remap")
+    print("       curve below IS open to that objection; this line is not.")
+    print(f"    {'arm':<22}{'8 before':>10}{'8 after':>10}{'change':>9}{'n agent-remaps':>16}")
     for n in names:
-        print(f"    {n:<22} {np.round(v(n, P2, FF(first_prep_hit)),3).tolist()}"
-              f"   (all {np.round(v(n, P2, first_prep_hit),3).tolist()},"
-              f" its type-blind level {np.round(v(n, P2, FF(type_blind_level)),3).tolist()})")
+        rows = [surv_remap(P2(r), True) for r in results[n]]
+        pre = np.nanmean([x[0] for x in rows]); post = np.nanmean([x[1] for x in rows])
+        d = np.array([x[2] for x in rows], dtype=float); nn = int(np.sum([x[3] for x in rows]))
+        print(f"    {n:<22}{pre:>10.3f}{post:>10.3f}{np.nanmean(d):>9.3f}{nn:>16d}"
+              f"   per seed {np.round(d,3).tolist()}")
+
+    print("  (iii) FIRST-PREPARATION HIT -- the agent has learned nothing, so this reads the innate")
+    print("       policy the population carries (and shows the type-blind floor directly).")
+    print("       READ THE `late` COLUMN.  A first preparation made just after a remap is scored")
+    print("       against a mapping the agent's lineage has not been selected on, so the raw")
+    print("       number mixes the genome's quality with how recently the mapping moved.  `late`")
+    print("       counts only first preparations at least a third of an era after a remap.")
+    print(f"    {'arm':<22}{'late':>18}{'raw':>18}{'type-blind level':>20}")
+    for n in names:
+        print(f"    {n:<22}{str(np.round(v(n, P2, FF(late_first_prep)),3).tolist()):>18}"
+              f"{str(np.round(v(n, P2, FF(first_prep_hit)),3).tolist()):>18}"
+              f"{str(np.round(v(n, P2, FF(type_blind_level)),3).tolist()):>20}")
     if CEIL in results:
         hc = v(CEIL, P2, prep_hit)
         print(f"  ceiling {np.round(hc,3).tolist()}   (reference: hand-wired exact credit, forced argmax)")
 
-    print("\nrow 3b  KNOCKOUT -- late genomes replayed with eta_scale = 0 in a fresh world.")
-    print("        Same brains, no learning.  If the standing advantage lives in H, BOTH plastic")
-    print("        and scrambled fall to the type-blind floor; what separates them is then the")
-    print("        survivor curve, which is learning, not luck.")
-    print("        READ THE FIRST WINDOW.  eta_scale = 0 stops learning but NOT reproduction, so")
-    print("        the replay RE-EVOLVES: the late columns are printed only to show that drift,")
-    print("        and are NOT the genome.  A rising hit with a rising max_gen is re-selection.")
-    print(f"    {'arm':<22}{'hit':>8}{'hit|A':>8}{'hit|B':>8}{'A+B':>7}{'pop':>7}{'gen':>7}"
-          f"{'| late hit':>11}{'late gen':>10}")
-    for n in (PL, S):
+    print("\nrow 3b  KNOCKOUT -- late genomes, eta_scale = 0, MAPPING PINNED, first 500 steps.")
+    print("        Read the PAIR.  A genome holding the conjunction for the mapping it was")
+    print("        selected under scores high on that mapping and BELOW CHANCE on the swap; a")
+    print("        genome holding nothing scores near its type-blind level on both.  The old form")
+    print("        of this row re-seeded the world, which draws a DIFFERENT mapping, and so read")
+    print("        a committed genome as an empty one.  sim.replay_mapping_selftest guards this.")
+    print(f"    {'arm / seed':<20}{'map':>7}{'matched':>9}{'A':>7}{'B':>7}{'gen':>6}{'|':>3}"
+          f"{'shuffled':>10}{'A':>7}{'B':>7}{'gen':>6}")
+    for n in (PL, S, F):
+        if n not in results:
+            continue
         try:
-            for i, k in enumerate(knockout(results, n)):
-                print(f"    {n + ' seed ' + str(i):<22}{k['hit']:>8.3f}{k['a']:>8.3f}{k['b']:>8.3f}"
-                      f"{k['a'] + k['b']:>7.2f}{k['pop']:>7.0f}{k['gen']:>7.1f}"
-                      f"{k['late_hit']:>11.3f}{k['late_gen']:>10.1f}")
+            for k in knockout(results, n):
+                m, sh = k["matched"], k["shuffled"]
+                print(f"    {n + ' s' + str(k['seed']):<20}{str(k['mapping']):>7}"
+                      f"{m[0]:>9.3f}{m[1]:>7.3f}{m[2]:>7.3f}{m[4]:>6.1f}{'|':>3}"
+                      f"{sh[0]:>10.3f}{sh[1]:>7.3f}{sh[2]:>7.3f}{sh[4]:>6.1f}")
         except Exception as exc:
-            print(f"    {n:<22} knockout failed: {type(exc).__name__}: {exc}")
-    print(f"    reference levels: chance {CHANCE:.3f}, type-blind {TYPE_BLIND:.2f}.  A+B <= 1 is a")
-    print("    mixture of type-blind genotypes carrying NO type knowledge; A+B > 1 is conjunction")
-    print("    held in the genome.")
+            print(f"    {n:<20} knockout failed: {type(exc).__name__}: {exc}")
+    print(f"    reference levels: chance {CHANCE:.3f}, type-blind {TYPE_BLIND:.2f}")
 
     print("\nrow 4  GENE ROWS (corroborating only)")
     for g in ("eta2", "lam2", "eta1"):
