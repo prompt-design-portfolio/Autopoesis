@@ -1,8 +1,5 @@
 """
-v3.11 analysis -- the preparation world, after the v3.10 acceptance run.
-
-Two parameter changes (prep_every 2000 -> 700, prep_value 1.5 -> 1.0) and three rule fixes; see
-"Changes after the v3.10 acceptance" in spec_v3_11.md.
+v3.10 analysis -- the preparation world.
 
 v3.9 closed the recipe world: a chain paying only at the end is sparse, and a rare opportunity
 cannot generate the selection differential that would build the approach behaviour making it less
@@ -36,17 +33,7 @@ WORLD = dict(
     repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=800, init_pop=300,
     # phase 2 adds three preparations.  Nothing else changes -- no new inputs, no items,
     # stations or nuts.  The fact to be learned sits on EVERY meal.
-    # prep_value 1.0 against prep_fail 0.5 puts the CHANCE EV of a preparation at exactly zero:
-    # (1/3)(+1.0) + (2/3)(-0.5) = 0.  Eating raw is +0.10 at chance and +0.70 knowing the flip, so
-    # preparation now pays ONLY through knowledge of the mapping, and a population cannot ride the
-    # preparation payoff up to the cap without it.  (v3.10 acceptance ran prep_value 1.5, where a
-    # chance preparation paid +0.17 and every outcome arm sat at 675-799 against a cap of 800.)
-    prep_value=1.0, prep_fail=0.5,
-    # 700, from the v3.10 acceptance: at 2000 there are ~12 generations per era and selection uses
-    # them -- `fixed` tracked the era and, in seed 0, held the conjunction genetically in 2 of 4
-    # eras (prep_gain innate 0.995 / 1.611 against `random policy`'s -0.10).  Judged against
-    # `fixed` only, per rule 9.
-    prep_every=700,
+    prep_value=1.5, prep_fail=0.5, prep_every=2000,
     scaffold_food=False, scaffold_chain=False, goal_channel=False,
 )
 
@@ -91,58 +78,28 @@ SEED_RULE = 4          # min(SEED_RULE, n_seeds): a 3-seed pass reads as 3/3
 
 # ---------------------------------------------------------------- running
 
-def load(path):
-    """Reload a checkpoint.  Returns {} if there is nothing there yet, so the run cell can be
-    re-executed after a dropped session without editing it."""
-    import pickle, os
-    if not os.path.exists(path):
-        return {}
-    with open(path, "rb") as f:
-        return pickle.load(f)
-
-
-def _done_seeds(results, name):
-    return {r["cfg"]["seed"] for r in results.get(name, [])}
-
-
 def run_experiment(seeds, phase_steps=PHASE_STEPS, variants=VARIANTS, verbose=False,
-                   save_path=None, results=None, **overrides):
+                   save_path=None, **overrides):
     """Sequential, single process: this has to run on a Colab CPU runtime, so no multiprocessing.
-
-    RESUMABLE.  Pass `results` (from `load(save_path)`) and any (arm, seed) already present is
-    SKIPPED, so the grid stage continues from the acceptance stage's checkpoint in the same
-    session instead of re-running the six runs it shares.  Runs are pickled after every one, so a
-    dropped Colab session costs one run rather than the lot.  Each arm's list is returned in seed
-    order regardless of the order the runs were actually done in."""
+    If save_path is given the results are pickled after every run, so a dropped session loses one
+    run rather than the lot."""
     import pickle, time
-    results = {k: list(vv) for k, vv in (results or {}).items()}
-    for v_ in variants:
-        results.setdefault(v_, [])
-    todo = [(seed, name) for seed in seeds for name in variants
-            if seed not in _done_seeds(results, name)]
-    skipped = len(seeds) * len(variants) - len(todo)
-    if skipped:
-        print(f"resuming: {skipped} run(s) already in the checkpoint, {len(todo)} to do", flush=True)
-    total, done, t0 = len(todo), 0, time.time()
-    for seed, name in todo:
-        spec = variants[name]
-        phases = [dict(p, n_steps=int(p["n_steps"] / PHASE_STEPS * phase_steps)) for p in spec["phases"]]
-        kw = dict(spec["kw"]); kw.update(overrides)          # overrides win over WORLD
-        t1 = time.time()
-        results[name].append(run(Config(seed=seed, **kw), verbose=verbose, phases=phases))
-        done += 1
-        el = time.time() - t0
-        print(f"[{done}/{total}] {name} seed={seed}  {time.time()-t1:.0f}s   "
-              f"elapsed {el/60:.1f} min, est. stage total {el/done*total/60:.0f} min", flush=True)
-        if save_path:
-            with open(save_path, "wb") as f:
-                pickle.dump(results, f)
-    for name in results:                                     # seed order, not run order
-        results[name].sort(key=lambda r: r["cfg"]["seed"])
-    if save_path:
-        with open(save_path, "wb") as f:
-            pickle.dump(results, f)
-    return {k: vv for k, vv in results.items() if vv}
+    results = {v: [] for v in variants}
+    total, done, t0 = len(seeds) * len(variants), 0, time.time()
+    for seed in seeds:
+        for name, spec in variants.items():
+            phases = [dict(p, n_steps=int(p["n_steps"] / PHASE_STEPS * phase_steps)) for p in spec["phases"]]
+            kw = dict(spec["kw"]); kw.update(overrides)      # overrides win over WORLD
+            t1 = time.time()
+            results[name].append(run(Config(seed=seed, **kw), verbose=verbose, phases=phases))
+            done += 1
+            el = time.time() - t0
+            print(f"[{done}/{total}] {name} seed={seed}  {time.time()-t1:.0f}s   "
+                  f"elapsed {el/60:.1f} min, est. total {el/done*total/60:.0f} min", flush=True)
+            if save_path:
+                with open(save_path, "wb") as f:
+                    pickle.dump(results, f)
+    return results
 
 
 # ---------------------------------------------------------------- windows
@@ -338,24 +295,18 @@ def knockout(results, name, steps=3000, seed_offset=1000, early=500):
     return out
 
 
-def _era_len(run_, era=None):
-    """An era is one mapping, so it is cfg.prep_every -- not a constant.  Hardcoding 2000 here
-    would silently span three eras once prep_every moved to 700."""
-    return int(era if era is not None else run_["cfg"]["prep_every"])
-
-
-def first_era(run_, era=None):
-    """The FIRST mapping era of phase 2 -- steps 0..prep_every after the switch.  Rig check 2(a)
-    is read here and only here: once the mapping is known, preparation pays on ANY food, the
-    safe/poison fact matters less, and a good learner stops eating raw.  probe_adv (food) decaying
-    after that is a GOOD reason, not a broken transition."""
+def first_era(run_, era=2000):
+    """The FIRST mapping era of phase 2 -- steps 0..era after the switch.  Rig check 2(a) is read
+    here and only here: once the mapping is known, preparation pays 1.5 on ANY food, the
+    safe/poison fact becomes irrelevant, and a good learner stops eating raw.  probe_adv (food)
+    decaying after that is a GOOD reason, not a broken transition."""
     sw = run_.get("chain_start", 0)
-    return window(run_, sw, sw + _era_len(run_, era))
+    return window(run_, sw, sw + era)
 
 
-def era_windows(run_, era=None):
-    sw, n, e = run_.get("chain_start", 0), run_["n_steps"], _era_len(run_, era)
-    return [window(run_, lo, min(lo + e, n)) for lo in range(sw, n, e)]
+def era_windows(run_, era=2000):
+    sw, n = run_.get("chain_start", 0), run_["n_steps"]
+    return [window(run_, lo, min(lo + era, n)) for lo in range(sw, n, era)]
 
 
 def summary(results):
@@ -363,7 +314,7 @@ def summary(results):
     w = 24
     nseed = len(results[names[0]])
     print("=" * (20 + w * len(names)))
-    print(f"v3.11 -- the preparation world.  {nseed} seeds.  Prep hit: chance {CHANCE:.3f}, "
+    print(f"v3.10 -- the preparation world.  {nseed} seeds.  Prep hit: chance {CHANCE:.3f}, "
           f"type-blind {TYPE_BLIND:.2f}, full {FULL:.2f}.  Chance safe rate 0.500.  Random-policy "
           f"action share 1/5 in phase 1, 1/8 in phase 2.")
     print("=" * (20 + w * len(names)))
@@ -403,11 +354,6 @@ def _decision_numbers(results):
     P1 = lambda r: phase_half(r, 0)
     P2 = lambda r: phase_half(r, 1)
     F, S, PL, CEIL = "fixed", "scrambled", "plastic (W2)", "fixed + B (ceiling)"
-    # The acceptance stage runs three arms, the grid stage five.  Every list below is filtered to
-    # what is actually in `results`, so the same decision block reads either without a KeyError.
-    present = [n for n in VARIANTS if n in results]
-    outcome = [n for n in OUTCOME_ARMS if n in results]
-    has_null = NULL in results
     v = lambda n, sel, f: ps(results, n, sel, f)
     n_ok = lambda a, b: int(np.sum(np.asarray(a) - np.asarray(b) >= MARGIN))
     hitA = lambda L: rate(L, "n_ok0", "n_prep0")
@@ -426,36 +372,12 @@ def _decision_numbers(results):
     print("-" * 78)
 
     print("\nrow 0  uninterpretable?  Per phase.  `random policy` is EXEMPT.")
-    print("  EXCLUDE on pop < 80, or on SUSTAINED injection -- mean >= 1 per window over the half.")
-    print("  (The v3.10 acceptance excluded phase-2 `fixed` at pop 675/789 against a cap of 800 on")
-    print("   0.1 injections per window in one seed.  A near-cap arm is not uninterpretable: the")
-    print("   floor test and the injection test are separate conditions and the injection one has")
-    print("   to mean a population being propped up, not a single event in ten windows.)")
     for lab, sel in [("phase 1", P1), ("phase 2", P2)]:
         for n in names:
             pop, inj = v(n, sel, lambda L: half(L, "pop")), v(n, sel, lambda L: half(L, "injections"))
-            low, prop = np.nanmin(pop) < 80, np.nanmax(inj) >= 1.0
-            why = ", ".join([w for w, b in (("pop < 80", low), ("injections sustained", prop)) if b])
-            flag = "  (null arm, exempt)" if n == NULL else (f"  <-- EXCLUDE ({why})" if why else "")
+            bad = (np.nanmin(pop) < 80 or np.nanmax(inj) > 0)
+            flag = "  (null arm, exempt)" if n == NULL else ("  <-- EXCLUDE" if bad else "")
             print(f"  {lab}  {n:<22} pop {np.round(pop,0).tolist()}  inj {np.round(inj,1).tolist()}{flag}")
-
-    cap = WORLD["max_pop"]
-    print(f"\n  CAP CHECK -- no outcome arm above 90% of max_pop ({cap}) in phase 2's second half.")
-    print("  An arm on the cap cannot express a fitness difference in its population, so the")
-    print("  population column stops carrying information for every arm at once.")
-    worst, capped = 0.0, []
-    for n in outcome:
-        pop = v(n, P2, lambda L: half(L, "pop")); frac = np.nanmax(pop) / cap
-        worst = max(worst, float(frac))
-        if frac > 0.90:
-            capped.append(n)
-        print(f"    {n:<22} pop {np.round(pop,0).tolist()}   max {frac*100:.0f}% of cap"
-              f"{'   <-- CAPPED' if frac > 0.90 else ''}")
-    if capped:
-        print(f"    FAIL: {capped} above 90%.  Raise max_pop to 1200 and re-estimate the runtime")
-        print("    before reading anything that depends on population.")
-    else:
-        print(f"    PASS: worst arm at {worst*100:.0f}% of the cap.")
 
     print("\nrow 1a  PHASE-1 GATE = v3.1.  A STOP ROW: if it fails, nothing below is read.")
     sp, sf = v(PL, P1, safe), v(F, P1, safe)
@@ -493,23 +415,9 @@ def _decision_numbers(results):
             rows = [(round(rate(w, "n_ok0", "n_prep0"), 2), round(rate(w, "n_ok1", "n_prep1"), 2))
                     for w in era_windows(r) if w]
             both = sum(1 for a_, b_ in rows if a_ > TYPE_BLIND and b_ > TYPE_BLIND)
-            sums = [a_ + b_ for a_, b_ in rows]
-            shown = rows if len(rows) <= 8 else rows[:8]
-            tail_ = "" if len(rows) <= 8 else f" ... (+{len(rows)-8} more)"
-            print(f"    {n + ' seed ' + str(i):<22} both > {TYPE_BLIND} in {both}/{len(rows)} eras"
-                  f"   mean A+B {np.mean(sums):.2f}   max {np.max(sums):.2f}")
-            print(f"    {'':<22} (A,B) {shown}{tail_}")
-
-    print(f"\n  GATE 1b, two parts, both judged against `fixed` (and `scrambled`) ONLY:")
-    fp_f, fp_s = v(F, P2, first_prep_hit), (v(S, P2, first_prep_hit) if S in results else None)
-    print(f"    (i)  fixed prep hit <= 0.55      {np.round(hf,3).tolist()}"
-          f"   {'PASS' if np.all(hf <= 0.55) else 'FAIL'}")
-    print(f"    (ii) first-prep hit <= ~0.55 -- the INNATE policy, before any learning at all.")
-    print(f"         fixed     {np.round(fp_f,3).tolist()}   {'PASS' if np.all(fp_f <= 0.55) else 'FAIL'}")
-    if fp_s is not None:
-        print(f"         scrambled {np.round(fp_s,3).tolist()}   {'PASS' if np.all(fp_s <= 0.55) else 'FAIL'}")
-    print("    (ii) is the sharper of the two: the standing hit rate mixes genome with whatever")
-    print("    the living have learned, while the first preparation of a life is genome alone.")
+            sums = [round(a_ + b_, 2) for a_, b_ in rows]
+            print(f"    {n + ' seed ' + str(i):<22} (A,B) by era {rows}")
+            print(f"    {'':<22} sums {sums}   both > {TYPE_BLIND} in {both}/{len(rows)} eras")
     print("  PRIMARY INSTRUMENT for this row: prep_gain innate -- the GENOME's preference for the")
     print("  correct preparation on a synthetic 'type f underfoot' observation.  No gating and no")
     print("  declining enter it, so unlike the A+B sum it localises the type-conditioning to the")
@@ -542,14 +450,11 @@ def _decision_numbers(results):
     print("  (b) the opportunity exists:  prepared meals per life >= 3 in `fixed`")
     plf = v(F, P2, lambda L: half(L, "prep_per_life"))
     print(f"    fixed prep/life {np.round(plf,2).tolist()}   {'PASS' if np.all(plf >= 3.0) else 'FAIL'}")
-    for n in present:
+    for n in OUTCOME_ARMS + [NULL]:
         print(f"    {n:<22} prep/life {np.round(v(n,P2,lambda L: half(L,'prep_per_life')),2).tolist()}")
     print("  (c) P(prep | on food) against the per-phase null (analytic 3/8 = 0.375 in phase 2)")
-    if has_null:
-        base = np.nanmean(v(NULL, P2, lambda L: half(L, "prep_on_food")))
-        print(f"    null measured {base:.3f}")
-    else:
-        print("    null measured: `random policy` not in this stage -- analytic 0.375 stands in")
+    base = np.nanmean(v(NULL, P2, lambda L: half(L, "prep_on_food")))
+    print(f"    null measured {base:.3f}")
     for n in names:
         print(f"    {n:<22} {np.round(v(n,P2,lambda L: half(L,'prep_on_food')),3).tolist()}")
 
@@ -576,20 +481,6 @@ def _decision_numbers(results):
     print(f"  probe_adv (prep) {np.round(pr,3).tolist()}   (> 0 in {int(np.sum(pr > 0))}/{nseed})")
     print("    NOTE: probe_adv is computed over the LIVING, so it is itself partly")
     print("    survivorship-selected.  The survivor curve below is not.")
-    print("  SINCE-REMAP CURVE -- hit against preparation number since the last remap.  The")
-    print("  prediction is a DIP at 1 and recovery within ~5 preparations: at a remap the learned")
-    print("  H is now wrong, so a learner must pay for the change and then earn it back.  A flat")
-    print("  curve means nothing is being relearned within a life; a curve that never recovers")
-    print("  means the era is shorter than the learner needs.")
-    print(f"    {'arm':<22}{'prep 1':>9}{'prep 5':>9}{'prep 10':>9}{'1->5':>8}{'1->10':>8}")
-    for n in names:
-        C = np.array([curve(P2(r), "rec") for r in results[n]], dtype=float)
-        m = np.nanmean(C, 0)
-        if len(m) >= 10:
-            print(f"    {n:<22}{m[0]:>9.3f}{m[4]:>9.3f}{m[9]:>9.3f}"
-                  f"{m[4]-m[0]:>+8.3f}{m[9]-m[0]:>+8.3f}")
-        print(f"    {'':<22} full curve {np.round(m,3).tolist()}")
-
     print(f"  within-life signature -- at least one, in {rule}/{nseed}:")
     print(f"    hit-in-life curve gain {np.round(ag,3).tolist()}   (> 0 in {int(np.sum(ag > 0))}/{nseed})")
     print(f"    hit_old - hit_young    {np.round(ao - ay,3).tolist()}   (> 0 in {int(np.sum(ao > ay))}/{nseed})")
@@ -640,7 +531,7 @@ def _decision_numbers(results):
     print("\nrow 4  GENE ROWS (corroborating only)")
     for g in ("eta2", "lam2", "eta1"):
         print(f"  {g}   phase 1 -> phase 2")
-        for n in outcome:
+        for n in OUTCOME_ARMS:
             print(f"    {n:<22} {np.round(v(n,P1,lambda L: half(L,g)),3).tolist()} -> {np.round(v(n,P2,lambda L: half(L,g)),3).tolist()}")
     print("  unwired scaffold genes -- drift scale for a heritable scalar:")
     for g in ("nav_dir", "nav_here"):
