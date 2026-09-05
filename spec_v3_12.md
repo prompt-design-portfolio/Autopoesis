@@ -1,155 +1,244 @@
 # v3.12 — the preparation world with a mapping space that exceeds standing variation
 
-**Spec only. No code. DECISION points are flagged and none is settled here.**
+**Spec only. No code. Code starts after the v3.11 grid is read.**
+All seven DECISION points are ruled; what remains open is flagged as **OPEN** and is
+sub-parameter detail, not design.
 
-## Why the world has to change
+## Why the world changes
 
-v3.11 established the mechanism that has been defeating gate 1b, and it is not one a shorter era
-can beat.
+v3.11 measured the mechanism that has been defeating gate 1b, and it is not one a shorter era can
+beat.
 
-In a **six-mapping** space, a population of several hundred carries genotypes for several mappings
-at once. A remap therefore requires no mutation and no adaptation: **survival sorting over standing
-variation promotes whichever genotype already matches**, and it completes well inside a third of an
-era. Three measurements say so:
+In a **six-mapping** space a population of several hundred carries genotypes for several mappings
+at once. A remap needs no mutation and no adaptation: **survival sorting promotes whichever
+genotype already matches**, and it completes well inside a third of an era.
 
-| measurement | value | what it says |
+| measurement | value |
+|---|---|
+| `fixed` first-preparation hit, late in era | **0.82** |
+| genome-only hit (`eta = 0`), **matched** mapping | **0.844** (A 0.899, B 0.798) |
+| genome-only hit (`eta = 0`), **shuffled** mapping | **0.296** (A 0.546, B 0.093) |
+
+Shortening the era to 350 was tried and reverted: it shortened the *learner's* payoff window
+without touching the sorting, and the pre-registered prediction failed both ways — `fixed` 0.642
+against a predicted 0.52–0.56, `plastic` 0.575 against 0.65–0.70, so the learner lost to the
+non-learner. Sorting is not rate-limited by generations. It is rate-limited by **how fast the
+mismatched fraction dies**, and that is fast.
+
+So v3.12 attacks the mechanism on both of its terms: **the size of the space** (D1) and **the speed
+at which mismatched genotypes are killed** (D4).
+
+---
+
+## The world
+
+### D1 — RULED: `T = 3` food types, `K = 5` preparations
+
+| quantity | value |
+|---|---|
+| distinct mappings `P(K,T) = K!/(K−T)!` | **60** (was 6) |
+| chance hit `1/K` | **0.200** (was 0.333) |
+| type-blind level `1/T`, before encounter skew | **0.333** (was 0.500) |
+| full conjunction | 1.000 |
+| `N_ACTIONS` = 4 moves + eat + K | **10** (was 8) |
+
+A mapping sends the three food types to three **distinct** preparations. Redraws differ from the
+previous mapping in at least one type, as in v3.10–v3.11.
+
+The three levels are now cleanly separated — 0.200 / 0.333 / 1.000 — which the v3.11 world was
+not: there, chance 0.333 and type-blind 0.500 were close enough that encounter skew moved the
+comparison, and each arm's own `max(share)` had to be printed beside every hit rate. That stays,
+but it now matters less.
+
+**Conditional nulls change with the action count.** Phase 1 masks the preparations, so 5 actions
+are available and the per-action null stays **1/5**. Phase 2 has 10 available: the per-action null
+is **1/10**, and **"any preparation" is 5/10 = 0.500** (was 3/8 = 0.375). The `P(prep | on food)`
+line reads against 0.500 in v3.12.
+
+### D3 — RULED (a): phase 1 unchanged; the third type appears at the switch, inedible raw
+
+Phase 1 stays exactly v3.1: two types, one safe and one poison, flipping every 300 steps. Row 1a
+keeps its anchor in v3.1's published range, which is the only reason it has held as a stop row
+across five versions.
+
+**Type C exists only from the switch, and cannot be eaten raw: 0 energy, `m = 0`.** It is food only
+through preparation. This gives the third type a reason to exist that does not disturb phase 1's
+fast fact, and it means `eat` carries no information about C at all.
+
+#### The action × cell table, complete
+
+Cell states are `empty`, `food A`, `food B`, `food C`. Every action on a food cell resolves
+immediately and two-sidedly; nothing is silent.
+
+| action | empty | food A | food B | food C |
+|---|---|---|---|---|
+| **move** (0–3) | −`move_cost`, `m = 0` | −`move_cost`, `m = 0` | −`move_cost`, `m = 0` | −`move_cost`, `m = 0` |
+| **eat** (4) | −`noop_cost`, `m = 0` | safe → +`food_value`, `m = +1`; poison → −`poison_value`, `m = −1`. Cell consumed | as A | **energy 0, `m = 0`, cell NOT consumed** |
+| **prep_k** (5–9) | −`noop_cost`, `m = 0` | `k == mapping[A]` → +`prep_value`, `m = +1`; else −`prep_fail`, `m = −1`. Cell consumed | as A | as A |
+
+Three consequences to hold in mind:
+
+- **`eat` on C is a wasted step, not a loss.** It is the one cell in the table with no energy
+  change at all. An agent that eats C repeatedly pays only the opportunity cost of the step.
+- **C is not consumed by eating**, so `eat` cannot destroy a preparation opportunity. C's standing
+  density is bounded by `food_rot` as every other type is, but it will sit higher than A and B
+  because one of the two consumption routes is closed to it.
+  > **OPEN 3a.** If C's density runs away in the pre-check, the fix is to lower C's spawn rate,
+  > not to make `eat` consume it — consuming would let a naive agent clear the board of exactly
+  > the food the experiment is about.
+- **The safe/poison flip applies to A and B only.** C has no raw value to flip.
+
+### D4 — RULED (overruled from my proposal): `max_pop` stays 800; `prep_fail = 0.25`, `prep_value = 1.0`
+
+| | v3.11 | v3.12 |
 |---|---|---|
-| `fixed` first-preparation hit, late in era | **0.82** | the innate policy of the standing population already tracks the mapping |
-| genome-only hit, matched mapping (`eta = 0`) | **0.844** (A 0.899, B 0.798) | the genome holds the conjunction *for the mapping it was sorted under* |
-| genome-only hit, shuffled mapping (`eta = 0`) | **0.296** (A 0.546, B 0.093) | and only for that one — below chance on the swap |
+| `prep_value` | 1.0 | **1.0** |
+| `prep_fail` | 0.5 | **0.25** |
+| chance EV of a preparation | `(1/3)(1.0) − (2/3)(0.5)` = **0.000** | `(1/5)(1.0) − (4/5)(0.25)` = **0.000** |
+| income to a knowing agent | +1.00/meal | **+1.00/meal** |
+| `max_pop` | 800 | **800** |
 
-Shortening the era to 350 was tried and **reverted**. It shortened the *learner's* payoff window
-without touching the sorting at all, and the pre-registered prediction failed in both directions:
+`prep_value = (K−1) × prep_fail` = 4 × 0.25 = 1.0 holds the chance EV at exactly zero, and income
+is unchanged from v3.11, so the population economics that produced a readable world are preserved
+and `max_pop` need not move.
 
-| | predicted | observed |
-|---|---|---|
-| `fixed` | 0.52–0.56 | **0.642** |
-| `plastic (W2)` | 0.65–0.70 | **0.575** |
+**Why the halved penalty is the targeted intervention, and not merely a cheaper one.** Sorting and
+learning run on two different quantities in this sim, and only one of them is being changed:
 
-So the learner lost to the non-learner. `prep_gain innate` for `fixed` went *up* over the change
-(0.149 at 700 → 0.379 at 350). There is no era length this world supports that is slow for
-selection and fast for learning, because sorting standing variation is not rate-limited by
-generations — it is rate-limited only by how quickly the mismatched fraction dies, which is fast.
+- **Sorting runs on energy.** A genotype mismatched to the current mapping pays `prep_fail` on
+  4 preparations in 5. Halving it halves the rate at which mismatched lineages are killed, which
+  is precisely the rate that sets how fast standing variation is sorted.
+- **The learning signal is a sign.** `resolve_action` returns `m = +1.0` / `m = −1.0` as literals,
+  independent of `prep_value` and `prep_fail`. The learning rule `H ← H + η·m·e` therefore sees
+  **exactly the same signal** at `prep_fail` 0.25 as at 0.5.
 
-**The fix is the size of the space, not the speed of the world.** If the number of possible
-mappings substantially exceeds the number a population can hold in standing variation, then at a
-remap there is usually **no matching genotype to promote**, and the only route to the new mapping
-is within a life.
+So the change slows selection and leaves learning untouched. That is a cleaner instrument than
+shortening the era, which slowed both.
 
-## The parameter that decides it
+> **The tension this creates, stated before the run.** Slowing the death of mismatched genotypes
+> slows sorting — the intent — but it also lets **more** mismatched genotypes persist, which
+> *raises* standing variation and works against "the space exceeds standing variation". The two
+> effects pull in opposite directions and the balance is an empirical question, not an arguable
+> one. **This is why D2 matters:** the standing-variation probe measures the quantity directly,
+> per era, rather than leaving it to be argued from the population size.
 
-With `T` food types and `K` preparations, and mappings required to send distinct types to distinct
-preparations, the space is `P(K, T) = K! / (K−T)!`.
+### D5 — RULED: accepted
 
-| T | K | mappings | chance `1/K` | type-blind `1/T` | `prep_value` = (K−1)·`prep_fail` |
-|---|---|---|---|---|---|
-| 2 | 3 | **6** (v3.10–v3.11) | 0.333 | 0.500 | 1.00 |
-| 2 | 4 | 12 | 0.250 | 0.500 | 1.50 |
-| 2 | 6 | 30 | 0.167 | 0.500 | 2.50 |
-| 3 | 4 | 24 | 0.250 | 0.333 | 1.50 |
-| **3** | **5** | **60** | **0.200** | **0.333** | **2.00** |
-| 3 | 6 | 120 | 0.167 | 0.333 | 2.50 |
-| 4 | 5 | 120 | 0.200 | 0.250 | 2.00 |
+`prep_every` stays at **700**. The readability criterion is read on **`fixed` only**: **≥ 3
+preparations per food type per era**, measured in a pre-check before anything else runs. With
+`T = 3` the same food density is split three ways, so this is the criterion most likely to fail.
+**If it fails, raise spawn density — never lengthen the era**, since a longer era is more time for
+the sorting this world exists to outrun.
 
-`prep_value = (K−1) × prep_fail` holds the chance EV of a preparation at exactly zero:
-`(1/K)·(K−1)f − ((K−1)/K)·f = 0`. Value continues to come only through knowledge of the mapping.
+---
 
-### How big does the space have to be?
+## D2 — RULED: the standing-variation probe, printed per era
 
-Standing variation is not the population size. It is the number of distinct mapping-genotypes the
-population holds **with enough copies of each to survive the era in which they are useless**. A
-genotype that is wrong for the current mapping earns nothing from preparation, so its lineage
-shrinks; to still be present at the next remap it needs enough carriers now.
+The claim "60 mappings exceeds what the population can hold" must be **measured, not estimated**.
+Two numbers per era, both built on the existing within-agent innate probe (`prep_pref` with
+`learned=False`), so nothing new is wired into the agent.
 
-At a standing population of ~600 and, say, ~20–30 carriers needed per surviving genotype, the
-population can hold on the order of **20–30** mappings. A six-mapping space is therefore covered
-several times over — which is exactly what was measured. A **60-mapping** space is roughly 2–3×
-what the population can hold; a **120-mapping** space is 4–6×.
+### 1. Distinct innate mappings held by the living
 
-> **DECISION 1 — T and K.** My recommendation is **T = 3, K = 5**: 60 mappings, chance 0.200,
-> type-blind 0.333, and the three levels (chance / type-blind / full) are cleanly separated. It
-> raises both parameters as the ruling requires, without the costs D3 and D4 describe becoming
-> severe. The alternative worth considering is **T = 3, K = 6** (120 mappings) if the sorting
-> survives 60. **T = 2, K = 6** is available but raises only K, and leaves the type-blind level at
-> 0.5 where it has been hardest to read against.
+For each living agent, for each type `t ∈ {A, B, C}`, take `argmax_k prep_pref(a, t, k,
+learned=False)`. That gives a triple `(k_A, k_B, k_C)` — the mapping the agent's **genome** would
+apply, before anything it has learned.
 
-> **DECISION 2 — is the coverage claim measured or assumed?** The "20–30 mappings" figure above is
-> an estimate, not a measurement. I propose the world carry a **standing-variation probe**: at each
-> remap, record how many of the `P(K, T)` mappings the living population would score above the
-> type-blind level on, using the existing within-agent `prep_gain` machinery on synthetic
-> observations. That number, printed per era, is the direct test of whether the space exceeds
-> standing variation — and it makes the v3.12 claim checkable rather than argued. It costs one
-> probe sweep per era.
+Report, per era:
 
-## What else moves, and what must not
+- the number of **distinct triples** present at all;
+- the number that are **valid mappings** (all three preparations distinct — only these are among
+  the 60; a triple with a repeat is a genome that has not separated the types);
+- the number held by at least **`carrier_min` living agents**, at thresholds **1 / 5 / 20**, with
+  the headline at **20**.
 
-### Phase 1 with more than two food types
+**Why 20, and how it gets checked.** A genotype mismatched to the current mapping earns nothing
+from preparation for a whole era; to still be present at the next remap it needs enough carriers
+now to survive that era. 20 is an estimate of that floor, not a measurement.
 
-Phase 1 is v3.1's flip world: two types, one safe and one poison, flipping every 300 steps. It
-anchors row 1a and has been unchanged since v3.1.
+> **OPEN 2a — calibrate the threshold rather than assert it.** The pre-check should measure the
+> actual quantity: take the mismatched genotypes present just after a remap, and report what
+> fraction of each cohort size survives to the following remap. The carrier threshold is then the
+> cohort size at which survival becomes reliable, and 20 is replaced by a measured number. Until
+> that is done, all three thresholds print so the headline never rests on the estimate alone.
 
-> **DECISION 3 — phase 1 under T > 2.** Three options, in my order of preference:
-> **(a) leave phase 1 at two types** and introduce the extra type(s) only when preparations switch
-> on. Row 1a keeps reading against v3.1's published range, which is its whole value, and the
-> staging stays "one change at the boundary". The cost is that the type-3 channel is dead in phase
-> 1.
-> **(b) one safe type of T**, flipping which one. Chance safe rate becomes `1/T`, so v3.1's
-> published 0.51–0.56 / 0.60–0.66 range no longer applies and row 1a loses its anchor.
-> **(c) T types, half safe**, keeping the 0.5 chance safe rate. Readable, but it is a different
-> fast fact from v3.1's and the anchor is again gone.
-> I recommend (a). Row 1a is the only stop row that has held across five versions.
+### 2. How many of the 60 the population would score above type-blind on
 
-### The economy, and the population cap
+For each of the 60 mappings `m`, compute the population's expected hit **if the mapping were `m`**:
+the mean over sampled living agents of the fraction of types where the agent's innate argmax equals
+`m[t]`. Count how many of the 60 exceed the type-blind level `1/T`.
 
-At `K = 5`, `prep_value` = 2.0. A chance preparation is still worth exactly 0, but a *knowing*
-agent now earns **+2.00 per meal against +0.70** for eating raw with the flip known — a wider gap
-than v3.11's +1.00 against +0.70.
+This is the direct statement of the claim. **If the count is small — a handful of 60 — the space
+exceeds standing variation and a remap usually finds no matching genotype to promote. If it is
+large, v3.12 has not achieved what it was built for, and that is the finding**, whatever row 3b
+then says.
 
-> **DECISION 4 — the cap.** v3.11 already showed the failure mode in both directions: at
-> `prep_value` 1.5 every arm sat at 675–799 against a cap of 800, and at 1.0 the non-learners fell
-> to the floor. A learner that can reach the mapping within a life will earn 2.0 per meal and
-> should be expected to hit the cap. I propose `max_pop` **1200** from the start, with the existing
-> 90%-of-cap check as the gate, and the runtime re-estimated against it (cost scales roughly with
-> standing population: v3.11 measured ~11–15 min per 16000-step run at `max_pop` 800).
+Cost is one probe sweep per era: `T × K` forward passes per sampled agent, on the same sample size
+the existing probes use.
 
-### Density and readability
+---
 
-With `T = 3` the same food density is split three ways, so preparations per type per era fall by a
-third relative to `T = 2` — and the era must still hold enough events per type to read a per-type
-hit rate.
+## D6 — RULED: what counts as the record result
 
-> **DECISION 5 — density and era length.** `prep_every` stays at **700** unless the readability
-> criterion fails. The criterion, as in v3.9 and v3.10, is read on **`fixed`** only: **≥ 3
-> preparations per type per era** in `fixed`, measured in a pre-check before anything else runs. If
-> it fails, raise spawn density rather than lengthening the era — a longer era gives sorting more
-> time, which is the thing being removed.
+The claim is stated on **row 3b's shuffled pair**, not on the population hit rate:
 
-## The claim this world is built to settle
-
-> **DECISION 6 — what counts as the record result.** I propose the claim be stated on **row 3b's
-> shuffled pair**, not on the population hit rate:
->
 > **On a mapping no genotype in the population was sorted for, learning-on exceeds learning-off by
-> ≥ 0.10 in every seed, and the gap does not shrink as the mapping space grows.**
->
-> The population hit rate cannot carry it — it mixes the genetic baseline with the learner's
-> contribution, and v3.11 showed the baseline can be most of it. The shuffled knockout is the only
-> line that isolates what the rule adds within a life, on a mapping selection cannot have supplied.
-> The genetic baseline is then *reported* alongside as a measured quantity rather than gated
-> against, which is how row 1b is already restated in v3.11.
+> ≥ 0.10 in every seed — and the gap does not shrink from v3.11 to v3.12.**
+
+The population hit rate cannot carry it: it mixes the genetic baseline with the learner's
+contribution, and v3.11 showed the baseline can be most of it. The shuffled knockout is the only
+line that isolates what the rule adds **within a life**, on a mapping selection cannot have
+supplied.
+
+**The non-shrinking requirement is the point of the pair.** v3.12 makes the task harder in two ways
+at once — 5 preparations instead of 3, and a third type — so a learner that is merely coping would
+show a *smaller* shuffled gap. Holding the gap while the space grows tenfold is the thing worth
+recording; a bigger gap is better, and a smaller one falsifies the claim even if it stays above
+0.10.
+
+**The v3.11 reference value is whatever the grid measures**, and it is recorded before v3.12 runs.
+It is not yet known: the v3.11 acceptance checkpoint predates `final_mapping`, so row 3b runs for
+the first time on the refreshed grid.
+
+The genetic baseline (gate 1b's three numbers) is **reported alongside as a measured quantity**,
+never gated against — as already restated in v3.11.
+
+---
+
+## D7 — RULED: the semantics test is built first
+
+The existing test enumerates 4 actions × 3 cell states × 6 mappings = 72 rows plus poison, move,
+masking and distinctness rows, against literals. It must be **rewritten to enumerate from `T` and
+`K`**, giving `(1 eat + 5 preps) × 4 cell states × 60 mappings = 1440` rows, plus:
+
+- the **type-C raw row**: `eat` on C must yield energy change exactly 0, `m = 0`, and leave the
+  cell in place — the one new row in the table and the one most likely to be got wrong;
+- phase-1 **masking** of all 5 preparations;
+- **mapping distinctness** — a redraw differs in at least one type, and all three targets distinct;
+- the flip applying to A and B and **not** to C.
+
+**This is the first thing to build.** A mapping applied to the wrong food type is exactly the bug
+this world would hide, and the count of rows is now large enough that it will not be caught by eye.
+
+---
 
 ## Carried forward from v3.11 unchanged
 
-Founder-free metrics as the primary reading, with the founder share printed per arm and phase ·
-row 0 excluding on `pop < 80` only · the mapping **pinned** in every replay, with
-`replay_mapping_selftest` guarding it · the knockout window at one log bin, with
-`knockout_window_selftest` guarding it and `pop`/`max_gen` printed beside every number · each arm's
-own type-blind level `max(share)` printed beside its hit rate · the world-semantics and
-learning-rule self-tests, which must be extended to `T` types and `K` preparations before any
-v3.12 run is read.
+Founder-free metrics as the primary reading, with founder share printed per arm and phase · row 0
+excluding on `pop < 80` only, injections reported · the mapping **pinned** in every replay, guarded
+by `replay_mapping_selftest` · the knockout window at **`KO_STEPS = 10`**, guarded by
+`knockout_window_selftest`, with `pop` and `max_gen` beside every number · each arm's own type-blind
+level `max(share)` printed beside its hit rate · survivor curve halves 1–2 vs 6–10 · the
+survivor-conditioned since-remap curve at a 4-preparation window, corroborating only · abstention
+firing only with `prep/life < 0.8 ×` `fixed` **and** (hit ≤ `fixed` **or** pop ≤ `fixed`) · rig
+check 2(a) on whole-phase founder-free safe rate · the learning-rule and founder-tag self-tests.
 
-> **DECISION 7 — the semantics test is not optional here.** The existing test walks
-> 4 actions × 3 cell states × 6 mappings = 72 rows plus poison, move, masking and distinctness
-> rows. At `T = 3, K = 5` that becomes 6 actions × 4 cell states × 60 mappings. It should be
-> written to enumerate from `T` and `K` rather than from literals, and it is the first thing to
-> build — a mapping applied to the wrong food type is precisely the bug this world would hide.
+## Build order, when code starts
+
+1. The semantics test (D7), enumerated from `T` and `K`, **before** the world it tests is trusted.
+2. The world: 3 types, 5 preparations, the type-C raw row, the new action count and observation
+   channels.
+3. The standing-variation probe (D2), with all three carrier thresholds.
+4. A pre-check at 1 seed: the readability criterion (D5), C's standing density (OPEN 3a), the
+   carrier-threshold calibration (OPEN 2a), and the probe printing.
+5. Only then the acceptance.
