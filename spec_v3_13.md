@@ -1,162 +1,203 @@
-# v3.13 — the record: a symbol store on the preparation world
+# v3.13 — the record: automatic writing with non-inheritable meaning
 
-**Draft spec. No code. Written in parallel with the v3.12 build; nothing here is settled and
-v3.12's result may change it. DECISION points are flagged.**
+**Spec only. No code. Written against the v3.12 build; v3.12's result may change it. Seven
+DECISION points, none settled.**
 
-## What the record is for
+## What the previous draft got wrong
 
-v3.11 showed the grown learner acquires a two-item conjunction **within a life**, and v3.12 asks
-whether it still does when the mapping space exceeds what standing variation can cover. Both are
-claims about **one agent's own lifetime**. Everything an agent learns dies with it: `H` starts at
-zero in every newborn and is never inherited.
+My earlier draft gave agents a `mark` action and a writer gene, and then pre-registered the null
+that `sym_gain` would go to zero because writing costs a step and pays the writer nothing.
 
-The record asks the next question: **can what one agent learned reach another agent, and be used?**
+**That draft re-ran two results this project has already closed.** Write-probability collapse is
+finding #1. Open semantics — a store whose meaning is unconstrained, so nothing binds — is finding
+#2. And the "pre-registered null" I proposed *is v1's result*. A spec whose most likely outcome is
+a known outcome is not an experiment; it is a re-derivation.
 
-That is the smallest step toward accumulation that does not smuggle in a designer. It is **not** an
-LLM, not language, not a curriculum. It is a mark on the world that an agent can leave and another
-can read, whose *meaning is not given* — the mapping between mark and fact has to be established by
-the population, within lives, or not at all.
+**The restructure removes writing as a decision.** Writing is automatic, costless and universal, so
+there is no public-goods problem and no write-probability to collapse. Meaning is constrained by
+construction, so semantics are not open. What is left is the only question that was ever open:
+**can an agent use, within its life, a mark whose meaning it cannot have inherited?**
 
 ## The mechanism
 
-### The symbol store
+### Writing is automatic
 
-Each grid cell carries a small **symbol slot**: an integer in `0 … S−1`, or empty. Two new actions:
+**Every preparation writes.** When an agent performs preparation `k` on food of type `t` at a cell,
+the cell records `(label, sign)` for **type `t`**:
 
-- **`mark`** — write the agent's current symbol choice into the cell it stands on;
-- the symbol written is chosen by the policy, so `mark` is really `S` actions, or one action plus
-  an `S`-way choice head.
+- `label = π(k)` — the *label* of the preparation used, not the preparation index;
+- `sign = +1` if the preparation was correct, `−1` if not.
 
-> **DECISION 1 — action shape.** Either `S` separate `mark_s` actions (simple, matches how
-> preparations are already done, but the action space grows as `4 + 1 + K + S`), or one `mark`
-> action with a separate symbol head (keeps the action space small, adds a second output group and
-> a second place for the learning rule to apply). I lean to **`S` separate actions**: it reuses the
-> preparation machinery exactly, and the learning rule already handles a multi-way choice. With
-> `K = 5` and `S = 4` the action space is 14.
+There is **no `mark` action, no writer gene, no writing policy**. Every agent that prepares leaves a
+record, whether it wants to or not, at no cost. `mark_pref` from the previous draft is therefore
+dropped: there is no writing preference to probe.
 
-Reading is **not an action**. The symbol under the agent, and the symbols in its view, arrive as
-**observation channels** — a mark is part of the world, like food. This matters: if reading were an
-action it would have its own cost and its own policy, and a null result would be ambiguous between
+### Meaning cannot be inherited
+
+`π` is a **permutation of the K preparations, re-drawn at every remap**, independently of the
+mapping itself. So label `j` denotes preparation `π⁻¹(j)`, and *which* preparation that is changes
+every era.
+
+This is the whole design. If a mark recorded the preparation index directly, its meaning would be
+fixed by the world and a genome could evolve to read it — "channel 3 means prep_3" — and the result
+would be inheritance, not transmission. Re-drawing `π` each era makes **the label→preparation
+binding unavailable to selection**: no genome can carry it, because it is worthless by the next era.
+The population must establish it **within lives**, or not at all.
+
+### Reading is an observation
+
+**K new observation channels**, for the food type underfoot. Channel `j` carries the **age-decayed
+sign of the latest mark at label `j`** for that type at that cell. No mark under you, or no food:
+zeros.
+
+Reading is not an action. It has no cost and no policy, so a null result cannot be ambiguous between
 "cannot read" and "does not bother".
 
-> **DECISION 2 — S, and persistence.** `S` must be at least `K` for a mark to be able to name a
-> preparation, and small enough that a symbol is not free to disambiguate by accident. **`S = K`**
-> is the clean choice. Marks should **decay** (a `mark_rot` like `food_rot`) so a stale mark from a
-> previous era does not poison the next one indefinitely — but slowly enough to outlive the agent
-> that wrote it, or the record cannot carry anything between agents. **Proposal: `mark_rot` tuned
-> so a mark's half-life is ~2 lifetimes and well under one era.**
+### One heritable gain
 
-### The input-gain gene
+**`sym_gain`** — a single heritable scalar multiplying the whole block of K read channels,
+**starting near zero**. The population can evolve to attend to the record or to ignore it, exactly
+as `nav_dir` / `nav_here` work.
 
-A heritable scalar **`sym_gain`** multiplies the symbol observation channels on the way in. At
-`sym_gain = 0` the agent is blind to marks; the population can evolve toward reading them or away.
+Note what has changed relative to the previous draft: **reading is free and writing is automatic**,
+so raising `sym_gain` costs an agent nothing and benefits it directly. There is no altruism in the
+loop. If `sym_gain` stays at zero here, it is because the record is *useless*, not because writing
+is a public good — and that is a clean negative rather than a re-derivation of finding #1.
 
-This is the same device as `nav_dir` / `nav_here`: a gene whose value the population sets, so
-"attends to the record" is an evolved property rather than a wired one. It also gives the negative
-result somewhere to land — a population that drives `sym_gain` to zero has *decided* the record is
-worthless, which is a finding, not a failure.
+> **DECISION 1 — the store's shape.** "The cell for its food type" implies each cell holds a
+> `T × K` array of age-decayed signs: one row per food type, one column per label. A cell's food
+> type changes over time, and the mark must stay attached to the type it was about, or a mark left
+> on type A would be read as evidence about type B. On a 60×60 grid that is 3600 × 3 × 5 = 54,000
+> floats — negligible. **Proposal: `T × K` signs per cell.** The alternative — one `K` vector per
+> cell with the type implicit — is cheaper and wrong for the reason just given.
 
-> **DECISION 3 — one gain or two.** One gain over all symbol channels, or separate gains for
-> "symbol under me" and "symbols in view"? Separate gains would distinguish *using a mark where you
-> stand* from *navigating toward marks*. I lean to **one gain for v3.13** — one change per
-> experiment — with the split held in reserve.
+> **DECISION 2 — the decay constant.** A mark must **outlive the agent that wrote it**, or nothing
+> can pass between agents, and must **not outlive the era**, or it becomes actively misleading when
+> `π` and the mapping are redrawn. Those two constraints bracket it. **Proposal: half-life ≈ 1
+> lifetime, and ≥ 3 half-lives inside `prep_every` = 700.** This is a pre-check measurement, not a
+> guess: report mark age at read time, and the fraction of reads whose latest mark predates the
+> current era.
 
-## The controls
+> **DECISION 3 — `sym_gain`'s starting value and scope.** One gain over the whole channel block,
+> starting near zero (proposal: same mutation scale as the other scalar genes, initialised at
+> 0.05). Should it be allowed to go **negative**? A negative gain is a coherent policy — "do the
+> opposite of what the mark says" — and would be the right answer in `noise record`. **Proposal:
+> allow negative, and report the sign distribution per arm**; a population that drives it negative
+> in the noise arm and positive in the real arm is itself evidence the channel is being read.
 
-Four arms, and the two new ones are the point.
+## The arms
 
 | arm | store | plasticity | what it isolates |
 |---|---|---|---|
+| `plastic` | **none** | yes | v3.12's world — the baseline the record must beat |
 | `plastic + record` | real | yes | the claim |
-| `plastic, no record` | absent | yes | v3.12's world, the baseline the record must beat |
-| **`plastic + noise record`** | **symbols randomised on write** | yes | **the store's mere presence** |
-| **`fixed + record`** | real | **no** | **whether a genome can use a record without learning** |
+| `plastic + noise record` | **labels randomised on write** | yes | the store's mere presence |
+| `fixed + record` | real | **no** | whether a genome can use a record without learning |
 
-`noise record` is the essential one. A store changes the world: marks are visible, `mark` costs a
-step, cells carry state. An arm that improves *because a store exists* — extra observation
-dimensions, a step-wasting action that happens to slow foraging — is not an arm that improved
-*because information passed between agents*. **The noise arm has every one of those properties and
-none of the information.** Symbols are written and read exactly as in the real arm; only the value
-written is randomised.
+`noise record` is the load-bearing control. A store changes the world: channels exist, cells carry
+state, decay runs. An arm that improves *because a store exists* is not an arm that improved
+*because information passed*. In `noise record` the sign is written at a **random label**, so mark
+density, channel statistics and decay are identical and the label→preparation association is
+destroyed.
 
-`fixed + record` is the genetic control: a record that a non-learning genome can exploit is a record
-whose meaning is fixed and evolvable, not one established within lives.
+`fixed + record` is the genetic control. With `π` redrawn each era it should get nothing, and if it
+does get something, the meaning is leaking through the wiring.
 
-> **DECISION 4 — should `scrambled` also get a record?** It would test whether a *useless* `H`
-> plus a real store does anything. I think not: four arms is already at the readable limit, and
-> `noise record` covers the "presence of a store" confound more directly. Held in reserve.
+## Gate R
 
-## The gate
+**The record's meaning must not be available to selection.** This is the v3.13 stop row.
 
-**The record must not be readable by construction.** This is the v3.13 analogue of gate 1b, and it
-is the thing most likely to go wrong.
+The drafted form does not transfer literally, and I should say so rather than restate it as though
+it did. In the previous draft, writing was a policy, and the gate asked whether the *architecture*
+supplied the symbol→preparation mapping. Here writing is deterministic by construction, so **within
+an era the mutual information between `(label, sign)` and the correct preparation is maximal — that
+is the point of the design, not a fault.**
 
-If the symbol an agent writes is a deterministic function of what it just did — say `mark_s` is
-cheapest to emit right after `prep_s` — then the mapping from mark to preparation is supplied by
-the architecture, and any subsequent "communication" is an artifact. The gate:
+The gate that carries the same intent under automatic writing is the **cross-era** one:
 
-**Gate R.** In `fixed + record`, the mutual information between the symbol in a cell and the
-correct preparation for the food that was there **must be at or below the level a random writer
-produces**. If it is above, the mark's meaning is coming from the wiring, and the run is not read.
+> **Gate R.** Pooled **across eras**, the mutual information between `(label, sign)` and the correct
+> preparation must be at or below the level the `noise record` arm produces. Reported per era as
+> well, where it is expected to be high.
+>
+> A cross-era association above noise means `π` is not doing its job — the label→preparation binding
+> is stable enough for selection to capture — and the run is not read.
 
-> **DECISION 5 — how to measure it.** Empirical mutual information over the second half of phase 2,
-> against the `noise record` arm as the null. Reported per era, since a mark's meaning can only be
-> stable within an era — the mapping moves at the boundary and the marks do not.
+> **DECISION 4 — is that the right restatement?** It is my proposal, not a ruling carried over. The
+> check it performs is exactly "meaning is not inheritable", which is what the mechanism claims.
 
-Carried over unchanged: **row 0** at `pop < 80`; **row 1a**, the phase-1 gate against v3.1;
-**rig checks 2(a)–(c)**; **founder-free** metrics with the founder share printed; each arm's own
-**type-blind level** beside every hit rate.
+Carried over unchanged: **row 0** at `pop < 80` · **row 1a** against v3.1 · **row 1b** as a measured
+genetic baseline · **row 1c** standing variation · **rig checks 2(a)–(c)** · founder-free metrics
+with founder share printed · each arm's own type-blind level.
 
 ## The probes
 
-Two new within-agent probes, both built like the existing `prep_pref` — a synthetic observation,
-the agent's own logits, no behaviour involved.
+- **`read_pref(a, t, j, s, k)`** — food type `t` underfoot, channel `j` carrying sign `s`, and
+  nothing else: how much does this agent want preparation `k`? The reading side, within-agent, no
+  behaviour involved.
+- **`store_gain`, learned vs innate, on the current `π`** — how much more the agent prefers the
+  preparation the mark **endorses** than the alternatives, evaluated under the era's actual `π`.
+  **The learned/innate split is the claim's instrument**, exactly as `prep_gain` innate vs learned
+  is now: innate ≈ 0 says the genome cannot read the record (which `π` guarantees), and learned > 0
+  says this agent bound it inside its own life.
+- **`mark_pref` is dropped.** There is no writing policy.
 
-- **`mark_pref(a, ftype, s)`** — with food type `f` underfoot and no mark present, how much does
-  this agent want to write symbol `s`? The **writing** side of the binding.
-- **`read_pref(a, symbol, k)`** — with symbol `s` underfoot and food present, how much does this
-  agent want preparation `k`? The **reading** side.
-
-**The binding is the composition.** A population has bound symbol `s` to preparation `k` when
-writers preferentially emit `s` on food whose correct preparation is `k`, **and** readers
-preferentially choose `k` on cells carrying `s`. Either half alone is nothing: writing without
-reading is graffiti, reading without writing is superstition.
-
-> **DECISION 6 — the binding score.** Report the two halves separately and their composition, as an
-> `S × K` matrix per era with its diagonal-dominance under the era's true mapping. Both halves must
-> be present for a claim; and the probe versions (innate vs learned) separate "the genome bound it"
-> from "this agent bound it within its life", exactly as `prep_gain` innate vs learned does now.
+> **DECISION 5 — the self-marking confound, and what fixes it.** An agent reads marks it wrote
+> itself. That is memory, not transmission, and no probe on the standing population separates them.
+> **The newborn line is what separates them**, because a newborn has written nothing — every mark it
+> reads was left by someone else. I propose the newborn measure be treated as **the transmission
+> claim**, and `store_gain` learned-vs-innate as the *binding* claim, and that the two be reported
+> as different things rather than pooled.
 
 ## The claim
 
-Stated, as in v3.12, on a **frozen-population replay pair** — and here the pair is *with and without
-the record*, not matched and shuffled.
+**Frozen-population replay**, as in v3.12: era-boundary snapshot, births/deaths/injection disabled,
+300 steps, nothing can change but `H`. Three cells, differing only in the store:
 
-> **On a mapping no genotype was sorted for, a frozen population replayed WITH the marks its
-> predecessors left reaches a higher hit rate than the same frozen population replayed with the
-> marks ERASED — by ≥ 0.10, in every seed — and the gap is absent in `noise record`.**
+| cell | store contents |
+|---|---|
+| **real** | the marks the population actually left |
+| **randomised** | same marks, labels shuffled — presence held, content destroyed |
+| **erased** | marks cleared |
 
-The frozen replay is what makes this readable. The population cannot change; the only difference
-between the two replays is the content of the symbol store. So the gap is what the record carried,
-and nothing else.
+> **Claim (binding).** Real exceeds randomised by **≥ 0.10 in every seed**, and the gap is **absent
+> in `noise record`**.
 
-> **DECISION 7 — erased or randomised?** Erasing removes the marks; randomising keeps their
-> presence and destroys their content. **Randomising is the better control** — it holds the
-> observation statistics fixed — and it makes the within-run comparison the same manipulation as
-> the `noise record` arm. **Proposal: the pair is real marks vs randomised marks, with erased
-> reported as a third cell.**
+Randomised is the primary comparison because it holds the observation statistics fixed; **erased is
+reported as the third cell** so the contribution of the channels' mere presence is visible.
 
-## Order, and what would stop this
+> **Claim (transmission).** **Newborn preparations-to-first-correct** — for agents in their first
+> preparations, how many preparations until the first correct one — is **lower in a marked world
+> than in an unmarked one**.
+>
+> A newborn has written nothing and learned nothing. Every mark it reads came from another agent.
+> This is the line that says information *passed*, and it is not substitutable by the frozen-replay
+> pair, which cannot distinguish an agent using its own marks from an agent using someone else's.
 
-1. v3.12 must land first. If the learner does **not** clear its D6 claim in a 60-mapping space,
-   v3.13 is premature — there is no within-life competence for a record to transmit.
-2. The semantics test extends first, as always: the symbol slot, `mark`, decay, and the fact that
-   reading is an observation and not an action.
-3. Gate R before any outcome row.
+> **DECISION 6 — how the newborn measure is windowed.** Preparations 1..n of a life, in a world with
+> the store live against the same world with `sym_gain` forced to zero (not the store removed — that
+> changes the world; forcing the gain isolates the *reading*). **Proposal: n = 5, reported as the
+> mean number of preparations to the first correct one, and as the hit on preparation 1 alone.**
 
-**The pre-registered null, and it is a real possibility:** `sym_gain` goes to zero and stays there.
-A mark costs a step to write and pays the writer nothing — the benefit, if any, lands on some later
-agent, possibly not a relative. That is a public-goods problem, and this world has no mechanism that
-solves one. **If the record fails, the most likely reason is that writing is altruistic and nothing
-makes it pay**, and the honest next question would be what minimal change makes a mark pay its
-writer — which is a different experiment, and one to specify only if v3.13 nulls.
+## Order
+
+1. **v3.12 must read first.** If the learner does not clear its D6 claim in a 60-mapping space,
+   there is no within-life competence for a record to carry and v3.13 is premature.
+2. **The semantics test extends first**, enumerated as always: the `T × K` store, automatic writing
+   on every preparation, `π` redraw at each remap, decay, and the fact that reading is an
+   observation and not an action.
+3. **Gate R before any outcome row.**
+
+> **DECISION 7 — the pre-registered prediction.** Stated so it can fail: `sym_gain` **rises above
+> its starting value in `plastic + record` and not in `noise record`**; `store_gain` **learned > 0
+> and innate ≈ 0** in every seed; newborn preparations-to-first-correct **lower with the store
+> live**. The honest alternative outcome is that the within-life binding of a label that rotates
+> every era is simply harder than the preparation conjunction itself — the agent must learn
+> label→preparation *and* preparation→type, from the same signal, inside one era — in which case
+> v3.13 nulls on a **capacity** limit, not a public-goods one. That would be a new result, and it
+> is the reason this version is worth running where the previous draft was not.
+
+## What is deferred
+
+**Emergent writing is v3.14**, and it is specified only after v3.13 reads. If a population cannot
+use a record that is handed to it for free, there is nothing to be gained by asking it to choose to
+write one — that ordering is what keeps v3.14 from re-running finding #1 a third time.
