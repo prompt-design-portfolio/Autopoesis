@@ -1,9 +1,5 @@
 """
-v3.10 analysis -- the preparation world.
-
-v3.9 closed the recipe world: a chain paying only at the end is sparse, and a rare opportunity
-cannot generate the selection differential that would build the approach behaviour making it less
-rare.  Here the fact sits on every meal, so there is no approach behaviour to evolve.
+v3.9 analysis -- the rig fixed, and the chain shortened to what v3.9 tests.
 
 v3.8's row 4 is void as a test of the learner: one action did attempt / crack / pickup / eat, the
 chain was ambient (items on 40% of cells, nuts on 47%), declining was not a policy, and there was
@@ -21,20 +17,27 @@ try:
 except Exception:
     plt = None
 
-from sim import Config, run, N_PREPS, PREP0
+from sim import Config, run, PATCH_TARGETS
 
 # ---------------------------------------------------------------------------
 # the world -- v3.1 metabolism throughout, the chain at the agreed cover targets
 # ---------------------------------------------------------------------------
 WORLD = dict(
-    # phase 1 is v3.1, unchanged
+    # v3.1's flip world (phase 1), carried through phase 2 unchanged
     flip_every=300, eta_init=0.2, hidden=24,
     spawn_per_patch=3.0, food_value=0.7, poison_value=0.5,
     repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=400, init_pop=300,
-    # phase 2 adds three preparations.  Nothing else changes -- no new inputs, no items,
-    # stations or nuts.  The fact to be learned sits on EVERY meal.
-    prep_value=1.5, prep_fail=0.5, prep_every=2000,
-    scaffold_food=False, scaffold_chain=False, goal_channel=False,
+    # the SHORTENED chain (amendment 2): pickup -> carry -> attempt, and the attempt pays.
+    # No nuts, no tool state.  The station -> nut bridge returns in v3.11 as one change.
+    # amendment 3: the chain is CO-LOCATED with foraging.  Items and stations spawn only inside
+    # the food patches, each patch carries 8 stations of each type at fixed offsets that travel
+    # with it, and items stranded by a drift are cleared.  The recipe is an expensive FACT, not
+    # an expensive JOURNEY.  World criterion is in-patch: nearest station of each type <= 3 steps
+    # from a random patch cell, in-patch item cover 20-25%.
+    items_per_patch=0.22, stations_per_patch=8, nuts_per_patch=0.0, nuts_uniform=0.0,
+    carry_cost=0.0,                 # a carry tax punishes exploration, not the chain
+    tool_value=2.5, fail_cost=0.05, recipe_every=2000,
+    scaffold_food=False, scaffold_chain=False,
 )
 
 PHASE_STEPS = 8000
@@ -44,17 +47,18 @@ def _v(**kw):
     return dict(kw=dict(**dict(WORLD, **kw)), phases=STAGED)
 
 VARIANTS = {
-    # uniform over the AVAILABLE actions: 5 in phase 1 (preparations masked), 8 in phase 2.
-    # So the conditional null is 1/5 then 1/8 per action, and 3/8 for "any preparation".
+    # the behavioural null.  Uniform over the AVAILABLE actions -- five in phase 1 (`interact` is
+    # masked while the chain is off), six in phase 2 -- so the conditional null is 1/5 then 1/6.
     # Exempt from row 0: a random walker belongs at the population floor.
     "random policy":       _v(mode="random"),
     "fixed":               _v(mode="fixed"),
-    # the control that carries row 3: same plasticity, same H magnitudes, random-sign m
+    # the control for "a modulator at stations changes behaviour": same plasticity, same H
+    # magnitudes, random-sign m.
     "scrambled":           _v(mode="plastic", plastic_layers="W2", scramble=True),
     "plastic (W2)":        _v(mode="plastic", plastic_layers="W2"),
-    # hand-wired (food type, preparation) table with exact credit, forcing its argmax once it has
-    # evidence.  A policy override, the honest analogue of v2's veto.  Reference, not matched.
-    "fixed + B (ceiling)": _v(mode="fixed", private_mem=True),
+    # reference level, not a matched comparison: its steering route is only an observation
+    # channel nothing is wired to, so its live route is the veto.
+    "fixed + B (ceiling)": _v(mode="fixed", private_mem=True, pref_gain=8.0, veto_p=0.9),
 }
 
 NULL = "random policy"
@@ -62,15 +66,6 @@ OUTCOME_ARMS = [n for n in VARIANTS if n != NULL]
 
 COLORS = {"random policy": "tab:grey", "fixed": "tab:red", "scrambled": "black",
           "plastic (W2)": "tab:blue", "fixed + B (ceiling)": "tab:purple"}
-
-# Three levels on the preparation task, and the middle one is the one to watch:
-CHANCE = 1.0 / 3.0        # a random preparation
-TYPE_BLIND = 0.5          # "always prep_k" for a k that is useful in this era: right for one food
-                          # type, wrong for the other, and NO type knowledge at all.  Note that
-                          # ACROSS eras such a policy scores only 1/3 -- with distinct mappings, k
-                          # is useless in a third of them (EV -0.5/meal there) -- so a genome beats
-                          # chance only by tracking the era, not by holding one preparation.
-FULL = 1.0                # the conjunction: the right preparation for each type
 
 CHANCE = 1.0 / 6.0
 MARGIN = 0.03
@@ -208,52 +203,39 @@ def first_bin_drop(run_, bin_size=500):
 # ---------------------------------------------------------------- summary
 
 ROWS = [
-    ("safe_rate",           safe),
-    ("prep hit",            lambda L: prep_hit(L)),
-    ("prep hit | type A",   lambda L: rate(L, "n_ok0", "n_prep0")),
-    ("prep hit | type B",   lambda L: rate(L, "n_ok1", "n_prep1")),
-    ("prep/life",           lambda L: half(L, "prep_per_life")),
-    ("prep share of meals", lambda L: half(L, "prep_share")),
-    ("P(prep | on food)",   lambda L: half(L, "prep_on_food")),
-    ("P(eat | on food)",    lambda L: half(L, "eat_on_food")),
-    ("pop",                 lambda L: half(L, "pop")),
-    ("injections",          lambda L: half(L, "injections")),
-    ("max_gen",             lambda L: half(L, "max_gen")),
-    ("probe_adv (food)",    lambda L: half(L, "probe_adv_food")),
-    ("probe_adv (prep)",    lambda L: half(L, "probe_adv")),
-    ("prep_gain innate",    lambda L: half(L, "prep_gain_innate")),
-    ("eta2",                lambda L: half(L, "eta2")),
-    ("eta1",                lambda L: half(L, "eta1")),
-    ("lam2",                lambda L: half(L, "lam2")),
-    ("h_norm",              lambda L: half(L, "h_norm")),
-    ("nav_dir",             lambda L: half(L, "nav_dir")),
-    ("nav_here",            lambda L: half(L, "nav_here")),
-    ("crop_safe",           lambda L: half(L, "crop_safe")),
-    ("raw meals",           lambda L: float(np.sum([r["n_raw"] for r in L]))),
-    ("meal gain",           lambda L: float(curve(L, "meal")[-1] - curve(L, "meal")[0])),
-    ("hit-in-life gain",    lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0])),
+    ("safe_rate",          safe),
+    ("recipe_hit",         hit),
+    ("attempts/1k",        lambda L: per_1k(L, "n_attempts_raw")),
+    ("holding_item",       lambda L: half(L, "holding_item")),
+    ("pop",                lambda L: half(L, "pop")),
+    ("injections",         lambda L: half(L, "injections")),
+    ("max_gen",            lambda L: half(L, "max_gen")),
+    ("probe_adv (food)",   lambda L: half(L, "probe_adv_food")),
+    ("probe_adv (recipe)", lambda L: half(L, "probe_adv")),
+    ("pair_gain innate",   lambda L: half(L, "pair_gain_innate")),
+    ("eta2",               lambda L: half(L, "eta2")),
+    ("eta1",               lambda L: half(L, "eta1")),
+    ("lam2",               lambda L: half(L, "lam2")),
+    ("h_norm",             lambda L: half(L, "h_norm")),
+    ("nav_dir",            lambda L: half(L, "nav_dir")),
+    ("nav_here",           lambda L: half(L, "nav_here")),
+    ("crop_safe",          lambda L: half(L, "crop_safe")),
+    ("trace_recency",      lambda L: half(L, "trace_recency")),
+    ("e_fail/1k",          lambda L: half(L, "e_fail_per_1k")),
+    ("e_tool/1k",          lambda L: half(L, "e_bonus_per_1k")),
+    ("pickups/1k",         lambda L: half(L, "pickups_per_1k")),
+    ("declined/1k",        lambda L: half(L, "declined_per_1k")),
+    ("decline_frac",       lambda L: half(L, "decline_frac")),
+    ("eat on food",        lambda L: half(L, "eat_on_food")),
+    ("interact on food",   lambda L: half(L, "int_on_food")),
+    ("eat on item",        lambda L: half(L, "eat_on_item")),
+    ("P(int | on item)",   lambda L: half(L, "int_on_item")),
+    ("P(int | at station)", lambda L: half(L, "int_at_station")),
+    ("noops/1k",           lambda L: half(L, "noops_per_1k")),
+    ("attempts/life",      lambda L: half(L, "attempts_per_life")),
+    ("meal gain",          lambda L: float(curve(L, "meal")[-1] - curve(L, "meal")[0])),
+    ("attempt gain",       lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0])),
 ]
-
-
-def prep_hit(L):
-    """Event-weighted prep hit over both food types."""
-    n = float(np.sum([r["n_prep0"] + r["n_prep1"] for r in L]))
-    k = float(np.sum([r["n_ok0"] + r["n_ok1"] for r in L]))
-    return k / n if n else np.nan
-
-
-def first_era(run_, era=2000):
-    """The FIRST mapping era of phase 2 -- steps 0..era after the switch.  Rig check 2(a) is read
-    here and only here: once the mapping is known, preparation pays 1.5 on ANY food, the
-    safe/poison fact becomes irrelevant, and a good learner stops eating raw.  probe_adv (food)
-    decaying after that is a GOOD reason, not a broken transition."""
-    sw = run_.get("chain_start", 0)
-    return window(run_, sw, sw + era)
-
-
-def era_windows(run_, era=2000):
-    sw, n = run_.get("chain_start", 0), run_["n_steps"]
-    return [window(run_, lo, min(lo + era, n)) for lo in range(sw, n, era)]
 
 
 def summary(results):
@@ -277,16 +259,16 @@ def summary(results):
     print("\nper seed:")
     for lab, f, sel, tag in [("safe_rate", safe, lambda r: phase_half(r, 0), "phase 1"),
                              ("probe_adv (food)", lambda L: half(L, "probe_adv_food"), lambda r: phase_half(r, 0), "phase 1"),
-                             ("prep hit", prep_hit, lambda r: phase_half(r, 1), "phase 2"),
-                             ("prep hit | A", lambda L: rate(L, "n_ok0", "n_prep0"), lambda r: phase_half(r, 1), "phase 2"),
-                             ("prep hit | B", lambda L: rate(L, "n_ok1", "n_prep1"), lambda r: phase_half(r, 1), "phase 2"),
-                             ("prep/life", lambda L: half(L, "prep_per_life"), lambda r: phase_half(r, 1), "phase 2"),
-                             ("probe_adv (prep)", lambda L: half(L, "probe_adv"), lambda r: phase_half(r, 1), "phase 2"),
+                             ("eta2", lambda L: half(L, "eta2"), lambda r: phase_half(r, 0), "phase 1"),
+                             ("recipe_hit", hit, lambda r: phase_half(r, 1), "phase 2"),
+                             ("attempts/1k", lambda L: per_1k(L, "n_attempts_raw"), lambda r: phase_half(r, 1), "phase 2"),
                              ("pop", lambda L: half(L, "pop"), lambda r: phase_half(r, 1), "phase 2"),
-                             ("injections", lambda L: half(L, "injections"), lambda r: phase_half(r, 1), "phase 2")]:
+                             ("injections", lambda L: half(L, "injections"), lambda r: phase_half(r, 1), "phase 2"),
+                             ("eta2", lambda L: half(L, "eta2"), lambda r: phase_half(r, 1), "phase 2"),
+                             ("lam2", lambda L: half(L, "lam2"), lambda r: phase_half(r, 1), "phase 2")]:
         print(f"  {lab} ({tag})")
         for n in names:
-            print(f"    {n:<22} {np.round(ps(results, n, sel, f), 3).tolist()}")
+            print(f"    {n:<24} {np.round(ps(results, n, sel, f), 3).tolist()}")
 
     _decision_numbers(results)
 
@@ -302,19 +284,12 @@ def _decision_numbers(results):
     F, S, PL, CEIL = "fixed", "scrambled", "plastic (W2)", "fixed + B (ceiling)"
     v = lambda n, sel, f: ps(results, n, sel, f)
     n_ok = lambda a, b: int(np.sum(np.asarray(a) - np.asarray(b) >= MARGIN))
-    hitA = lambda L: rate(L, "n_ok0", "n_prep0")
-    hitB = lambda L: rate(L, "n_ok1", "n_prep1")
+    have = lambda n: n in results
 
     print("\n" + "-" * 78)
     print(f"DECISION NUMBERS (a difference counts when it is >= {MARGIN} in {rule}/{nseed} seeds)")
-    print(f"  THREE LEVELS on prep hit:  chance {CHANCE:.3f}  |  type-blind {TYPE_BLIND:.2f}  |  full {FULL:.2f}")
-    print("  Type-blind = 'always prep_k' for a k useful in this era: right for one food type, wrong")
-    print("  for the other, no type knowledge.  ACROSS eras it scores only 1/3, because with distinct")
-    print("  mappings k is useless in a third of them -- so a genome beats chance only by tracking the")
-    print("  era.  A CONJUNCTION shows as BOTH types above 0.5, not one at 1.0 and the other at 0.")
-    print("  PRE-REGISTERED PREDICTION: `fixed` sits near 0.5 and crashes in the third of eras where")
-    print("  its k goes useless (EV -0.5/meal); `plastic (W2)` clears 0.5 on BOTH types and recovers")
-    print("  across remaps.  Recorded before the run.")
+    print("  PRE-REGISTERED PREDICTION: `plastic (W2)` clears row 3, and abstention does not occur")
+    print("  under a two-sided signal.  Recorded before the run.")
     print("-" * 78)
 
     print("\nrow 0  uninterpretable?  Per phase.  `random policy` is EXEMPT.")
@@ -325,7 +300,7 @@ def _decision_numbers(results):
             flag = "  (null arm, exempt)" if n == NULL else ("  <-- EXCLUDE" if bad else "")
             print(f"  {lab}  {n:<22} pop {np.round(pop,0).tolist()}  inj {np.round(inj,1).tolist()}{flag}")
 
-    print("\nrow 1a  PHASE-1 GATE = v3.1.  A STOP ROW: if it fails, nothing below is read.")
+    print("\nrow 1a  PHASE-1 GATE -- is this v3.1?  A STOP ROW: if it fails, nothing below is read.")
     sp, sf = v(PL, P1, safe), v(F, P1, safe)
     pf = v(PL, P1, lambda L: half(L, "probe_adv_food"))
     fpop, finj = v(F, P1, lambda L: half(L, "pop")), v(F, P1, lambda L: half(L, "injections"))
@@ -333,102 +308,123 @@ def _decision_numbers(results):
     V31_HI = 0.56
     print(f"  safe_rate  plastic {np.round(sp,3).tolist()}   fixed {np.round(sf,3).tolist()}   (v3.1: 0.60-0.66 vs 0.51-0.56)")
     if excluded.any():
-        print(f"  ROW-0 FALLBACK in seed(s) {np.where(excluded)[0].tolist()}: those read against v3.1's"
-              f" published range, conservative end {V31_HI}.")
+        print(f"  ROW-0 FALLBACK in seed(s) {np.where(excluded)[0].tolist()}: `fixed` phase 1 excluded"
+              f" (pop {np.round(fpop[excluded],0).tolist()}); those seeds read against v3.1's published"
+              f" range, conservative end {V31_HI}.")
+    gate_a = []
     for i in range(nseed):
         d = sp[i] - (V31_HI if excluded[i] else sf[i])
+        gate_a.append(d >= MARGIN)
         print(f"    seed {i}: {d:+.3f} ({'published' if excluded[i] else 'measured'})   {'PASS' if d >= MARGIN else 'FAIL'}")
-    print(f"  probe_adv (food) plastic {np.round(pf,3).tolist()}   (target >= 1.0)")
+    print(f"    >= +{MARGIN} in {sum(gate_a)}/{nseed};  probe_adv (food) {np.round(pf,3).tolist()} (target >= 1.0)")
 
-    print("\nrow 1b  MAPPING GATE -- genes may hold a type-blind preparation, but must not track the")
-    print("        CONJUNCTION.  Gate fires at `fixed` prep hit > 0.55 in 3/3.")
-    hf, hfa, hfb = v(F, P2, prep_hit), v(F, P2, hitA), v(F, P2, hitB)
-    print(f"  fixed prep hit {np.round(hf,3).tolist()}   per type A {np.round(hfa,3).tolist()}  B {np.round(hfb,3).tolist()}")
-    fired = int(np.sum(hf > 0.55))
-    print(f"  above 0.55 in {fired}/{nseed}" + ("   <-- GATE FIRES: shorten prep_every toward the flip"
-          " period, judged against `fixed` only, before reading below."
+    print("\nrow 1b  RECIPE GATE -- can the genome track the recipe now that it pays?")
+    hf = v(F, P2, hit)
+    print(f"  fixed recipe_hit {np.round(hf,3).tolist()}   (chance {CHANCE:.3f}; gate FIRES at > 0.25 in {rule}/{nseed})")
+    print(f"  fixed pair_gain innate {np.round(v(F,P2,lambda L: half(L,'pair_gain_innate')),3).tolist()}")
+    fired = int(np.sum(hf > 0.25))
+    print(f"  above 0.25 in {fired}/{nseed}" + ("   <-- GATE FIRES: shorten recipe_every toward the flip"
+          " period, judged against `fixed` only, before reading anything below."
           if fired >= rule else "   gate clear."))
-    print("  Read the per-type split: one type high and the other near 0 is type-blind (allowed);")
-    print("  both above 0.5 in `fixed` would be genes holding the conjunction (not allowed).")
-    print(f"  prep_gain innate (fixed) {np.round(v(F,P2,lambda L: half(L,'prep_gain_innate')),3).tolist()}")
 
     print("\nrow 2  RIG CHECKS -- nothing below is read until these are clean.")
-    print("  (a) food learning survives the switch, read in the FIRST MAPPING ERA ONLY (steps")
-    print("      0-2000 after it), when nobody knows the mapping and `eat` is still the right")
-    print("      action.  After that a good learner abandons raw eating and probe_adv (food)")
-    print("      decays for a GOOD reason, not a broken transition.")
+    print("  (a) food learning SURVIVES phase 2:  safe >= 0.58 and probe_adv (food) >= 1.0")
     for n in (PL, S, F):
-        pe = v(n, first_era, lambda L: half(L, "probe_adv_food"))
-        se = v(n, first_era, safe)
-        mark = ("   PASS" if np.all(pe >= 1.0) else "   FAIL") if n == PL else ""
-        print(f"    {n:<22} probe_adv (food) {np.round(pe,3).tolist()}  safe {np.round(se,3).tolist()}{mark}")
-    print("      diagnostic -- PREP SHARE OF MEALS BY ERA (a learner with the mapping shifts from")
-    print("      `eat` to `prep`; the shift is itself an efficiency signature):")
-    for n in names:
-        shares = []
-        for r in results[n]:
-            shares.append([round(float(half(w, "prep_share")), 3) for w in era_windows(r)])
-        print(f"    {n:<22} {shares[0]}" + (f"  (seed 0 of {len(shares)})" if len(shares) > 1 else ""))
-    print("  (b) the opportunity exists:  prepared meals per life >= 3 in `fixed`")
-    plf = v(F, P2, lambda L: half(L, "prep_per_life"))
-    print(f"    fixed prep/life {np.round(plf,2).tolist()}   {'PASS' if np.all(plf >= 3.0) else 'FAIL'}")
-    for n in OUTCOME_ARMS + [NULL]:
-        print(f"    {n:<22} prep/life {np.round(v(n,P2,lambda L: half(L,'prep_per_life')),2).tolist()}")
-    print("  (c) P(prep | on food) against the per-phase null (analytic 3/8 = 0.375 in phase 2)")
-    base = np.nanmean(v(NULL, P2, lambda L: half(L, "prep_on_food")))
-    print(f"    null measured {base:.3f}")
-    for n in names:
-        print(f"    {n:<22} {np.round(v(n,P2,lambda L: half(L,'prep_on_food')),3).tolist()}")
+        if not have(n):
+            continue
+        s2, p2 = v(n, P2, safe), v(n, P2, lambda L: half(L, "probe_adv_food"))
+        mark = ("   PASS" if (np.all(s2 >= 0.58) and np.all(p2 >= 1.0)) else "   FAIL") if n == PL else ""
+        print(f"    {n:<22} safe {np.round(s2,3).tolist()}  probe_adv (food) {np.round(p2,3).tolist()}{mark}")
+    print("    the phase-1 baseline this rests on (v3.1: plastic 0.60-0.66, fixed 0.51-0.56;")
+    print("    probe_adv 1.4-2.7).  No longer its own stop row, but a failure here voids phase 2:")
+    for n in (PL, F):
+        print(f"    {n:<22} P1 safe {np.round(v(n,P1,safe),3).tolist()}  "
+              f"P1 probe_adv (food) {np.round(v(n,P1,lambda L: half(L,'probe_adv_food')),3).tolist()}  "
+              f"P1 pop {np.round(v(n,P1,lambda L: half(L,'pop')),0).tolist()}")
+    print("  (b) READABILITY -- judged on `fixed`, not the null.  `random policy` sits at the")
+    print("      injection floor, so its attempts/life measures churn rather than the world.")
+    alf = v(F, P2, lambda L: half(L, "attempts_per_life"))
+    isf = v(F, P2, lambda L: half(L, "int_at_station"))
+    isn = np.nanmean(v(NULL, P2, lambda L: half(L, "int_at_station"))) if have(NULL) else np.nan
+    print(f"    fixed  attempts/life {np.round(alf,2).tolist()}   "
+          f"{'PASS' if np.all(alf >= 3.0) else 'FAIL'}   (criterion >= 3)")
+    print(f"    fixed  P(interact | at station, carrying) {np.round(isf,3).tolist()}  vs null {isn:.3f}   "
+          f"{'PASS' if np.all(isf > isn) else 'FAIL'}")
+    if have(NULL):
+        aln = v(NULL, P2, lambda L: half(L, "attempts_per_life"))
+        print(f"    {NULL} (affordance null) attempts/life {np.round(aln,2).tolist()}   "
+              f"{'PASS' if np.all(aln >= 1.0) else 'FAIL'}   (criterion >= 1)")
+    for n in OUTCOME_ARMS:
+        print(f"    {n:<22} attempts/life {np.round(v(n,P2,lambda L: half(L,'attempts_per_life')),2).tolist()}")
+    print("    STOP CONDITION: if `fixed` makes fewer than ONE attempt per life over a full")
+    print("    8000-step phase 2 in the acceptance run, rig work on this world stops and the")
+    print("    result is reported as a finding about sparse chains under autopoietic economics.")
+    print("  (c) CONDITIONAL APPROACH -- the unconfounded test.  A per-1k rate compares action")
+    print("      budgets, not approach; these condition on the opportunity.  The null is the")
+    print("      `random policy` arm, whose analytic share is 1/5 in phase 1 (interact masked)")
+    print("      and 1/6 in phase 2.")
+    conds = [("P(interact | on item, empty-handed)", "int_on_item"),
+             ("P(interact | at station, carrying)", "int_at_station"),
+             ("P(eat | on food)", "eat_on_food")]
+    for lab, key in conds:
+        base = np.nanmean(v(NULL, P2, lambda L: half(L, key))) if have(NULL) else np.nan
+        print(f"    {lab}   null (measured) {base:.3f}, analytic {1/6:.3f}")
+        for n in names:
+            x = v(n, P2, lambda L: half(L, key))
+            mk = "" if n == NULL else ("  above null" if np.nanmean(x) >= base + MARGIN else "")
+            print(f"      {n:<22} {np.round(x,3).tolist()}{mk}")
 
     print("\n" + "=" * 78)
-    print("row 3  THE CONJUNCTION -- a dense, immediate, two-sided task")
+    print("row 3  THE CONJUNCTION -- immediate, two-sided credit, in the world, in every arm")
     print("=" * 78)
-    hp, hs = v(PL, P2, prep_hit), v(S, P2, prep_hit)
-    pl, fl = v(PL, P2, lambda L: half(L, "prep_per_life")), plf
-    print("  ABSTENTION CHECK FIRST -- prepared meals not below 0.8x `fixed`.")
-    print(f"    prep/life plastic {np.round(pl,2).tolist()}  fixed {np.round(fl,2).tolist()}"
-          f"   ratio {np.round(pl / np.maximum(fl, 1e-9), 2).tolist()}   (abstention if < 0.80)")
+    hp, hs = v(PL, P2, hit), v(S, P2, hit)
+    ap, af = v(PL, P2, lambda L: per_1k(L, "n_attempts_raw")), v(F, P2, lambda L: per_1k(L, "n_attempts_raw"))
+    print("  ABSTENTION CHECK FIRST -- pre-registered: with a two-sided signal it should NOT occur.")
+    print(f"    attempts/1k  plastic {np.round(ap,2).tolist()}   fixed {np.round(af,2).tolist()}")
+    print(f"    ratio {np.round(ap / np.maximum(af, 1e-9), 2).tolist()}   (abstention if < 0.80)")
+    dp = v(PL, P2, lambda L: half(L, "decline_frac"))
+    de = v(PL, lambda r: window(r, r["chain_start"], r["chain_start"] + (r["n_steps"] - r["chain_start"]) // 4),
+           lambda L: half(L, "decline_frac"))
+    print(f"    decline_frac early {np.round(de,3).tolist()} -> late {np.round(dp,3).tolist()}"
+          f"   (rising in {int(np.sum(dp > de))}/{nseed})")
     print("  the result lines:")
     print(f"    plastic - fixed:     {np.round(hp - hf,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hf)}/{nseed}")
     print(f"    plastic - scrambled: {np.round(hp - hs,3).tolist()}   >= +{MARGIN} in {n_ok(hp, hs)}/{nseed}   <- scrambled carries it")
-    print(f"    prep hit  plastic {np.round(hp,3).tolist()}  fixed {np.round(hf,3).tolist()}  scrambled {np.round(hs,3).tolist()}")
-    print(f"  PER TYPE -- a conjunction is BOTH above {TYPE_BLIND:.2f}, not one at 1.0 and one at 0:")
-    for n in names:
-        a_, b_ = v(n, P2, hitA), v(n, P2, hitB)
-        both = int(np.sum((a_ > TYPE_BLIND) & (b_ > TYPE_BLIND)))
-        print(f"    {n:<22} A {np.round(a_,3).tolist()}  B {np.round(b_,3).tolist()}   both > {TYPE_BLIND} in {both}/{nseed}")
+    print(f"    recipe_hit  plastic {np.round(hp,3).tolist()}  fixed {np.round(hf,3).tolist()}  "
+          f"scrambled {np.round(hs,3).tolist()}   (chance {CHANCE:.3f})")
     pr = v(PL, P2, lambda L: half(L, "probe_adv"))
     ao, ay = v(PL, P2, lambda L: half(L, "hit_old")), v(PL, P2, lambda L: half(L, "hit_young"))
     ag = v(PL, P2, lambda L: float(curve(L, "att")[-1] - curve(L, "att")[0]))
-    print(f"  probe_adv (prep) {np.round(pr,3).tolist()}   (> 0 in {int(np.sum(pr > 0))}/{nseed})")
+    print(f"  probe_adv (recipe) {np.round(pr,3).tolist()}   (> 0 in {int(np.sum(pr > 0))}/{nseed})")
     print(f"  within-life signature -- at least one, in {rule}/{nseed}:")
     print(f"    hit-in-life curve gain {np.round(ag,3).tolist()}   (> 0 in {int(np.sum(ag > 0))}/{nseed})")
     print(f"    hit_old - hit_young    {np.round(ao - ay,3).tolist()}   (> 0 in {int(np.sum(ao > ay))}/{nseed})")
-    if CEIL in results:
-        hc = v(CEIL, P2, prep_hit)
-        print(f"  ceiling {np.round(hc,3).tolist()}   (reference: hand-wired exact credit, forced argmax)")
+    if have(CEIL):
+        hc = v(CEIL, P2, hit)
+        print(f"  ceiling {np.round(hc,3).tolist()}   ceiling - fixed {np.round(hc - hf,3).tolist()}   (reference, not matched)")
 
     print("\nrow 4  GENE ROWS (corroborating only)")
     for g in ("eta2", "lam2", "eta1"):
         print(f"  {g}   phase 1 -> phase 2")
         for n in OUTCOME_ARMS:
             print(f"    {n:<22} {np.round(v(n,P1,lambda L: half(L,g)),3).tolist()} -> {np.round(v(n,P2,lambda L: half(L,g)),3).tolist()}")
-    print("  unwired scaffold genes -- drift scale for a heritable scalar:")
+    print("  unwired scaffold genes -- drift scale for a heritable scalar (nothing is wired to them):")
     for g in ("nav_dir", "nav_here"):
         print(f"    {g:<12} " + "  ".join(f"{n}: {np.nanmean(v(n,P2,lambda L: half(L,g))):.2f}" for n in (F, PL)))
+    print(f"  trace_recency (phase 1) plastic {np.round(v(PL,P1,lambda L: half(L,'trace_recency')),3).tolist()}")
 
     print("\nrow 5  if row 3 is NULL with rows 1-2 clean, that is the first earned statement about")
-    print("       the learner's limit: the rule does not hold a two-item conjunction even where the")
-    print("       opportunity is dense, the credit immediate and two-sided, and no approach")
-    print("       behaviour is required.  Spend the one rule-form change there.")
+    print("       the learner's limit: the rule does not hold a conjunction even with immediate,")
+    print("       two-sided credit, a separate interact action, a readable world, declining as a")
+    print("       policy and a random-walk null.  Spend the one rule-form change there.")
     print("-" * 78)
 
 
 # ---------------------------------------------------------------- curves / plots
 
 def curves(results, key, xlabel, show=True):
-    label = {"att": "preparation number in an agent's life",
-             "rec": "preparations since the last remap",
+    label = {"att": "attempt number in an agent's life",
+             "rec": "attempts since the last recipe change",
              "meal": "meal number in an agent's life"}[key]
     base = CHANCE if key in ("att", "rec") else 0.5
     sel = (lambda r: phase_half(r, 0)) if key == "meal" else (lambda r: phase_half(r, 1))
@@ -463,9 +459,9 @@ def plot_results(results):
     keys = [("safe_rate", "Safe-eating rate (chance = 0.5)"),
             ("probe_adv_food", "Within-agent counterfactual on FOOD (v3.1's probe)"),
             ("pop", "Population"),
-            ("prep_share", "Preparation share of meals"),
-            ("recipe_hit", f"Prep hit (chance {CHANCE:.2f}, type-blind {TYPE_BLIND:.2f})"),
-            ("probe_adv", "Within-agent counterfactual on the PREPARATION conjunction"),
+            ("attempts_per_1k", "Tool attempts per 1k agent-steps"),
+            ("recipe_hit", f"Recipe hit rate (chance = {CHANCE:.2f})"),
+            ("has_tool", "Share of agents carrying a tool"),
             ("eta2", "Output-layer learning-rate gene"),
             ("lam2", "Output-layer eligibility-trace gene"),
             ("h_norm", "Mean |H|")]

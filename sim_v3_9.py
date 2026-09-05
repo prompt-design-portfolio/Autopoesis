@@ -104,14 +104,13 @@ class Config:
                                      # station -> nut bridge returns in v3.11 as its own change.
     nuts_uniform: float = 0.0     # retained at 0; nuts return in v3.11 with the bridge.
     item_rot: float = 0.005
-    prep_value: float = 1.5           # a CORRECT attempt pays this immediately, m = +1, and the
+    tool_value: float = 2.5           # a CORRECT attempt pays this immediately, m = +1, and the
                                       # item is consumed.  Nothing is carried afterwards: there is
                                       # no tool state in this build.
     pickup_cost: float = 0.02
-    prep_fail: float = 0.5        # a WRONG preparation costs this (poison-sized) and fires m = -1.
-    prep_every: int = 2000        # the food -> preparation mapping is redrawn this often,
-                                  # independently of the safe/poison flip.
-    fail_cost: float = 0.0        # retired with the chain
+    fail_cost: float = 0.05       # a WRONG attempt costs this and fires m = -1, and the item is
+                                  # lost.  With tool_value this makes the signal two-sided AND
+                                  # part of the world, in every arm -- not an oracle fixture.
     recipe_every: int = 2000      # ~8-13 generations per era
     # mutation
     mut_sigma: float = 0.15
@@ -138,7 +137,7 @@ class Config:
     scaffold_chain: bool = True    # whether the instinct approaches items/stations/nuts and interacts
                                    # with them.  v3.8 sets this False: the chain has to be found
                                    # unwired, so nav_dir/nav_here stay in the genome but reach nothing.
-    goal_channel: bool = False     # retired with the chain; channel 10 is dead.  Kept:  # keep the stage-machine 'goal' OBSERVATION (points at items when
+    goal_channel: bool = True      # keep the stage-machine 'goal' OBSERVATION (points at items when
                                    # empty-handed, stations when carrying, nuts when tooled).  This is
                                    # a hand-designed feature but not a valence -- it never says WHICH
                                    # item or station -- and it is identical in every condition, so it
@@ -189,11 +188,9 @@ class Config:
     seed: int = 0
 
 
-N_ACTIONS = 8            # 0-3 move, 4 eat, 5-7 prep_1..3.  v3.10: the recipe chain is gone; the
-EAT = 4                  # fact to be learned sits on EVERY meal, so there is no approach behaviour
-PREP0 = 5                # to evolve.  Preparations are masked in phase 1, which is therefore
-N_PREPS = 3              # exactly v3.1's five actions.
-INTERACT = None           # retired with the chain
+N_ACTIONS = 6            # 0-3 move, 4 eat, 5 interact  (v3.9 audit fix A: one action used to do
+EAT = 4                  # attempt / crack / pickup / eat in priority order, so learning about one
+INTERACT = 5             # bled into all of them, and declining was not a policy the network had.)
 MOVES = np.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
 N_PAIRS = 6                                      # 3 items x 2 stations
 
@@ -250,7 +247,7 @@ class World:
                     dy, dx = rng.integers(-r, r + 1, size=2)
                     self.station_offsets.append((pi, int(dy), int(dx), st))
         self._place_stations()
-        self.mapping = self._draw_mapping(None)   # food type -> preparation index (0..K-1)
+        self.recipe = (int(rng.integers(cfg.n_items)), int(rng.integers(cfg.n_stations)))
         self.flips, self.recipe_changes = [], []
         self.chain_on = cfg.chain      # set per phase by run()
         self.chain_start = 0           # step at which the chain switched on; recipe eras are measured
@@ -276,41 +273,37 @@ class World:
             py, px = self.patches[pi]
             self.stations[(py + dy) % g, (px + dx) % g] = st
 
-    def _draw_mapping(self, old):
-        """One correct preparation per food type, and the two types map to DIFFERENT preparations,
-        so exactly one preparation is useless in any era and the task cannot be solved without
-        discriminating food type.  A redraw differs from the old mapping in at least one type."""
-        while True:
-            a = int(self.rng.integers(N_PREPS))
-            b = int(self.rng.integers(N_PREPS))
-            if a == b:
-                continue
-            m = (a, b)
-            if old is None or m != old:
-                return m
-
     def new_recipe(self, t):
-        self.mapping = self._draw_mapping(self.mapping)
-        self.recipe_changes.append(t)
+        cfg = self.cfg
+        while True:
+            r = (int(self.rng.integers(cfg.n_items)), int(self.rng.integers(cfg.n_stations)))
+            if r != self.recipe:
+                self.recipe = r
+                self.recipe_changes.append(t)
+                return
 
     def step(self, t):
         cfg, g, rng = self.cfg, self.cfg.grid, self.rng
         changed_recipe = False
         if t > 0 and t % cfg.patch_drift_every == 0:
             self.patches = (self.patches + rng.integers(-8, 9, size=self.patches.shape)) % g
-
+            self._place_stations()          # stations travel with their patch
+            self.items[~self._in_patch()] = -1   # ... and items left behind by the drift are cleared,
+                                                 # so "nothing outside a patch" holds at every step
+                                                 # rather than only at spawn time
         if t > 0 and t % cfg.flip_every == 0:
             self.safe = 1 - self.safe
             self.flips.append(t)
-        if self.chain_on and t > self.chain_start and (t - self.chain_start) % cfg.prep_every == 0:
+        if self.chain_on and t > self.chain_start and (t - self.chain_start) % cfg.recipe_every == 0:
             self.new_recipe(t)
             changed_recipe = True
         # rot
         self.food &= rng.random(self.food.shape) > cfg.food_rot
-        self.items[:] = -1                          # v3.10: no items, nuts or stations anywhere.
-        self.nuts[:] = False                        # Their channels stay in the 60-input layout and
-        self.stations[:] = -1                       # are permanently dead; nothing changes at the
-                                                    # switch except which actions are available.
+        if not self.chain_on:                       # phase 1: no items, chain channels zero
+            self.items[:] = -1
+        else:
+            self.items[rng.random(self.items.shape) < cfg.item_rot] = -1
+        self.nuts[:] = False                        # no nuts in v3.9; the channel stays, always zero
         # food and nuts grow in the drifting patches
         r = cfg.patch_radius
         for (py, px) in self.patches:
@@ -319,7 +312,12 @@ class World:
                 y, x = (py + dy) % g, (px + dx) % g
                 if not self.food[:, y, x].any():
                     self.food[rng.integers(2), y, x] = True
-
+            if self.chain_on:               # items spawn in the patches too: nothing outside them
+                k = rng.poisson(cfg.items_per_patch)
+                for dy, dx in rng.integers(-r, r + 1, size=(k, 2)):
+                    y, x = (py + dy) % g, (px + dx) % g
+                    if self.items[y, x] < 0:
+                        self.items[y, x] = rng.integers(cfg.n_items)
 
         return changed_recipe
 
@@ -411,11 +409,11 @@ class Agent:
         return c
 
     def act(self, obs, cfg, rng, chain_on=True):
-        # The three preparations are masked while phase 2 is off, so phase 1 is EXACTLY v3.1's
-        # five actions and its gate applies unchanged.  ONLY the action space changes at the
-        # switch -- no new inputs.  The null is masked too, so its per-action share is 1/5 in
-        # phase 1 and 1/8 in phase 2, and 3/8 for "any preparation".
-        n_av = N_ACTIONS if chain_on else PREP0        # 8 in phase 2, 5 in phase 1
+        # `interact` is masked while the chain is off, so phase 1 is EXACTLY v3.1's five actions
+        # and the gate applies unchanged.  The sixth action goes live at the switch, alongside the
+        # 39 observation inputs.  The null is masked too, so its per-action share is 1/5 in phase 1
+        # and 1/6 in phase 2 -- the conditional nulls differ by phase for that reason.
+        n_av = N_ACTIONS if chain_on else N_ACTIONS - 1
         if cfg.mode == "random":
             return int(rng.integers(0, n_av))          # the behavioural null: no policy, no learning
         alive = self.integrity >= cfg.integrity_threshold
@@ -425,7 +423,7 @@ class Agent:
         h = np.tanh(obs @ W1 + self.b1) * alive
         logits = h @ W2 + self.b2 + rng.normal(0, cfg.action_noise, N_ACTIONS)
         if not chain_on:
-            logits[PREP0:] = -np.inf                   # phase 1 is exactly v3.1's five actions
+            logits[INTERACT] = -np.inf
         a = int(np.argmax(logits))
         if plastic:
             out = np.zeros(N_ACTIONS); out[a] = 1.0
@@ -531,40 +529,42 @@ def _forward(a, cfg, obs, learned):
     return h @ W2 + a.b2
 
 
-def prep_pref(a, cfg, ftype, k, learned=True):
-    """'Food of type f is under me.'  Returns the logit of preparation k minus the best of the
-    other actions -- how much this agent wants to apply preparation k to this food type."""
+def pair_pref(a, cfg, item, station, learned=True):
+    """'I am holding item i and standing on a station of type s, nothing else in view.'
+    Returns logit(stay/interact) - best move logit: how much this agent wants to ATTEMPT
+    this pair.  goal_here is set because a carrier standing on a station really does see
+    its goal underfoot -- the probe has to sit on the input distribution the policy meets."""
     obs = np.zeros(N_IN)
-    obs[HERE + ftype] = 1.0
+    obs[INV + item] = 1.0
+    obs[HERE + STATION_CH + station] = 1.0
+    obs[HERE + GOAL_CH] = 1.0
     obs[ENERGY] = 0.5
     logits = _forward(a, cfg, obs, learned)
-    j = PREP0 + k
-    return float(logits[j] - np.delete(logits, j).max())
+    return float(logits[INTERACT] - np.delete(logits, INTERACT).max())   # attempting is `interact`
 
 
-def prep_gain(agents, cfg, mapping, learned=True, n_sample=40):
-    """Preference for the CORRECT preparation minus the mean of the other two, averaged over both
-    food types and over agents.  > 0 means the policy applies the right preparation to each type --
-    which requires discriminating type, so this cannot be scored by a type-blind policy."""
+def pair_gain(agents, cfg, recipe, learned=True, n_sample=40):
+    """Preference for the TRUE pair minus mean preference for the other five.
+    > 0 means the policy attempts the right conjunction more readily than the wrong ones."""
     if len(agents) < 5:
         return np.nan
     idx = np.linspace(0, len(agents) - 1, min(n_sample, len(agents))).astype(int)
+    p_true = pair_id(*recipe)
     vals = []
-    for i in idx:
-        a = agents[i]
-        for ft in range(2):
-            p = np.array([prep_pref(a, cfg, ft, k, learned) for k in range(N_PREPS)])
-            vals.append(p[mapping[ft]] - np.delete(p, mapping[ft]).mean())
+    for k in idx:
+        a = agents[k]
+        prefs = np.array([pair_pref(a, cfg, i, s, learned) for i in range(cfg.n_items) for s in range(cfg.n_stations)])
+        vals.append(prefs[p_true] - np.delete(prefs, p_true).mean())
     return float(np.mean(vals))
 
 
-def probe_advantage(agents, cfg, mapping, n_sample=40):
-    """Within-agent counterfactual on the PREPARATION conjunction: prep_gain with learned synapses
-    minus with innate ones.  Same genome, same world state.  Exactly zero when mode == 'fixed'."""
+def probe_advantage(agents, cfg, recipe, n_sample=40):
+    """Within-agent counterfactual on the RECIPE: pair_gain with learned synapses minus with
+    innate ones.  Same genome, same world state: the change this individual's own plasticity
+    produced.  Exactly zero by construction when mode == 'fixed'."""
     if cfg.mode != "plastic" or len(agents) < 5:
         return np.nan
-    return (prep_gain(agents, cfg, mapping, True, n_sample)
-            - prep_gain(agents, cfg, mapping, False, n_sample))
+    return pair_gain(agents, cfg, recipe, True, n_sample) - pair_gain(agents, cfg, recipe, False, n_sample)
 
 
 def food_pref(a, cfg, ftype, learned=True):
@@ -573,11 +573,7 @@ def food_pref(a, cfg, ftype, learned=True):
     obs[HERE + APPETITE_CH] = 1.0
     obs[ENERGY] = 0.5
     logits = _forward(a, cfg, obs, learned)
-    # v3.10: the v3.1 form was logit(eat) minus the BEST OTHER action.  With three preparations
-    # live, that term moves with food type (the correct prep differs by type), so it contaminated
-    # the food probe -- it read 0.04 where the safe rate said 0.60.  The moves are the only
-    # food-type-independent baseline, so the probe is now logit(eat) against them.
-    return float(logits[EAT] - logits[:4].mean())
+    return float(logits[EAT] - np.delete(logits, EAT).max())             # eating is `eat`
 
 
 def food_gain(agents, cfg, safe, learned=True, n_sample=40):
@@ -603,21 +599,22 @@ def probe_advantage_food(agents, cfg, safe, n_sample=40):
 # --------------------------------------------------------------------------
 
 def resolve_action(a, action, world, cfg, rng, t=0):
-    """Apply `action` for agent `a`.  Mutates a.energy and the world.  Returns (m, event, info).
+    """Apply `action` for agent `a`.  Mutates a.energy / a.item and the world.
+    Returns (m, event, info).
 
     Modulator events, complete:
-        eat safe food            m = +1   energy +food_value
-        eat poison               m = -1   energy -poison_value
-        correct preparation      m = +1   energy +prep_value
-        wrong preparation        m = -1   energy -prep_fail
-        everything else          m =  0   move / no-op -move_cost, base metabolism, repair
-    Nothing on food is silent: every action on a food cell resolves immediately and two-sidedly.
-    The modulator is NOT the agent's own energy change in general; it is this table.
+        eat safe food                     m = +1   energy +food_value
+        eat poison                        m = -1   energy -poison_value
+        correct attempt                   m = +1   energy +tool_value, item consumed
+        wrong attempt                     m = -1   energy -fail_cost,  item lost
+        everything else                   m =  0
+    "Everything else" is: pickup (-pickup_cost), carrying (-carry_cost/step), moving and any
+    no-op (-move_cost / -noop_cost), base metabolism, repair.  The modulator is NOT the agent's
+    own energy change in general; it is this table.
 
-    A preparation consumes the food cell, exactly as eating does.  The prep outcome depends on the
-    food TYPE and the preparation chosen, and is independent of the safe/poison flip -- the world
-    holds two independent facts, a fast one (which type is safe, every 300 steps) and a slow one
-    (which preparation goes with which type, every 2000).
+    v3.9 amendment 2: there are no nuts and no tool state.  A correct attempt pays immediately
+    and consumes the item, so the recipe's credit is immediate and two-sided IN THE WORLD, in
+    every arm -- not an oracle fixture.  The station -> nut bridge returns in v3.11.
     """
     y, x = a.y, a.x
     g = cfg.grid
@@ -627,29 +624,43 @@ def resolve_action(a, action, world, cfg, rng, t=0):
         a.energy -= cfg.move_cost
         return 0.0, "move", {}
 
-    has_food = bool(world.food[0, y, x] or world.food[1, y, x])
-    if not has_food:
+    if action == EAT:
+        if world.food[0, y, x] or world.food[1, y, x]:
+            ftype = 0 if world.food[0, y, x] else 1
+            world.food[ftype, y, x] = False
+            if ftype == world.safe:
+                a.energy += cfg.food_value
+                return 1.0, "eat_safe", {"ftype": ftype}
+            a.energy -= cfg.poison_value
+            return -1.0, "eat_poison", {"ftype": ftype}
         a.energy -= cfg.noop_cost
         return 0.0, "noop", {}
-    ftype = 0 if world.food[0, y, x] else 1
 
-    if action == EAT:
-        world.food[ftype, y, x] = False
-        if ftype == world.safe:
-            a.energy += cfg.food_value
-            return 1.0, "eat_safe", {"ftype": ftype}
-        a.energy -= cfg.poison_value
-        return -1.0, "eat_poison", {"ftype": ftype}
+    # ---- INTERACT.  Priority: attempt -> pickup.
+    st = int(world.stations[y, x])
+    vetoed_pair = (cfg.private_mem and a.item >= 0 and st >= 0
+                   and a.B[pair_id(a.item, st)] <= -0.3 and rng.random() <= cfg.veto_p)
+    if st >= 0 and a.item >= 0 and not vetoed_pair:
+        ok = (a.item, st) == world.recipe
+        info = {"pair": pair_id(a.item, st), "ok": ok, "item": a.item, "station": st}
+        a.item = -1                                   # consumed either way
+        if ok:
+            a.energy += cfg.tool_value
+            return 1.0, "attempt_ok", info
+        a.energy -= cfg.fail_cost
+        return -1.0, "attempt_bad", info
 
-    k = action - PREP0                                  # 0 .. N_PREPS-1
-    world.food[ftype, y, x] = False
-    ok = (k == world.mapping[ftype])
-    info = {"ftype": ftype, "prep": k, "ok": ok}
-    if ok:
-        a.energy += cfg.prep_value
-        return 1.0, "prep_ok", info
-    a.energy -= cfg.prep_fail
-    return -1.0, "prep_bad", info
+    it = int(world.items[y, x])
+    if it >= 0 and a.item < 0:
+        pb = a.B.reshape(cfg.n_items, cfg.n_stations) if cfg.private_mem else None
+        if not (cfg.private_mem and pb[it].max() <= -0.3 and rng.random() <= cfg.veto_p):
+            a.item = it
+            world.items[y, x] = -1
+            a.energy -= cfg.pickup_cost
+            return 0.0, "pickup", {"item": it}
+
+    a.energy -= cfg.noop_cost
+    return 0.0, "noop", {}
 
 
 # --------------------------------------------------------------------------
@@ -687,9 +698,9 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     W = dict(eats=0, safe=0, deaths=0, births=0, steps=0, inject=0, attempts=0, correct=0,
              nuts=0, pickups=0, e_food=0.0, e_nut=0.0, e_fail=0.0, bridge_sum=0.0, bridge_n=0,
              trace_w=0.0, bridge1_sum=0.0, bridge1_n=0, rec_sum=0.0, rec_n=0,
-             e_bonus=0.0, noops=0, raw_meals=0, prep_meals=0,
-             on_food=0, on_food_eat=0, on_food_prep=0,
-             prep_n0=0, prep_ok0=0, prep_n1=0, prep_ok1=0)
+             e_bonus=0.0, noops=0, declined=0, decline_opps=0,
+             on_food=0, on_food_eat=0, on_food_int=0, on_item=0, on_item_eat=0, on_item_int=0,
+             int_at_station=0)
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
     ATT_R = np.zeros((cfg.n_attempts + 1, 2))   # attempts since the last recipe change
     MEALS = np.zeros((cfg.n_meals + 1, 2))      # meal number in an agent's life (the v3 curve)
@@ -777,26 +788,28 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 a.energy -= cfg.carry_cost
 
             on_food = bool(world.food[0, y, x] or world.food[1, y, x])
-            ft_here = (0 if world.food[0, y, x] else 1) if on_food else -1
-
-            # ---- the B ceiling forces its argmax preparation once it has evidence for this type.
-            # There is no navigation to steer here, so a hand-wired POLICY OVERRIDE is the honest
-            # analogue of v2's veto.  A reference level, not a matched comparison.
-            if cfg.private_mem and on_food and world.chain_on:
-                row = a.B[ft_here * N_PREPS:(ft_here + 1) * N_PREPS]
-                if float(np.max(np.abs(row))) > 0.2:
-                    action = PREP0 + int(np.argmax(row))
+            on_item = world.items[y, x] >= 0 and a.item < 0      # a pickup is only available when
+                                                                 # empty-handed, so condition on it
+            at_station_carrying = world.stations[y, x] >= 0 and a.item >= 0
 
             m, event, info = resolve_action(a, action, world, cfg, rng, t)
 
+            # ---- choice rates, so `eat` vs `interact` on each cell type is measurable (fix A)
             if on_food:
                 W["on_food"] += 1
-                W["on_food_eat"] += (action == EAT)
-                W["on_food_prep"] += (action >= PREP0)
+                W["on_food_eat"] += (action == EAT); W["on_food_int"] += (action == INTERACT)
+            if on_item:
+                W["on_item"] += 1
+                W["on_item_eat"] += (action == EAT); W["on_item_int"] += (action == INTERACT)
+            # ---- declining is now a policy (audit E), so it can be measured
+            if at_station_carrying:
+                W["decline_opps"] += 1
+                W["int_at_station"] += (action == INTERACT)
+                if action != INTERACT:
+                    W["declined"] += 1
 
             if event in ("eat_safe", "eat_poison"):
                 W["eats"] += 1; a.eats += 1
-                W["raw_meals"] += 1
                 if event == "eat_safe":
                     W["safe"] += 1; W["e_food"] += cfg.food_value; a.safe_eats += 1
                 k = a.eats
@@ -807,17 +820,16 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                     if tot > 0:
                         old_ = float(np.abs((a.lam2 ** cfg.recency_k) * a.e2_hist[0]).sum())
                         W["rec_sum"] += 1.0 - old_ / tot; W["rec_n"] += 1
-            elif event in ("prep_ok", "prep_bad"):
-                ok, ft = info["ok"], info["ftype"]
-                a.attempts += 1; W["attempts"] += 1; W["prep_meals"] += 1
-                W[f"prep_n{ft}"] += 1; W[f"prep_ok{ft}"] += ok
+            elif event in ("attempt_ok", "attempt_bad"):
+                ok = info["ok"]
+                a.attempts += 1; W["attempts"] += 1
                 if ok:
-                    W["correct"] += 1; a.successes += 1; W["e_bonus"] += cfg.prep_value
+                    a.successes += 1; W["correct"] += 1; W["e_bonus"] += cfg.tool_value
                 else:
-                    W["e_fail"] += cfg.prep_fail
+                    W["e_fail"] += cfg.fail_cost
                 if cfg.private_mem:
-                    j = ft * N_PREPS + info["prep"]
-                    a.B[j] = 0.7 * a.B[j] + 0.3 * (1.0 if ok else -1.0)   # exact credit, hand-wired
+                    p = info["pair"]
+                    a.B[p] = 0.7 * a.B[p] + 0.3 * (1.0 if ok else -1.0)   # exact pair credit, hand-wired
                 old = 0 if (t - a.born) < 150 else 1
                 a.age_bins[old, 0] += 1; a.age_bins[old, 1] += ok
                 k = a.attempts
@@ -827,6 +839,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 kr = a.since_recipe
                 if kr <= cfg.n_attempts:
                     ATT_R[kr, 0] += 1; ATT_R[kr, 1] += ok
+            elif event == "pickup":
+                W["pickups"] += 1
             elif event == "noop":
                 W["noops"] += 1
 
@@ -857,13 +871,16 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             income = W["e_food"] + W["e_nut"]
             log.append(dict(
                 t=t + 1, phase=phase_i, chain=int(world.chain_on), pop=len(agents),
-                recipe_hit=(W["correct"] / W["attempts"]) if W["attempts"] else np.nan,   # prep hit
+                recipe_hit=(W["correct"] / W["attempts"]) if W["attempts"] else np.nan,
                 attempts_per_1k=1000.0 * W["attempts"] / max(W["steps"], 1),
                 attempts_per_life=W["attempts"] / max(W["deaths"], 1),   # births ~ deaths in steady state
                 nuts_per_1k=1000.0 * W["nuts"] / max(W["steps"], 1),
+                pickups_per_1k=1000.0 * W["pickups"] / max(W["steps"], 1),
                 hit_young=(young[1] / young[0]) if young[0] > 20 else np.nan,   # attempts in the first 150 steps of life
                 hit_old=(old[1] / old[0]) if old[0] > 20 else np.nan,           # ... and after.  Within-life learning = old > young
                 safe_rate=(W["safe"] / W["eats"]) if W["eats"] else np.nan,
+                holding_item=float(np.mean([a.item >= 0 for a in agents])),
+                has_tool=float(np.mean([a.tool for a in agents])),
                 energy=float(np.mean([a.energy for a in agents])),
                 eta1=float(np.mean([a.eta1 for a in agents])), eta2=float(np.mean([a.eta2 for a in agents])),
                 lam1=float(np.mean([a.lam1 for a in agents])), lam2=float(np.mean([a.lam2 for a in agents])),
@@ -877,31 +894,34 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 # means of per-window ratios (a mean-of-ratios artifact cost a retraction in v2)
                 n_attempts_raw=W["attempts"], n_correct=W["correct"], n_eats=W["eats"],
                 n_safe=W["safe"], n_nuts=W["nuts"], agent_steps=W["steps"],
-                probe_adv=probe_advantage(agents, cfg, world.mapping),
-                prep_gain=prep_gain(agents, cfg, world.mapping, True),
-                prep_gain_innate=prep_gain(agents, cfg, world.mapping, False),
+                probe_adv=probe_advantage(agents, cfg, world.recipe),
+                pair_gain=pair_gain(agents, cfg, world.recipe, True),
+                pair_gain_innate=pair_gain(agents, cfg, world.recipe, False),
                 probe_adv_food=probe_advantage_food(agents, cfg, world.safe),
                 food_gain_innate=food_gain(agents, cfg, world.safe, False),
                 crop_safe=float(world.food[world.safe].sum() / max(1, world.food.sum())),
-                e_fail_per_1k=1000.0 * W["e_fail"] / max(W["steps"], 1),
+                nut_share=(W["e_nut"] / income) if income > 0 else np.nan,
+                e_fail_per_1k=1000.0 * W["e_fail"] / max(W["steps"], 1),   # energy paid for wrong
                                                                           # attempts, so the
                                                                           # fail-cost arm's world
                                                                           # change is measured
                 trace_recency=(W["rec_sum"] / W["rec_n"]) if W["rec_n"] else np.nan,
+                declined_per_1k=1000.0 * W["declined"] / max(W["steps"], 1),
+                decline_frac=(W["declined"] / W["decline_opps"]) if W["decline_opps"] else np.nan,
                 eat_on_food=(W["on_food_eat"] / W["on_food"]) if W["on_food"] else np.nan,
-                prep_on_food=(W["on_food_prep"] / W["on_food"]) if W["on_food"] else np.nan,
-                prep_share=(W["prep_meals"] / (W["prep_meals"] + W["raw_meals"]))
-                           if (W["prep_meals"] + W["raw_meals"]) else np.nan,
-                n_prep=W["prep_meals"], n_raw=W["raw_meals"],
-                prep_hit0=(W["prep_ok0"] / W["prep_n0"]) if W["prep_n0"] else np.nan,
-                prep_hit1=(W["prep_ok1"] / W["prep_n1"]) if W["prep_n1"] else np.nan,
-                n_prep0=W["prep_n0"], n_ok0=W["prep_ok0"], n_prep1=W["prep_n1"], n_ok1=W["prep_ok1"],
-                prep_per_life=W["prep_meals"] / max(W["deaths"], 1),
+                int_on_food=(W["on_food_int"] / W["on_food"]) if W["on_food"] else np.nan,
+                eat_on_item=(W["on_item_eat"] / W["on_item"]) if W["on_item"] else np.nan,
+                int_at_station=(W["int_at_station"] / W["decline_opps"]) if W["decline_opps"] else np.nan,
+                int_on_item=(W["on_item_int"] / W["on_item"]) if W["on_item"] else np.nan,
                 noops_per_1k=1000.0 * W["noops"] / max(W["steps"], 1),
                 e_bonus_per_1k=1000.0 * W["e_bonus"] / max(W["steps"], 1),     # share of energy income from nuts
+                bridge_steps=(W["bridge_sum"] / W["bridge_n"]) if W["bridge_n"] else np.nan,
+                bridge_first=(W["bridge1_sum"] / W["bridge1_n"]) if W["bridge1_n"] else np.nan,
+                trace_weight=(W["trace_w"] / W["bridge_n"]) if W["bridge_n"] else np.nan,
                 att_n=ATT[1:, 0].tolist(), att_correct=ATT[1:, 1].tolist(),
                 rec_n=ATT_R[1:, 0].tolist(), rec_correct=ATT_R[1:, 1].tolist(),
                 meal_n=MEALS[1:, 0].tolist(), meal_safe=MEALS[1:, 1].tolist(),
+                nut_cells=int(world.nuts.sum()), item_cells=int((world.items >= 0).sum()),
             ))
             ATT[:] = 0; ATT_R[:] = 0; MEALS[:] = 0
             for k in W:
@@ -948,94 +968,80 @@ def learning_rule_selftest(seed=0, verbose=True):
     return passed
 
 def world_semantics_selftest(verbose=True):
-    """Every (action, food cell, mapping) row of the action x cell table: 4 actions
-    {eat, prep_1..3} x 3 cell states {empty, food A, food B} x 6 distinct mappings = 72 rows,
-    plus the moves and the poison rows.  Each constructs the cell, calls one resolve_action, and
-    asserts the energy delta, the modulator, the event, and that the food cell was consumed.
-    This is the test that would catch a mapping applied to the wrong food type."""
+    """Addition 1: every (action, cell content, inventory state) row of the action x cell table,
+    constructed cell by cell, one resolve_action call each, energy delta / m / event asserted
+    against the table.  This is the test that would have caught the shared interact action."""
     cfg = Config(mode="fixed", scaffold_food=False, scaffold_chain=False)
     rng = np.random.default_rng(0)
-    MAPPINGS = [(a, b) for a in range(N_PREPS) for b in range(N_PREPS) if a != b]
 
-    def fresh(food=None, mapping=(0, 1), safe=0):
+    def fresh(item=-1, food=None, cell_item=None, station=None, recipe=(0, 0)):
         w = World(cfg, np.random.default_rng(0))
         w.food[:] = False; w.items[:] = -1; w.nuts[:] = False; w.stations[:] = -1
-        w.safe, w.mapping = safe, mapping
+        w.safe = 0
+        w.recipe = recipe
         a = Agent(cfg, np.random.default_rng(1), 0, 5, 5)
-        a.energy = 3.0
+        a.energy, a.item = 3.0, item
         if food is not None:
             w.food[food, 5, 5] = True
+        if cell_item is not None:
+            w.items[5, 5] = cell_item
+        if station is not None:
+            w.stations[5, 5] = station
         return a, w
 
-    fails, n = [], 0
-    for mapping in MAPPINGS:
-        for food in (None, 0, 1):
-            for action in [EAT] + [PREP0 + k for k in range(N_PREPS)]:
-                a, w = fresh(food=food, mapping=mapping, safe=0)
-                e0 = a.energy
-                m, ev, _ = resolve_action(a, action, w, cfg, rng)
-                d = a.energy - e0
-                if food is None:
-                    d_exp, m_exp, ev_exp = -cfg.noop_cost, 0.0, "noop"
-                elif action == EAT:
-                    safe = (food == 0)
-                    d_exp = cfg.food_value if safe else -cfg.poison_value
-                    m_exp = 1.0 if safe else -1.0
-                    ev_exp = "eat_safe" if safe else "eat_poison"
-                else:
-                    k = action - PREP0
-                    ok = (k == mapping[food])
-                    d_exp = cfg.prep_value if ok else -cfg.prep_fail
-                    m_exp = 1.0 if ok else -1.0
-                    ev_exp = "prep_ok" if ok else "prep_bad"
-                consumed = (food is None) or (not w.food[food, 5, 5])
-                ok_row = abs(d - d_exp) < 1e-9 and m == m_exp and ev == ev_exp and consumed
-                n += 1
-                if not ok_row:
-                    fails.append(f"map {mapping} food {food} action {action}: got dE {d:+.3f} m {m:+.0f} "
-                                 f"{ev} consumed={consumed}, expected dE {d_exp:+.3f} m {m_exp:+.0f} {ev_exp}")
-    # eat on the OTHER safe setting, so both eat outcomes are covered for both types
-    for food, safe in ((0, 1), (1, 1)):
-        a, w = fresh(food=food, safe=safe)
-        e0 = a.energy
-        m, ev, _ = resolve_action(a, EAT, w, cfg, rng)
-        d_exp = cfg.food_value if food == safe else -cfg.poison_value
-        m_exp = 1.0 if food == safe else -1.0
-        n += 1
-        if abs((a.energy - e0) - d_exp) > 1e-9 or m != m_exp:
-            fails.append(f"eat food {food} safe {safe}: dE {a.energy-e0:+.3f} m {m:+.0f}")
-    # moves
-    for action in range(4):
-        a, w = fresh()
-        e0 = a.energy
-        m, ev, _ = resolve_action(a, action, w, cfg, rng)
-        n += 1
-        if abs((a.energy - e0) + cfg.move_cost) > 1e-9 or m != 0.0 or ev != "move":
-            fails.append(f"move {action}: dE {a.energy-e0:+.4f} m {m} {ev}")
-    # the preparations are masked while phase 2 is off
+    cases = [
+        ("move",                             0,        {},                                    -cfg.move_cost,   0.0, "move"),
+        ("eat on safe food",                 EAT,      dict(food=0),                          +cfg.food_value,  1.0, "eat_safe"),
+        ("eat on poison",                    EAT,      dict(food=1),                          -cfg.poison_value, -1.0, "eat_poison"),
+        ("eat on empty",                     EAT,      {},                                    -cfg.noop_cost,   0.0, "noop"),
+        ("eat on item cell",                 EAT,      dict(cell_item=0),                     -cfg.noop_cost,   0.0, "noop"),
+        ("eat at station, carrying",         EAT,      dict(station=0, item=0),               -cfg.noop_cost,   0.0, "noop"),
+        ("interact on empty",                INTERACT, {},                                    -cfg.noop_cost,   0.0, "noop"),
+        ("interact on food",                 INTERACT, dict(food=0),                          -cfg.noop_cost,   0.0, "noop"),
+        ("interact: pickup",                 INTERACT, dict(cell_item=2),                     -cfg.pickup_cost, 0.0, "pickup"),
+        ("interact: pickup blocked, carrying", INTERACT, dict(cell_item=2, item=1),           -cfg.noop_cost,   0.0, "noop"),
+        ("interact: CORRECT attempt pays",   INTERACT, dict(station=0, item=0, recipe=(0, 0)), +cfg.tool_value,  1.0, "attempt_ok"),
+        ("interact: WRONG attempt costs",    INTERACT, dict(station=1, item=0, recipe=(0, 0)), -cfg.fail_cost,  -1.0, "attempt_bad"),
+        ("interact: station, empty-handed",  INTERACT, dict(station=0),                       -cfg.noop_cost,   0.0, "noop"),
+        ("priority: attempt before pickup",  INTERACT, dict(station=0, item=0, cell_item=1, recipe=(0, 0)),
+                                                                                              +cfg.tool_value,  1.0, "attempt_ok"),
+    ]
+    fails = []
+    for label, action, kw, d_exp, m_exp, ev_exp in cases:
+        a, w = fresh(**kw)
+        e0, i0 = a.energy, a.item
+        m, ev, _ = resolve_action(a, action, w, cfg, rng, t=0)
+        d = a.energy - e0
+        ok = abs(d - d_exp) < 1e-9 and m == m_exp and ev == ev_exp
+        if ev in ("attempt_ok", "attempt_bad") and a.item != -1:
+            ok = False                                   # the item is consumed either way
+        if not ok:
+            fails.append(f"{label}: got dE {d:+.4f} m {m:+.1f} {ev} item {a.item}, "
+                         f"expected dE {d_exp:+.4f} m {m_exp:+.1f} {ev_exp}")
+        if verbose:
+            print(f"  {label:<38} dE {d:+.4f}  m {m:+.0f}  {ev:<12} {'OK' if ok else 'FAIL'}")
+
+    # no nuts, and no tool is ever carried
+    a, w = fresh(station=0, item=0, recipe=(0, 0))
+    resolve_action(a, INTERACT, w, cfg, rng)
+    no_tool = (getattr(a, "tool", False) is False)
+    if not no_tool:
+        fails.append("a correct attempt left a tool carried; there is no tool state in v3.9")
+    if verbose:
+        print(f"  {'correct attempt carries nothing':<38} {'OK' if no_tool else 'FAIL'}")
+
+    # `interact` is masked while the chain is off, so phase 1 is exactly five actions
     cfgm = Config(mode="fixed", action_noise=0.0, scaffold_food=False, scaffold_chain=False)
     am = Agent(cfgm, np.random.default_rng(3), 0, 0, 0)
     obs = np.zeros(N_IN); obs[ENERGY] = 0.5
-    chosen = {am.act(obs, cfgm, np.random.default_rng(k), chain_on=False) for k in range(60)}
-    masked = all(c < PREP0 for c in chosen)
-    n += 1
+    chosen_off = {am.act(obs, cfgm, np.random.default_rng(k), chain_on=False) for k in range(50)}
+    masked = INTERACT not in chosen_off
     if not masked:
-        fails.append("a preparation was chosen in phase 1; they must be masked")
-    # the two types must map to DIFFERENT preparations
-    w = World(cfg, np.random.default_rng(7))
-    draws = [w._draw_mapping(w.mapping) for _ in range(200)]
-    distinct = all(m[0] != m[1] for m in draws)
-    differs = all(w._draw_mapping(m) != m for m in draws)      # a redraw changes the mapping
-    n += 2
-    if not distinct:
-        fails.append("a mapping gave the same preparation to both food types")
-    if not differs:
-        fails.append("a redraw returned the mapping it was meant to replace")
+        fails.append("`interact` was chosen with the chain off; it must be masked in phase 1")
     if verbose:
-        print(f"  {n} rows checked: 4 actions x 3 cells x {len(MAPPINGS)} mappings, "
-              f"plus poison rows, moves, masking and mapping distinctness")
-        print(f"  world-semantics self-test: {'PASS' if not fails else 'FAIL'}")
-        for f in fails[:8]:
+        print(f"  {'interact masked while chain is off':<38} {'OK' if masked else 'FAIL'}")
+        print(f"  world-semantics self-test: {'PASS' if not fails else 'FAIL'}  ({len(cases) + 2} rows)")
+        for f in fails:
             print("   ", f)
     return not fails
 

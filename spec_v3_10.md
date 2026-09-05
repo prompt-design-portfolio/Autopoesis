@@ -1,7 +1,8 @@
 # v3.10 world spec — the preparation world
 
-*Written before any code, per build-plan rule 1. Nothing below is implemented. Six items marked
-**DECISION** need agreement; each carries my recommendation.*
+*Agreed 5 September 2026. D1 accepted with the rig check reframed; the type-blind analysis folded
+in; D2–D6 accepted as recommended. **Implemented**, pre-checks run. Findings from those pre-checks
+are at the end, including two that need your call.*
 
 **Why this world.** v3.9 closed the recipe world: a chain whose payoff arrives only at the end is
 sparse, and a rare opportunity cannot generate the selection differential that would build the
@@ -33,16 +34,15 @@ input channels, so the transition is one thing, not two.
 
 A preparation **consumes the food cell**, exactly as eating does.
 
-> **DECISION 1 — does a correct preparation pay on currently-poisonous food?** As the design reads,
-> yes: the prep outcome depends on food *type* and prep choice only, independent of the safe/poison
-> flip. **Recommendation: keep it.** It makes the world hold two independent facts — a fast one
-> (which type is safe, flipping every 300) and a slow one (which prep goes with which type, remapped
-> every 2000) — and they interleave naturally rather than confounding: an agent that knows the safe
-> type but not the mapping should **eat** (+0.7) rather than prep at chance (+0.17), and only once it
-> knows the mapping does prep (+1.5) dominate. The risk to note: **late in a mapping era, a
-> successful learner stops eating raw**, so raw-meal counts thin out and `safe_rate` becomes noisy
-> in phase 2. The rig check should therefore lean on `probe_adv` (food), which needs no events, with
-> `safe_rate` read as corroborating and its event count printed.
+**RESOLVED — D1 accepted, and the rig check is reframed.** The consequence is stronger than "noisy":
+once the mapping is known, preparation pays 1.5 on *any* food, so the safe/poison fact becomes
+**irrelevant** and a good learner stops eating raw entirely. Food learning is then *unselected*, and
+`probe_adv` (food) decays for a **good reason** — not because the transition broke `H`.
+
+So **rig check 2(a) is read in the first mapping era of phase 2 only** (steps 0–2000 after the
+switch), when nobody knows the mapping and `eat` is still the right action. After that, **prep share
+of meals by era** is the diagnostic: a learner that has the mapping should shift from `eat` to
+`prep`, and that shift is itself an efficiency signature.
 
 ## Modulator events — the complete list
 
@@ -56,6 +56,22 @@ A preparation **consumes the food cell**, exactly as eating does.
 
 There is no silent event in this world: every action on food resolves immediately and two-sidedly.
 The modulator is **not** the agent's own energy change in general; it is this table.
+
+## Three levels on prep hit — and the type-blind floor
+
+| level | value | what it means |
+|---|---|---|
+| chance | **1/3** | a random preparation |
+| **type-blind** | **0.5** | "always `prep_k`" for a k useful in this era: right for one food type, wrong for the other, **no type knowledge at all**, EV +0.5/meal |
+| full | **1.0** | the conjunction: the right preparation for each type |
+
+With distinct mappings, exactly one preparation is useless in any era and each of the other two is
+correct for one type. A type-blind policy therefore scores **0.5 within a favourable era** — but
+**only 1/3 averaged across eras**, because k is useless in a third of mappings (EV −0.5/meal there).
+**A genome beats chance only by tracking the era, not by holding one preparation.**
+
+**A conjunction shows as BOTH types above 0.5**, not one at 1.0 and the other at 0. Per-type hit is
+printed for every arm.
 
 ## The mapping
 
@@ -146,13 +162,15 @@ before it is called.
 |---|---|---|---|
 | **0** | uninterpretable per phase: pop < 80 or injections > 0 | exclude and name it. `random policy` exempt | — |
 | **1a** | **phase-1 gate = v3.1** — safe rate `plastic` − `fixed` ≥ 0.03, `probe_adv` (food) ≥ 1.0 | **STOP ROW.** If phase 1 is not v3.1, nothing below is read. Row-0 fallback: where `fixed` phase 1 is excluded, that seed reads against v3.1's published range, conservative end 0.56 | `fixed`, or v3.1's published range |
-| **1b** | **mapping gate** — `fixed` prep hit ≤ 0.45 in 3/3 (chance 0.333) | if genes track a 2000-step mapping, shorten `prep_every` toward the flip period, **judged against `fixed` only**, before anything below is read | `fixed` |
-| **2** | **rig checks** — (a) food learning survives phase 2 (`probe_adv` (food) ≥ 1.0; `safe_rate` corroborating, with its raw-meal count printed — see DECISION 1); (b) the opportunity exists: **prepared meals per life ≥ 3 in `fixed`** | if either fails the rig is broken: stop, diagnose, no learner claim | `fixed`, `random policy` |
-| **3** | **the conjunction.** `plastic` − `fixed` ≥ 0.03 **and** `plastic` − `scrambled` ≥ 0.03 in 3/3 on prep hit; `probe_adv` (prep) > 0; **one within-life signature** (hit-in-life curve rising, or `hit_old` > `hit_young`); **no abstention** — prepared meals not below 0.8× `fixed` | the learner acquires a remapping fact within life, on a dense opportunity | `scrambled` carries the claim, not `fixed`; `probe_adv` is within-agent; the abstention line is read first |
+| **1b** | **mapping gate** — `fixed` prep hit **≤ 0.55** in 3/3 | genes **may** hold a type-blind preparation (0.5); they must not track the **conjunction**. `fixed`'s per-type hit is printed: one type high and the other near 0 is type-blind and allowed; **both above 0.5 in `fixed`** would be genes holding the conjunction. If it fires, shorten `prep_every` toward the flip period, **judged against `fixed` only** | `fixed`, per-type |
+| **2** | **rig checks** — (a) food learning survives, read in the **first mapping era only** (`probe_adv` (food) ≥ 1.0 in steps 0–2000 after the switch), with **prep share by era** as the diagnostic thereafter; (b) the opportunity exists: **prepared meals per life ≥ 3 in `fixed`**; (c) P(prep \| on food) against the per-phase null | if (a) or (b) fails the rig is broken: stop, diagnose, no learner claim | `fixed`, `random policy` |
+| **3** | **the conjunction.** `plastic` − `fixed` ≥ 0.03 **and** `plastic` − `scrambled` ≥ 0.03 in 3/3 on prep hit; `probe_adv` (prep) > 0; **one within-life signature**; **no abstention** (prepared meals not below 0.8× `fixed`) | **a positive means clearing the type-blind floor.** Read the per-type split: the conjunction is **both types above 0.5** | `scrambled` carries the claim; `probe_adv` is within-agent; abstention read first |
 | **4** | gene rows: `eta2`, `lam2`, `eta1` against `fixed` and `scrambled`; unwired scaffold genes as drift scale | corroborating only | — |
 | **5** | if row 3 is null with rows 1–2 clean | the first earned statement about the learner's limit, on a dense, immediate, two-sided task. Spend the one rule-form change there | — |
 
-**Pre-registered prediction: `plastic (W2)` clears row 3.** Recorded before the run.
+**Pre-registered prediction, recorded before the run:** `fixed` sits near **0.5** and **crashes in
+the third of eras where its k goes useless** (EV −0.5/meal); `plastic (W2)` clears **0.5 on both
+types** and **recovers across remaps**.
 
 > **DECISION 5 — the within-life signature is harder here than it looks.** A mapping era is 2000
 > steps and a generation is ~200, so most agents live inside a single era and never see a remap.
@@ -176,3 +194,48 @@ The learning rule and its genes; the staging mechanism; event-weighted aggregati
 conditional-null convention (measured null printed beside the analytic one); the learning-rule unit
 test in the setup cell; QUICK mode; Colab-only with `sim.py` and `analysis.py` uploaded alongside;
 per-run pickling with resume instructions.
+
+
+---
+
+# Findings from the pre-checks (1 seed, 3000-step phases, every arm)
+
+**The world is readable — the thing v3.9 never achieved.** Prepared meals per life: `fixed` **16.5**,
+`plastic` **19.7**, ceiling **62.2**, null **6.6**, against a criterion of ≥ 3. There is no density
+to tune and no approach behaviour to evolve.
+
+| arm | P2 pop | prep hit | hit \| A | hit \| B | prep/life | probe_adv (prep) |
+|---|---|---|---|---|---|---|
+| random policy | 117 | **0.334** | 0.337 | 0.330 | 6.6 | — |
+| fixed | 338 | **0.500** | 0.740 | 0.256 | 16.5 | — |
+| scrambled | 399 | 0.722 | 0.553 | 0.840 | 15.8 | **0.342** |
+| plastic (W2) | 399 | 0.833 | 0.934 | 0.692 | 19.7 | **5.624** |
+| fixed + B (ceiling) | 399 | 0.886 | 0.879 | 0.894 | 62.2 | — |
+
+`random policy` lands on chance and **`fixed` lands on exactly the type-blind floor, 0.500, with
+A 0.740 / B 0.256** — the predicted signature, and gate 1b is clear at ≤ 0.55.
+
+### Three things that need your call
+
+**1. `scrambled` sits well above the type-blind floor (0.722, both types above 0.5).** The control is
+showing what looks like conjunction knowledge. Its **within-agent probe is 0.342 against plastic's
+5.624**, a 16× gap, so the population-level hit rate carries a **survivorship** component the probe
+does not: agents whose random `H` happens to favour the correct preparation live longer, so the
+standing population is enriched for lucky `H` without anything being learned. Row 3 already requires
+both lines, which is the right design — but the hit-rate margin against `scrambled` is partly a
+survivorship comparison and should be read that way.
+
+**2. Rig check 2(a) fails as specified, and I found the instrument at fault first.** The v3.1 food
+probe is `logit(eat)` minus the **best other action** — and with three preparations live, that term
+moves with food type, so the probe was measuring preparation preference. Fixed: the probe is now
+`logit(eat)` against the **move** logits, which are food-type-independent. That raised the first-era
+value from 0.040 to **0.196** — still far below the ≥ 1.0 criterion. The cause is that the eat→prep
+shift happens **inside** the first era (prep share 0.836 in era 1), so the window the criterion
+assumes is shorter than 2000 steps. Safe rate does hold there: `plastic` **0.599** against `fixed`
+0.489. **Proposal:** read 2(a) on **safe rate in the first era** (`plastic` − `fixed` ≥ 0.03) with the
+probe corroborating, or read the probe in the first ~500 steps after the switch. I have not measured
+the 500-step version.
+
+**3. Populations sit at the 400 cap** in three of five arms. At a hard cap births become a queue
+rather than differential fecundity, which blunts selection — the same issue that cost a v3.6 tuning
+pass. Raising `max_pop` is the fix; it is a spec change and yours to make.
