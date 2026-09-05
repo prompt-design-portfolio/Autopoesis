@@ -2,12 +2,13 @@
 """Build autopoiesis_v3_12_preparation_world.ipynb.  Colab-only: sim.py and analysis.py uploaded
 alongside, no local paths, no multiprocessing, no run script."""
 import json, pathlib
+from nbcheck import write_checked
 
 HERE = pathlib.Path(__file__).parent
 MD_INTRO = (HERE / "spec_v3_12.md").read_text()
 MD_READING = (HERE / "notebook_reading_v3_12.md").read_text()
 
-CODE_SETUP = '''# --- Colab check -------------------------------------------------------------
+CODE_SETUP = r'''# --- Colab check -------------------------------------------------------------
 # Upload sim.py and analysis.py next to this notebook (Files pane, or run:
 #     from google.colab import files; files.upload()
 # and pick both).  Nothing else is needed: pure numpy + matplotlib.
@@ -26,58 +27,58 @@ print("numpy", np.__version__)
 print("observation size:", sim.N_IN, " actions:", sim.N_ACTIONS,
       " (eat =", sim.EAT, ", preps =", sim.PREP0, "..", sim.PREP0 + sim.N_PREPS - 1, ")",
       " hidden:", A.WORLD["hidden"], " chance recipe hit:", round(A.CHANCE, 3))
-print("\\nworld (v3.1 metabolism throughout; the chain from v3.6):")
+print("\nworld (v3.1 metabolism throughout; the chain from v3.6):")
 for k, v in A.WORLD.items():
     print(f"  {k:<20} {v}")
-print("\\n--- world-semantics self-test (every row of the action x cell table) ---")
+print("\n--- world-semantics self-test (every row of the action x cell table) ---")
 if not sim.world_semantics_selftest():
     raise SystemExit("the world does not match the spec; nothing below is meaningful")
 
-print("\\n--- D5 readability: preparations per TYPE per era, judged on `fixed` only ---")
+print("\n--- D5 readability: preparations per TYPE per era, judged on `fixed` only ---")
 print("with T = 3 the food is split three ways, so the criterion (>= 3 per type per era) is the")
 print("one most likely to fail.  It failed at spawn_per_patch 3.0 and passes at 6.0.")
 print(f"  spawn_per_patch = {A.WORLD['spawn_per_patch']}   type_spawn_w = {A.WORLD.get('type_spawn_w')}")
-print("\\n--- economics ---")
+print("\n--- economics ---")
 _K, _pf, _pv = sim.N_PREPS, A.WORLD["prep_fail"], A.WORLD["prep_value"]
 print(f"T = {sim.N_TYPES}, K = {_K}, mappings = {len(sim.all_mappings())}, N_ACTIONS = {sim.N_ACTIONS}")
 print(f"prep_value {_pv} = (K-1) * prep_fail {(_K-1)*_pf};  chance EV "
       f"{(1/_K)*_pv - ((_K-1)/_K)*_pf:+.4f};  chance {1/_K:.3f}, type-blind {1/sim.N_TYPES:.3f}")
 
-print("\\n--- founder-tag self-test ---")
+print("\n--- founder-tag self-test ---")
 print("injected agents are fresh random genomes; their OWN events are excluded from every")
 print("event-weighted metric, their children's are not.  The test forces injection so the")
 print("exclusion path is actually exercised -- passing on a run with no injections proves nothing.")
 if not sim.founder_tag_selftest():
     raise SystemExit("the founder tag is not wired correctly; every founder-free number is suspect")
 
-print("\\n--- replay-mapping self-test ---")
+print("\n--- replay-mapping self-test ---")
 print("a knockout that re-seeds the world does NOT get the mapping its genomes were selected")
 print("under.  This checks that force_mapping pins it, and that a re-seeded replay can differ")
 print("from the source's final mapping -- the condition that made the old knockout misread.")
 if not sim.replay_mapping_selftest():
     raise SystemExit("the replay does not carry the mapping it is given; row 3b is meaningless")
 
-print("\\n--- frozen-replay self-test ---")
+print("\n--- frozen-replay self-test ---")
 print("row 3b replays an era-boundary snapshot with births, deaths and injection disabled, so")
 print("nothing can change but H.  With learning OFF the hit rate must not move across the")
 print("window; if it does, the eta 1 side cannot be read as learning.")
 if not A.frozen_selftest():
     raise SystemExit("the frozen replay is not frozen; row 3b would not be an attribution")
 
-print("\\n--- learning-rule self-test ---")
+print("\n--- learning-rule self-test ---")
 print("one agent, one fixed observation, one chosen action; action_noise = 0 so act() is")
 print("deterministic and the logit checked belongs to the action that laid the trace.")
 if not sim.learning_rule_selftest():
     raise SystemExit("the learning rule is not behaving; nothing below is meaningful")
 
-print("\\nconditions:")
+print("\nconditions:")
 for name, spec in A.VARIANTS.items():
     ph = " -> ".join(f"{p['n_steps']} steps chain={p['chain']}" for p in spec["phases"])
     print(f"  {name:<24} {ph}")
     print(f"  {'':<24} {({k: v for k, v in spec['kw'].items() if k not in A.WORLD})}")
 '''
 
-CODE_RUN = '''# MODE picks the stage.  All stages share ONE checkpoint and each SKIPS any (arm, seed)
+CODE_RUN = r'''# MODE picks the stage.  All stages share ONE checkpoint and each SKIPS any (arm, seed)
 # already in it, so "grid" continues from the acceptance checkpoint rather than redoing it.
 #
 #   "quick"       smoke test, 3 arms, 1 seed, 1500-step phases.            ~5 min
@@ -196,6 +197,6 @@ nb = {
     "nbformat_minor": 0,
 }
 
-out = HERE / "autopoiesis_v3_12_preparation_world.ipynb"
-out.write_text(json.dumps(nb, indent=1))
-print("wrote", out)
+# DELIVERY GATE.  Every code cell must compile before anything is written: a notebook that
+# would not run is never produced.  See nbcheck.py for the defect this exists to stop.
+write_checked(nb, HERE / "autopoiesis_v3_12_preparation_world.ipynb")

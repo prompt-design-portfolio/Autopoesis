@@ -122,8 +122,9 @@ The gate that carries the same intent under automatic writing is the **cross-era
 > A cross-era association above noise means `π` is not doing its job — the label→preparation binding
 > is stable enough for selection to capture — and the run is not read.
 
-> **DECISION 4 — is that the right restatement?** It is my proposal, not a ruling carried over. The
-> check it performs is exactly "meaning is not inheritable", which is what the mechanism claims.
+**DECISION 4 — RULED.** Gate R is the cross-era form above: pooled across eras, MI at or below the
+`noise record` arm's level, with the per-era value reported alongside. The check it performs is
+exactly "meaning is not inheritable", which is what the mechanism claims.
 
 Carried over unchanged: **row 0** at `pop < 80` · **row 1a** against v3.1 · **row 1b** as a measured
 genetic baseline · **row 1c** standing variation · **rig checks 2(a)–(c)** · founder-free metrics
@@ -141,12 +142,16 @@ with founder share printed · each arm's own type-blind level.
   says this agent bound it inside its own life.
 - **`mark_pref` is dropped.** There is no writing policy.
 
-> **DECISION 5 — the self-marking confound, and what fixes it.** An agent reads marks it wrote
-> itself. That is memory, not transmission, and no probe on the standing population separates them.
-> **The newborn line is what separates them**, because a newborn has written nothing — every mark it
-> reads was left by someone else. I propose the newborn measure be treated as **the transmission
-> claim**, and `store_gain` learned-vs-innate as the *binding* claim, and that the two be reported
-> as different things rather than pooled.
+**DECISION 5 — RULED.** An agent reads marks it wrote itself. That is memory, not transmission, and
+no probe on the standing population separates them. **The newborn line separates them**, because a
+newborn has written nothing — every mark it reads was left by someone else. So there are **two
+claims, reported separately and NEVER pooled**:
+
+- **binding** — `store_gain` learned vs innate;
+- **transmission** — newborn preparations-to-first-correct.
+
+A positive on binding with a null on transmission is a real and reportable outcome: the agent
+learned to read a mark, but only its own.
 
 ## The claim
 
@@ -173,10 +178,11 @@ reported as the third cell** so the contribution of the channels' mere presence 
 > This is the line that says information *passed*, and it is not substitutable by the frozen-replay
 > pair, which cannot distinguish an agent using its own marks from an agent using someone else's.
 
-> **DECISION 6 — how the newborn measure is windowed.** Preparations 1..n of a life, in a world with
-> the store live against the same world with `sym_gain` forced to zero (not the store removed — that
-> changes the world; forcing the gain isolates the *reading*). **Proposal: n = 5, reported as the
-> mean number of preparations to the first correct one, and as the hit on preparation 1 alone.**
+**DECISION 6 — RULED.** Preparations 1..n of a life, in a world with the store live against the same
+world with **`sym_gain` forced to zero**. Not the store removed: removing it changes the world —
+mark density, cell state and decay all go — whereas forcing the gain leaves the world identical and
+isolates the *reading*. n = 5, reported as the mean number of preparations to the first correct one
+and as the hit on preparation 1 alone.
 
 ## Order
 
@@ -195,6 +201,36 @@ reported as the third cell** so the contribution of the channels' mere presence 
 > label→preparation *and* preparation→type, from the same signal, inside one era — in which case
 > v3.13 nulls on a **capacity** limit, not a public-goods one. That would be a new result, and it
 > is the reason this version is worth running where the previous draft was not.
+
+## The pre-registered follow-up, if v3.13 nulls on capacity
+
+The capacity null named in DECISION 7 is a specific failure with a specific remedy, and it is
+recorded **before the run** so it cannot be chosen after seeing the result.
+
+> **If v3.13 nulls on capacity** — the learner reads nothing not because the record is useless but
+> because binding a label that rotates every era is harder than the conjunction itself — **the next
+> change is to rotate labels SLOWER than the mapping.**
+
+`π` is redrawn every `label_every` steps with `label_every` a multiple of `prep_every`, so **a
+label's meaning outlives the thing it names**. The mapping still moves every era; the label→
+preparation binding persists across several. An agent then has more than one era in which to learn
+what label `j` means, while what label `j` *points at* keeps changing — so meaning is still not
+inheritable, because a genome that fixed on "label j → preparation π⁻¹(j)" would be right only
+until the next `π` redraw, and `label_every` is still far inside evolutionary time.
+
+**This is v3.5's tempo condition**: two facts moving at different rates, with the slower one the
+thing that has to be learned. The project has run that structure before and it is the natural home
+for a capacity result.
+
+**It is ONE CHANGE, not a rule change.** `label_every` moves from `prep_every` to a multiple of it,
+and nothing about the arms, the gates, the probes or the claims moves with it. The claim lines stay
+exactly as specified above — a rule change after a null would make the follow-up unreadable against
+v3.13, which is the whole reason for pre-registering it now.
+
+> **The condition for firing it.** A capacity null is: `sym_gain` **does** rise in
+> `plastic + record` and not in `noise record` (so the channel is being attended to), **and**
+> `store_gain` learned is at or near zero (so nothing was bound). `sym_gain` failing to rise at all
+> is a different result and does **not** license this follow-up.
 
 ## What is deferred
 
