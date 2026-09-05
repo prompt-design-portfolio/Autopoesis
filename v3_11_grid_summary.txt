@@ -1,0 +1,160 @@
+checkpoint audit: every run carries the current fields.
+============================================================================================================================================
+v3.11 -- the preparation world.  3 seeds.  Prep hit: chance 0.333, type-blind 0.50, full 1.00.  Chance safe rate 0.500.  Random-policy action share 1/5 in phase 1, 1/8 in phase 2.
+============================================================================================================================================
+
+### PHASE 1 (food only) -- second half
+metric                         random policy                   fixed               scrambled            plastic (W2)     fixed + B (ceiling)
+safe_rate  FF                          0.502                   0.549                   0.534                   0.652                   0.549
+founder share eats                     0.343                   0.180                   0.061                   0.000                   0.180
+safe_rate                              0.505                   0.545                   0.533                   0.652                   0.545
+P(eat | on food)                       0.199                   0.218                   0.353                   0.256                   0.218
+pop                                   41.508                  46.688                  56.879                 209.304                  46.688
+injections                             4.196                   3.121                   1.371                   0.000                   3.121
+max_gen                                6.317                  19.383                  33.921                  66.071                  19.383
+probe_adv (food)                         nan                     nan                   0.027                   2.477                     nan
+probe_adv (prep)                         nan                     nan                   0.002                  -0.112                     nan
+prep_gain innate                      -0.007                   0.033                   0.021                   0.864                   0.033
+eta2                                   0.094                   0.096                   0.068                   0.176                   0.096
+eta1                                   0.100                   0.102                   0.128                   0.132                   0.102
+lam2                                   0.723                   0.727                   0.542                   0.679                   0.727
+h_norm                                 0.000                   0.000                   0.011                   0.102                   0.000
+crop_safe                              0.500                   0.506                   0.505                   0.373                   0.506
+raw meals                           9687.333                9308.000               17024.333               37898.667                9308.000
+meal gain                             -0.018                  -0.084                  -0.033                   0.259                  -0.084
+
+### PHASE 2 (chain on) -- second half
+metric                         random policy                   fixed               scrambled            plastic (W2)     fixed + B (ceiling)
+safe_rate  FF                          0.503                   0.493                   0.521                   0.617                   0.490
+prep hit  FF                           0.333                   0.629                   0.616                   0.732                   0.724
+prep hit | A  FF                       0.332                   0.586                   0.662                   0.700                   0.720
+prep hit | B  FF                       0.335                   0.670                   0.560                   0.759                   0.729
+type-blind level                       0.506                   0.518                   0.525                   0.521                   0.502
+founder share prep                     0.373                   0.007                   0.018                   0.001                   0.000
+founder share eats                     0.374                   0.019                   0.045                   0.001                   0.000
+safe_rate                              0.508                   0.495                   0.520                   0.616                   0.490
+prep hit                               0.334                   0.628                   0.611                   0.732                   0.724
+prep hit | type A                      0.334                   0.584                   0.657                   0.701                   0.720
+prep hit | type B                      0.335                   0.668                   0.558                   0.759                   0.729
+prep/life                              6.318                   7.990                   7.375                   7.607                  13.909
+prep share of meals                    0.749                   0.879                   0.842                   0.809                   0.971
+P(prep | on food)                      0.379                   0.385                   0.372                   0.429                   0.799
+P(eat | on food)                       0.127                   0.051                   0.067                   0.093                   0.023
+pop                                   41.363                 335.896                 288.788                 653.913                 796.771
+injections                             6.746                   0.742                   1.438                   0.100                   0.000
+max_gen                                4.654                  31.762                  18.117                 121.146                  26.688
+probe_adv (food)                         nan                     nan                   0.004                   0.490                     nan
+probe_adv (prep)                         nan                     nan                   0.034                   3.855                     nan
+prep_gain innate                      -0.016                   0.551                   0.372                   0.386                  -0.026
+eta2                                   0.101                   0.075                   0.086                   0.197                   0.136
+eta1                                   0.102                   0.124                   0.095                   0.146                   0.067
+lam2                                   0.723                   0.561                   0.684                   0.623                   0.764
+h_norm                                 0.000                   0.000                   0.016                   0.142                   0.000
+crop_safe                              0.499                   0.494                   0.503                   0.470                   0.496
+raw meals                           2985.000                4762.333                4823.333               12486.000                2363.667
+meal gain                              0.003                   0.086                   0.031                   0.119                   0.005
+hit-in-life gain                       0.004                  -0.117                  -0.094                   0.343                   0.524
+
+per seed:
+  safe_rate (phase 1)
+    random policy          [0.505, 0.505, 0.505]
+    fixed                  [0.542, 0.55, 0.544]
+    scrambled              [0.543, 0.512, 0.543]
+    plastic (W2)           [0.626, 0.672, 0.657]
+    fixed + B (ceiling)    [0.542, 0.55, 0.544]
+  probe_adv (food) (phase 1)
+    scrambled              [0.026, 0.031, 0.026]
+    plastic (W2)           [2.22, 1.933, 3.279]
+  prep hit  FF (phase 2)
+    random policy          [0.331, 0.326, 0.343]
+    fixed                  [0.596, 0.666, 0.626]
+    scrambled              [0.655, 0.589, 0.603]
+    plastic (W2)           [0.747, 0.73, 0.719]
+    fixed + B (ceiling)    [0.762, 0.702, 0.709]
+  founder share of preps (phase 2)
+    random policy          [0.38, 0.363, 0.376]
+    fixed                  [0.003, 0.007, 0.011]
+    scrambled              [0.021, 0.015, 0.019]
+    plastic (W2)           [0.0, 0.004, 0.0]
+    fixed + B (ceiling)    [0.0, 0.0, 0.0]
+  prep hit (all agents) (phase 2)
+    random policy          [0.335, 0.331, 0.337]
+    fixed                  [0.596, 0.664, 0.623]
+    scrambled              [0.649, 0.586, 0.599]
+    plastic (W2)           [0.747, 0.729, 0.719]
+    fixed + B (ceiling)    [0.762, 0.702, 0.709]
+  prep hit | A (phase 2)
+    random policy          [0.331, 0.332, 0.338]
+    fixed                  [0.52, 0.579, 0.653]
+    scrambled              [0.575, 0.724, 0.673]
+    plastic (W2)           [0.672, 0.718, 0.711]
+    fixed + B (ceiling)    [0.773, 0.696, 0.691]
+  prep hit | B (phase 2)
+    random policy          [0.339, 0.331, 0.336]
+    fixed                  [0.67, 0.744, 0.589]
+    scrambled              [0.726, 0.437, 0.511]
+    plastic (W2)           [0.811, 0.74, 0.726]
+    fixed + B (ceiling)    [0.751, 0.709, 0.727]
+  prep/life (phase 2)
+    random policy          [6.185, 6.202, 6.567]
+    fixed                  [8.476, 8.325, 7.168]
+    scrambled              [7.648, 7.913, 6.566]
+    plastic (W2)           [5.88, 8.245, 8.695]
+    fixed + B (ceiling)    [14.369, 13.399, 13.96]
+  probe_adv (prep) (phase 2)
+    scrambled              [0.063, 0.02, 0.018]
+    plastic (W2)           [4.015, 2.529, 5.021]
+  pop (phase 2)
+    random policy          [41.275, 41.225, 41.588]
+    fixed                  [317.2, 393.862, 296.625]
+    scrambled              [329.988, 265.088, 271.288]
+    plastic (W2)           [718.862, 509.688, 733.188]
+    fixed + B (ceiling)    [795.812, 798.188, 796.312]
+  injections (phase 2)
+    random policy          [6.775, 6.838, 6.625]
+    fixed                  [0.55, 0.862, 0.812]
+    scrambled              [1.638, 1.188, 1.488]
+    plastic (W2)           [0.0, 0.3, 0.0]
+    fixed + B (ceiling)    [0.0, 0.0, 0.0]
+
+DECISION NUMBERS (a difference counts when it is >= 0.03 in 3/3 seeds)
+
+row 0  phase 1  fixed pop [44, 48, 48] inj [3.8, 3.3, 2.2] EXCLUDE (pop < 80); scrambled pop [47, 74, 51] EXCLUDE; plastic pop [209, 191, 227] inj 0; ceiling EXCLUDE (as fixed)
+       phase 2  fixed pop [317, 394, 297] inj [0.6, 0.9, 0.8]; scrambled pop [330, 265, 271] inj [1.6, 1.2, 1.5]; plastic pop [719, 510, 733] inj [0, 0.3, 0]; ceiling pop [796, 798, 796] inj 0
+  CAP CHECK: plastic max 92% of cap, ceiling 100% -- CAPPED; population column not read.
+
+row 1a  PHASE-1 GATE: plastic [0.626, 0.672, 0.657] vs published fixed 0.56 -> +0.066, +0.112, +0.097  PASS 3/3.  probe_adv (food) [2.22, 1.933, 3.279]
+
+row 1b  GENETIC BASELINE (measured): fixed prep hit [0.596, 0.666, 0.626]; per type A [0.52, 0.58, 0.656] B [0.671, 0.748, 0.59]; own type-blind level [0.504, 0.512, 0.537]; fixed - level [0.092, 0.154, 0.089]
+  per-era A+B: fixed seeds mean 1.13 / 1.19 / 1.03; plastic 1.43 / 1.14 / 1.39; scrambled 1.04 / 1.04 / 1.03
+  first-prep hit, late: fixed [0.757, 0.774, 0.755]; scrambled [0.817, 0.749, 0.73]; plastic [0.507, 0.506, 0.552]
+  prep_gain innate: random [-0.003, -0.034, -0.01]; fixed [0.795, 0.506, 0.351]; scrambled [0.36, 0.329, 0.429]; plastic [0.308, 0.555, 0.296]; ceiling [-0.029, -0.003, -0.045]
+
+row 2  (a) whole-phase FF safe: plastic [0.569, 0.65, 0.631] fixed [0.512, 0.49, 0.478] diff [0.057, 0.16, 0.153] PASS 3/3
+       corroborating probe_adv (food) first 500 [0.306, 0.554, 1.26]; first era [0.278, 0.887, 0.948]
+       (b) fixed prep/life [8.48, 8.32, 7.17] PASS
+       (c) P(prep|on food) null measured 0.379: fixed [0.425, 0.458, 0.273]; scrambled [0.371, 0.399, 0.345]; plastic [0.481, 0.292, 0.516]; ceiling [0.83, 0.785, 0.783]
+
+row 3  ABSTENTION: prep/life ratio [0.69, 0.99, 1.21]; fires 0/3
+  plastic - fixed:     [0.151, 0.064, 0.093]  >= +0.03 in 3/3
+  plastic - scrambled: [0.092, 0.141, 0.115]  >= +0.03 in 3/3
+  per type: plastic A [0.672, 0.718, 0.711] B [0.811, 0.741, 0.726] both > 0.5 in 3/3; fixed both > 0.5 in 3/3; scrambled 2/3; ceiling 3/3
+  probe_adv (prep) [4.015, 2.529, 5.021]  > 0 in 3/3
+  SINCE-REMAP CURVE (prep 1 / 5 / 10): random 0.319/0.330/0.349; fixed 0.583/0.660/0.666; scrambled 0.561/0.655/0.675; plastic 0.413/0.827/0.951; ceiling 0.227/0.679/0.925
+    plastic full curve [0.413, 0.551, 0.686, 0.768, 0.827, 0.87, 0.899, 0.917, 0.936, 0.951]
+  hit-in-life curve gain [0.347, 0.366, 0.317] > 0 in 3/3;  hit_old - hit_young [0.094, 0.154, 0.069] > 0 in 3/3
+  SURVIVOR CURVE (preps 1-5 vs 6-10, agents reaching 10): random -0.044; fixed -0.128 per seed [-0.13, -0.12, -0.135]; scrambled -0.133 [-0.134, -0.135, -0.13]; plastic +0.090 [0.117, 0.043, 0.11]; ceiling +0.210
+  SURVIVOR-CONDITIONED SINCE-REMAP (4-window, corroborating): random -0.175; fixed -0.490; scrambled -0.467; plastic -0.600; ceiling -0.767
+  FIRST-PREP HIT late/raw/type-blind: random [0.321, 0.301, 0.334]/[0.317, 0.296, 0.347]/[0.508, 0.505, 0.506]; fixed [0.757, 0.774, 0.755]/[0.674, 0.721, 0.701]/[0.504, 0.512, 0.537]; scrambled [0.817, 0.749, 0.73]/[0.718, 0.662, 0.655]/[0.509, 0.522, 0.544]; plastic [0.507, 0.506, 0.552]/[0.49, 0.463, 0.494]/[0.54, 0.51, 0.513]; ceiling [0.326, 0.328, 0.273]/[0.322, 0.327, 0.267]/[0.5, 0.505, 0.5]
+  ceiling [0.762, 0.702, 0.709]
+
+row 3b  (old instrument, 10-step window, run-end snapshot -- superseded by the frozen replay)
+  plastic s0 map (1,0) matched eta0 0.766 eta1 0.783 | shuffled eta0 0.152 eta1 0.182 (+0.030)
+  plastic s1 map (2,1) matched 0.743 / 0.735 | shuffled 0.140 / 0.185 (+0.045)
+  plastic s2 map (2,0) matched 0.398 / 0.476 | shuffled 0.204 / 0.311 (+0.108)
+  scrambled s0 (2,0) 0.259/0.310 | 0.394/0.333; s1 (1,2) 0.437/0.435 | 0.467/0.545; s2 (0,2) 0.847/0.813 | 0.089/0.126
+  fixed s0 (1,0) 0.240/0.240 | 0.417/0.417; s1 (0,2) 0.776/0.776 | 0.034/0.034; s2 (1,2) 0.750/0.750 | 0.167/0.167
+
+row 4  eta2 phase 1 -> 2: fixed [0.089, 0.106, 0.092] -> [0.058, 0.102, 0.067]; scrambled [0.079, 0.032, 0.095] -> [0.102, 0.074, 0.082]; plastic [0.111, 0.174, 0.243] -> [0.141, 0.178, 0.272]; ceiling [0.089, 0.106, 0.092] -> [0.116, 0.095, 0.196]
+       lam2: fixed [0.704, 0.739, 0.738] -> [0.397, 0.717, 0.57]; scrambled [0.697, 0.35, 0.578] -> [0.655, 0.676, 0.72]; plastic [0.683, 0.642, 0.712] -> [0.631, 0.658, 0.578]; ceiling -> [0.708, 0.836, 0.748]
+       eta1: fixed -> [0.129, 0.111, 0.131]; scrambled -> [0.085, 0.109, 0.091]; plastic [0.031, 0.169, 0.195] -> [0.037, 0.189, 0.21]; ceiling -> [0.079, 0.062, 0.061]

@@ -196,9 +196,14 @@ show a *smaller* shuffled gap. Holding the gap while the space grows tenfold is 
 recording; a bigger gap is better, and a smaller one falsifies the claim even if it stays above
 0.10.
 
-**The v3.11 reference value is whatever the grid measures**, and it is recorded before v3.12 runs.
-It is not yet known: the v3.11 acceptance checkpoint predates `final_mapping`, so row 3b runs for
-the first time on the refreshed grid.
+**The v3.11 reference value does not yet exist, and the grid did not produce it.** Row 3b ran on
+the grid in its OLD form — a 10-step window on a run-end snapshot — which failed as an instrument
+(see `v3_11_finding.md`); its numbers are not a reference for anything. The frozen replay has never
+run on v3.11.
+
+**The reference comes from the addendum**: the v3.11 `plastic` arm re-run at 3 seeds with per-remap
+snapshots, once the v3.12 build is done. **Until that number exists the non-shrink clause cannot be
+evaluated**, and the v3.12 claim rests on the ≥ 0.10 requirement alone.
 
 The genetic baseline (gate 1b's three numbers) is **reported alongside as a measured quantity**,
 never gated against — as already restated in v3.11.
