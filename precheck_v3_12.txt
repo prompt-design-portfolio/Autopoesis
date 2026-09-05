@@ -1,0 +1,432 @@
+=== self-tests ===
+  1455 rows checked: (1 eat + 5 preps) x (1 empty + 3 food cells) x 60 mappings, plus the inedible-raw rows, the flip, moves, phase-1 masking and mapping distinctness
+  world-semantics self-test: PASS
+  injected agent tagged: True   ordinary agent untagged: True   injected agent's child untagged: True
+  founder-free counts never exceed all-agents: True
+  equal exactly when no founder event occurred: True
+  founder events actually occurred, so the gate was exercised: True
+  (1154 injections over 1200 steps; founder share of preparations 0.300)
+  founder-tag self-test: PASS
+  m = +1: chosen action 7, its logit moved +0.2869  OK
+  m = -1: chosen action 7, its logit moved -0.2869  OK
+  learning rule self-test: PASS
+  source final mapping (4, 3, 1); re-seeded worlds draw [(1, 4, 3), (2, 3, 1), (2, 3, 0), (2, 4, 0), (0, 2, 4), (0, 2, 4)]
+  force_mapping pins it, no redraws: True
+  a re-seeded replay can differ from it (the bug condition): True
+  replay-mapping self-test: PASS
+
+=== economics ===
+T=3 K=5 mappings=60  chance 0.200  type-blind 0.333  N_ACTIONS 10  N_IN 26
+prep_value 1.0 = (K-1)*prep_fail 1.0   chance EV +0.0000
+[1/3] fixed seed=0  167s   elapsed 2.8 min, est. stage total 8 min
+[2/3] scrambled seed=0  80s   elapsed 4.1 min, est. stage total 6 min
+[3/3] plastic (W2) seed=0  451s   elapsed 11.6 min, est. stage total 12 min
+
+PRE-CHECK WALL CLOCK 11.6 min for 3 runs at 3000-step phases
+
+=== D5 readability: preparations per TYPE per era in `fixed` (target >= 3) ===
+  fixed            preps per type per life, by era: [[4.2, 3.0, 3.6], [3.8, 4.4, 4.1], [3.1, 3.5, 3.3], [2.9, 3.0, 2.8], [3.4, 3.5, 3.8]]
+  scrambled        preps per type per life, by era: [[2.7, 2.6, 2.1], [4.4, 5.4, 6.2], [1.5, 1.8, 2.0], [3.7, 2.5, 3.4], [5.6, 2.3, 3.6]]
+  plastic (W2)     preps per type per life, by era: [[4.0, 2.7, 4.1], [2.5, 2.4, 3.0], [2.6, 2.6, 3.2], [3.0, 3.0, 3.3], [2.1, 2.1, 2.5]]
+
+=== food share (OPEN 3a: does type C accumulate?) ===
+  fixed            [np.float64(0.286), np.float64(0.216), np.float64(0.497)]
+  scrambled        [np.float64(0.332), np.float64(0.341), np.float64(0.327)]
+  plastic (W2)     [np.float64(0.289), np.float64(0.165), np.float64(0.546)]
+
+=== D2 standing variation ===
+  fixed            triples 12.0  valid 4.1  held>=20 0.0  ABOVE 6.8 of 60
+  scrambled        triples 17.1  valid 4.5  held>=20 0.0  ABOVE 7.0 of 60
+  plastic (W2)     triples 25.4  valid 8.5  held>=20 1.9  ABOVE 11.1 of 60
+============================================================================================
+v3.12 -- the preparation world, T=3 K=5.  1 seeds.  Prep hit: chance 0.200, type-blind 0.33, full 1.00.  Chance safe rate 0.500.  Random-policy action share 1/5 in phase 1, 1/8 in phase 2.
+============================================================================================
+
+### PHASE 1 (food only) -- second half
+    food only: the three preparations are masked, so phase 1 is v3.1's five actions.
+metric                                 fixed               scrambled            plastic (W2)
+safe_rate  FF                          0.503                   0.577                   0.665
+/home/user/Autopoesis/analysis.py:641: RuntimeWarning: Mean of empty slice
+  print(f"{lab:<20}" + "".join(f"{np.nanmean(ps(results, n, sel, f)):>{w}.3f}" for n in names))
+prep hit  FF                             nan                     nan                     nan
+prep hit | A  FF                         nan                     nan                     nan
+prep hit | B  FF                         nan                     nan                     nan
+type-blind level                         nan                     nan                     nan
+founder share prep                       nan                     nan                     nan
+founder share eats                     0.017                   0.250                   0.000
+safe_rate                              0.502                   0.570                   0.665
+prep hit                                 nan                     nan                     nan
+prep hit | type A                        nan                     nan                     nan
+prep hit | type B                        nan                     nan                     nan
+prep/life                              0.000                   0.000                   0.000
+prep share of meals                    0.000                   0.000                   0.000
+P(prep | on food)                      0.000                   0.000                   0.000
+P(eat | on food)                       0.372                   0.156                   0.199
+pop                                   62.967                  44.433                 304.767
+injections                             0.867                   3.700                   0.000
+max_gen                               22.300                   6.933                  29.133
+probe_adv (food)                         nan                   0.019                   1.683
+probe_adv (prep)                         nan                  -0.000                  -0.004
+prep_gain innate                       0.025                  -0.023                   0.167
+eta2                                   0.088                   0.089                   0.189
+eta1                                   0.119                   0.102                   0.083
+lam2                                   0.802                   0.718                   0.469
+h_norm                                 0.000                   0.010                   0.049
+nav_dir                                4.763                   3.989                   4.708
+nav_here                               3.047                   4.058                   6.018
+crop_safe                              0.499                   0.494                   0.349
+raw meals                           6966.000                3029.000               19048.000
+meal gain                              0.071                  -0.064                   0.223
+hit-in-life gain                         nan                     nan                     nan
+
+### PHASE 2 (chain on) -- second half
+metric                                 fixed               scrambled            plastic (W2)
+safe_rate  FF                          0.463                   0.551                   0.574
+prep hit  FF                           0.361                   0.354                   0.536
+prep hit | A  FF                       0.112                   0.447                   0.487
+prep hit | B  FF                       0.479                   0.410                   0.722
+type-blind level                       0.350                   0.365                   0.364
+founder share prep                     0.000                   0.081                   0.000
+founder share eats                     0.000                   0.072                   0.000
+safe_rate                              0.463                   0.551                   0.574
+prep hit                               0.361                   0.340                   0.536
+prep hit | type A                      0.112                   0.431                   0.487
+prep hit | type B                      0.479                   0.391                   0.722
+prep/life                             11.040                   9.154                  10.116
+prep share of meals                    0.950                   0.894                   0.897
+P(prep | on food)                      0.347                   0.339                   0.336
+P(eat | on food)                       0.034                   0.104                   0.106
+pop                                  399.300                  52.867                 737.533
+injections                             0.000                   1.533                   0.000
+max_gen                               53.433                  17.633                  57.367
+probe_adv (food)                         nan                  -0.001                   0.131
+probe_adv (prep)                         nan                   0.019                   1.595
+prep_gain innate                       0.055                   0.217                   0.231
+eta2                                   0.077                   0.084                   0.173
+eta1                                   0.070                   0.122                   0.075
+lam2                                   0.693                   0.704                   0.513
+h_norm                                 0.000                   0.020                   0.072
+nav_dir                                4.904                   3.950                   6.018
+nav_here                               3.381                   3.477                   6.790
+crop_safe                              0.510                   0.504                   0.457
+raw meals                           1474.000                 586.000                4543.000
+meal gain                             -0.082                   0.173                  -0.011
+hit-in-life gain                       0.029                  -0.081                   0.381
+
+per seed:
+  safe_rate (phase 1)
+    fixed                  [0.502]
+    scrambled              [0.57]
+    plastic (W2)           [0.665]
+  probe_adv (food) (phase 1)
+    fixed                  [nan]
+    scrambled              [0.019]
+    plastic (W2)           [1.683]
+  prep hit  FF (phase 2)
+    fixed                  [0.361]
+    scrambled              [0.354]
+    plastic (W2)           [0.536]
+  founder share of preps (phase 2)
+    fixed                  [0.0]
+    scrambled              [0.081]
+    plastic (W2)           [0.0]
+  prep hit (all agents) (phase 2)
+    fixed                  [0.361]
+    scrambled              [0.34]
+    plastic (W2)           [0.536]
+  prep hit | A (phase 2)
+    fixed                  [0.112]
+    scrambled              [0.431]
+    plastic (W2)           [0.487]
+  prep hit | B (phase 2)
+    fixed                  [0.479]
+    scrambled              [0.391]
+    plastic (W2)           [0.722]
+  prep/life (phase 2)
+    fixed                  [11.04]
+    scrambled              [9.154]
+    plastic (W2)           [10.116]
+  probe_adv (prep) (phase 2)
+    fixed                  [nan]
+    scrambled              [0.019]
+    plastic (W2)           [1.595]
+  pop (phase 2)
+    fixed                  [399.3]
+    scrambled              [52.867]
+    plastic (W2)           [737.533]
+  injections (phase 2)
+    fixed                  [0.0]
+    scrambled              [1.533]
+    plastic (W2)           [0.0]
+
+------------------------------------------------------------------------------
+DECISION NUMBERS (a difference counts when it is >= 0.03 in 1/1 seeds)
+  THREE LEVELS on prep hit:  chance 0.200  |  type-blind 0.33  |  full 1.00
+  Type-blind = 'always prep_k' for a k useful in this era: right for one food type, wrong
+  for the other, no type knowledge.  ACROSS eras it scores only 1/3, because with distinct
+  mappings k is useless in a third of them -- so a genome beats chance only by tracking the
+  era.  A CONJUNCTION shows as BOTH types above 0.5, not one at 1.0 and the other at 0.
+  PRE-REGISTERED PREDICTION: `fixed` sits near 0.5 and crashes in the third of eras where
+  its k goes useless (EV -0.5/meal); `plastic (W2)` clears 0.5 on BOTH types and recovers
+  across remaps.  Recorded before the run.
+------------------------------------------------------------------------------
+
+row 0  uninterpretable?  Per phase.  `random policy` is EXEMPT.
+  EXCLUDE on pop < 80 over the half.  INJECTIONS ARE REPORTED, NOT EXCLUSIONARY:
+  the problem injection causes is founder DILUTION of the metrics, not population size,
+  and that is fixed at the metric (every event-weighted number below is founder-free)
+  rather than by discarding the arm.  A non-learning population sits at the floor in
+  this world because value comes only through knowledge -- the same verdict v3.1 gave.
+  phase 1  fixed                  pop [63.0]  inj [0.9]  <-- EXCLUDE (pop < 80)
+  phase 1  scrambled              pop [44.0]  inj [3.7]  <-- EXCLUDE (pop < 80)
+  phase 1  plastic (W2)           pop [305.0]  inj [0.0]
+  phase 2  fixed                  pop [399.0]  inj [0.0]
+  phase 2  scrambled              pop [53.0]  inj [1.5]  <-- EXCLUDE (pop < 80)
+  phase 2  plastic (W2)           pop [738.0]  inj [0.0]
+
+  CAP CHECK -- no outcome arm above 90% of max_pop (800) in phase 2's second half.
+  An arm on the cap cannot express a fitness difference in its population, so the
+  population column stops carrying information for every arm at once.
+    fixed                  pop [399.0]   max 50% of cap
+    scrambled              pop [53.0]   max 7% of cap
+    plastic (W2)           pop [738.0]   max 92% of cap   <-- CAPPED
+    FAIL: ['plastic (W2)'] above 90%.  Raise max_pop to 1200 and re-estimate the runtime
+    before reading anything that depends on population.
+
+  FOUNDER SHARE OF EVENTS -- the size of the dilution the founder-free numbers remove.
+  An injected agent is a fresh random genome; its own events are excluded below, its
+  children's are not.  A high share is not a reason to discard the arm, but it does say
+  how far the all-agents number has been pulled toward chance.
+    arm                       phase 1 eats    phase 2 eats   phase 2 preps
+    fixed                            0.017           0.000           0.000
+    scrambled                        0.250           0.072           0.081
+    plastic (W2)                     0.000           0.000           0.000
+
+row 1a  PHASE-1 GATE = v3.1.  A STOP ROW: if it fails, nothing below is read.
+  safe_rate  plastic [0.665]   fixed [0.503]   (v3.1: 0.60-0.66 vs 0.51-0.56)
+  all-agents  plastic [0.665]   fixed [0.502]
+  ROW-0 FALLBACK in seed(s) [0]: those read against v3.1's published range, conservative end 0.56.
+    seed 0: +0.105 (published)   PASS
+  probe_adv (food) plastic [1.683]   (target >= 1.0)
+
+row 1b  THE GENETIC BASELINE -- MEASURED, NOT A STOP.
+        In a six-mapping space the genes DO track the mapping, and shortening the era
+        does not stop them: sorting over standing variation completes well inside a
+        third of an era.  So this row no longer halts the reading.  It reports how
+        much of the standing hit rate the genome already carries, and the learner's
+        contribution is read ABOVE it.  Three numbers make the baseline:
+          (1) `fixed` first-preparation hit, LATE in the era -- the genome alone;
+          (2) the per-era A+B sum -- above 1 means the genomes condition on type;
+          (3) row 3b's matched/shuffled genome hit with learning off.
+  fixed prep hit [0.361]   all-agents [0.361]
+    per type 0  [0.112]   share [0.319]
+    per type 1  [0.479]   share [0.35]
+    per type 2  [0.476]   share [0.331]
+  ITS OWN TYPE-BLIND LEVEL = max(share_A, share_B) [0.35]   -- NOT 0.5 when encounters are skewed.  fixed - its own level [0.011]
+  above 0.55 in 0/1   (recorded, not a stop -- see row 3b for how much of
+  this the genome carries and how much the rule adds)
+  Read the per-type split: one type high and the other near 0 is type-blind (allowed);
+  both above 0.5 in `fixed` would be genes holding the conjunction (not allowed).
+  READ IT PER ERA.  The phase half spans TWO mapping eras, so a genome that switches
+  its preparation between them averages into a FALSE one-high-one-low reading.  A pure
+  mixture of type-blind genotypes has P(hit|A) + P(hit|B) <= 1; a SUM ABOVE 1 means the
+  genomes are conditioning on food type, whatever the phase-half aggregate says.
+    fixed seed 0           both > 0.3333333333333333 in 1/5 eras   mean A+B 0.79   max 1.55
+                           (A,B) [(0.33, 0.52), (0.76, 0.79), (0.03, 0.83), (0.22, 0.03), (0.08, 0.35)]
+    plastic (W2) seed 0    both > 0.3333333333333333 in 4/5 eras   mean A+B 1.02   max 1.36
+                           (A,B) [(0.66, 0.55), (0.34, 0.69), (0.52, 0.66), (0.55, 0.81), (0.01, 0.33)]
+    scrambled seed 0       both > 0.3333333333333333 in 0/5 eras   mean A+B 0.64   max 0.77
+                           (A,B) [(0.21, 0.28), (0.22, 0.34), (0.33, 0.4), (0.41, 0.24), (0.56, 0.21)]
+
+  THE BASELINE, reported per seed:
+    (i)  fixed standing prep hit     [0.361]
+    (ii) first-prep hit, LATE in the era -- the INNATE policy, before any learning.
+         fixed     [0.411]   (raw [0.361], its type-blind level [0.35])
+         scrambled [0.374]   (raw [0.383], its type-blind level [0.365])
+    (ii) is the sharper of the two: the standing hit rate mixes genome with whatever
+    the living have learned, while the first preparation of a life is genome alone.
+    A `nan` here means the checkpoint predates the field -- run checkpoint_audit.
+  PRIMARY INSTRUMENT for this row: prep_gain innate -- the GENOME's preference for the
+  correct preparation on a synthetic 'type f underfoot' observation.  No gating and no
+  declining enter it, so unlike the A+B sum it localises the type-conditioning to the
+  CHOICE of preparation.  `random policy` is the zero; `fixed + B` sits near zero
+  because its knowledge is in the private table, not in synapses -- that is the check
+  that the instrument reads synapses and nothing else.
+    fixed                  [0.055]
+    scrambled              [0.217]
+    plastic (W2)           [0.231]
+
+row 1c  STANDING VARIATION -- is the premise of this world true for THIS population?
+        The space is P(5,3) = 60 mappings.  If the population
+        holds genotypes for most of them, a remap needs no adaptation and survival
+        sorting promotes a matching one, exactly as in the six-mapping world.  The
+        premise of v3.12 is that it CANNOT.  This measures it rather than arguing it.
+        `above` is the direct statement: how many of the mappings the population would
+        score above type-blind on.  A handful means the space exceeds standing
+        variation.  A large number means v3.12 has NOT achieved what it was built for,
+        and that is the finding whatever row 3b then says.
+    arm                     triples  valid  held>=1   >=5   >=20   above/60
+    fixed                      12.0    4.1      4.1   0.8    0.0        6.8
+    scrambled                  17.1    4.5      4.5   0.3    0.0        7.0
+    plastic (W2)               25.4    8.5      8.5   3.4    1.9       11.1
+    (`nan` means the checkpoint predates the probe -- run checkpoint_audit)
+
+row 2  RIG CHECKS -- nothing below is read until these are clean.
+  (a) food learning survives the switch.  READ ON WHOLE-PHASE FOUNDER-FREE SAFE RATE
+      (plastic - fixed >= 0.03).  At prep_every 350 a single era is ~350 steps, far too
+      few meal events to read a rate on, so the window is the whole of phase 2.  The
+      corrected probe in the first 500 steps is CORROBORATING.  The v3.1 probe form was
+      contaminated here -- it subtracts the best OTHER action, and with three
+      preparations live that term moves with food type.
+    safe (whole phase 2)  plastic [0.574]  fixed [0.463]   diff [0.11]   >= +0.03 in 1/1   PASS
+    corroborating: plastic (W2)   probe_adv (food), first 500 steps [-0.324]   first era [-0.206]
+    corroborating: scrambled      probe_adv (food), first 500 steps [-0.005]   first era [-0.001]
+      EAT -> PREP SHIFT TIMING (prep share in 250-step bins after the switch):
+    fixed                  [(0, 0.781), (250, 0.914), (500, 0.938), (750, 0.832), (1000, 0.916), (1250, 0.928), (1500, 0.95), (1750, 0.97)]
+    scrambled              [(0, 0.887), (250, 0.887), (500, 0.88), (750, 0.975), (1000, 0.977), (1250, 0.96), (1500, 0.911), (1750, 0.948)]
+    plastic (W2)           [(0, 0.746), (250, 0.834), (500, 0.833), (750, 0.836), (1000, 0.856), (1250, 0.851), (1500, 0.822), (1750, 0.887)]
+      PREP SHARE BY ERA:
+    fixed                  [0.875, 0.888, 0.955, 0.944, 0.94]
+    scrambled              [0.88, 0.973, 0.935, 0.869, 0.857]
+    plastic (W2)           [0.8, 0.855, 0.859, 0.926, 0.89]
+  (b) the opportunity exists:  prepared meals per life >= 3 in `fixed`
+    fixed prep/life [11.04]   PASS
+    fixed                  prep/life [11.04]
+    scrambled              prep/life [9.15]
+    plastic (W2)           prep/life [10.12]
+  (c) P(prep | on food) against the per-phase null (analytic 3/8 = 0.375 in phase 2)
+    null measured: `random policy` not in this stage -- analytic 0.375 stands in
+    fixed                  [0.347]
+    scrambled              [0.339]
+    plastic (W2)           [0.336]
+
+==============================================================================
+row 3  THE CONJUNCTION -- a dense, immediate, two-sided task
+==============================================================================
+  ABSTENTION CHECK FIRST.  Fires only if prepared meals per life < 0.8x `fixed`
+  AND (hit <= fixed OR pop <= fixed): preparing less while scoring and living BETTER is
+  a learner declining bad bets, not one abstaining from the task.
+    prep/life plastic [10.12]  fixed [11.04]   ratio [0.92]   (< 0.80 in 0/1)
+    hit  plastic [0.536]  fixed [0.361]      pop  plastic [738.0]  fixed [399.0]
+    ABSTENTION FIRES in 0/1 seed(s) []
+  the result lines:
+    plastic - fixed:     [0.175]   >= +0.03 in 1/1
+    plastic - scrambled: [0.182]   >= +0.03 in 1/1   <- scrambled carries it
+    prep hit  plastic [0.536]  fixed [0.361]  scrambled [0.354]
+    all-agents        [0.536]        [0.361]            [0.34]
+  PER TYPE -- a conjunction is BOTH above 0.33, not one at 1.0 and one at 0.
+  Each arm's OWN type-blind level is printed too: with skewed encounters the level is
+  max(share_A, share_B), and a hit at that level carries no type knowledge.
+    fixed                  t0 [0.112]  t1 [0.479]  t2 [0.476]
+                           all 3 above 0.333 in 0/1   its type-blind level [0.35]
+    scrambled              t0 [0.447]  t1 [0.41]  t2 [0.213]
+                           all 3 above 0.333 in 0/1   its type-blind level [0.365]
+    plastic (W2)           t0 [0.487]  t1 [0.722]  t2 [0.417]
+                           all 3 above 0.333 in 1/1   its type-blind level [0.364]
+  probe_adv (prep) [1.595]   (> 0 in 1/1)
+    NOTE: probe_adv is computed over the LIVING, so it is itself partly
+    survivorship-selected.  The survivor curve below is not.
+  SINCE-REMAP CURVE -- hit against preparation number since the last remap.  The
+  prediction is a DIP at 1 and recovery within ~5 preparations: at a remap the learned
+  H is now wrong, so a learner must pay for the change and then earn it back.  A flat
+  curve means nothing is being relearned within a life; a curve that never recovers
+  means the era is shorter than the learner needs.
+    arm                      prep 1   prep 5  prep 10    1->5   1->10
+    fixed                     0.324    0.352    0.398  +0.027  +0.074
+                           full curve [0.324, 0.329, 0.335, 0.355, 0.352, 0.369, 0.369, 0.388, 0.389, 0.398]
+    scrambled                 0.375    0.353    0.338  -0.022  -0.037
+                           full curve [0.375, 0.36, 0.368, 0.363, 0.353, 0.34, 0.377, 0.379, 0.343, 0.338]
+    plastic (W2)              0.284    0.525    0.685  +0.241  +0.400
+                           full curve [0.284, 0.336, 0.402, 0.471, 0.525, 0.563, 0.611, 0.618, 0.655, 0.685]
+  within-life signature -- at least one, in 1/1:
+    hit-in-life curve gain [0.381]   (> 0 in 1/1)
+    hit_old - hit_young    [0.108]   (> 0 in 1/1)
+
+  SURVIVORSHIP DIAGNOSTICS -- REQUIRED.  `plastic - scrambled` on hit rate is a
+  SURVIVORSHIP-CONTAMINATED contrast (agents whose random H happens to help live
+  longer, enriching the standing population without anything being learned).  It stays
+  required, but the ATTRIBUTION is carried by the within-agent lines below.
+  (i) SURVIVOR CURVE -- preps 1-5 vs 6-10, over agents that REACHED 10 preparations.
+      Every agent counted contributes both halves of its own curve, so a rise is the
+      same individuals later in their own lives, not a different sample.
+      REQUIRED: rising in plastic, flat in scrambled.
+    arm                     preps 1-5  preps 6-10     rise  n agents
+    fixed                       0.553       0.439   -0.115      1005   per seed [-0.115]
+    scrambled                   0.455       0.387   -0.068       157   per seed [-0.068]
+    plastic (W2)                0.540       0.690    0.150      1315   per seed [0.15]
+  (ii) SURVIVOR-CONDITIONED SINCE-REMAP -- CORROBORATING ONLY, 4-preparation window.
+       Counted only if it made 4 preparations BEFORE a remap and 4 after it, so a fall
+       and recovery cannot be a change of sample.  The population-level since-remap
+       curve below IS open to that objection; this line is not.
+    arm                     8 before   8 after   change  n agent-remaps
+    fixed                      0.616     0.355   -0.261             452   per seed [-0.261]
+    scrambled                  0.538     0.318   -0.220              33   per seed [-0.22]
+    plastic (W2)               0.836     0.333   -0.502             854   per seed [-0.502]
+  (iii) FIRST-PREPARATION HIT -- the agent has learned nothing, so this reads the innate
+       policy the population carries (and shows the type-blind floor directly).
+       READ THE `late` COLUMN.  A first preparation made just after a remap is scored
+       against a mapping the agent's lineage has not been selected on, so the raw
+       number mixes the genome's quality with how recently the mapping moved.  `late`
+       counts only first preparations at least a third of an era after a remap.
+    arm                                 late               raw    type-blind level
+    fixed                            [0.411]           [0.361]              [0.35]
+    scrambled                        [0.374]           [0.383]             [0.365]
+    plastic (W2)                      [0.31]           [0.283]             [0.364]
+
+row 3b  THE ATTRIBUTION LINE -- FROZEN-POPULATION REPLAY.
+        Genomes snapshotted at an ERA BOUNDARY, so the population has just lived a
+        whole era under that mapping and is sorted for it.  Replayed for 300 steps
+        with births, deaths and injection ALL DISABLED -- energy is tracked and spent
+        but is not lethal -- on the matched mapping and on a shuffled one, with
+        learning off (eta 0) and on (eta 1).  NOTHING CAN CHANGE BUT H.
+        The SHUFFLED pair carries the claim: on a mapping no genotype was sorted for,
+        eta 0 is the genetic floor and eta 1 is what the rule adds within a life.
+        REQUIRED: eta1 - eta0 >= 0.10 on SHUFFLED in EVERY seed.
+        Why 300 steps: within-life learning needs ~5 preparations to show (the
+        since-remap curve recovers by preparation 5).  The v3.11 10-step window could
+        not contain that, so it failed as an INSTRUMENT rather than returning a
+        negative -- and its run-end snapshot sat mid-era, only partly sorted
+        (`fixed` seed 0 scored 0.24 on its own mapping).  analysis.frozen_selftest
+        holds the line: with eta 0 the hit must not move across the window.
+    plastic (W2) s0      boundary t=5800  map (1, 2, 4)  snapshot 300 of 799 agents  pop 300 frozen
+                           MATCHED   eta0 0.355  eta1 0.666   gap +0.311
+                           SHUFFLED  eta0 0.196  eta1 0.557   gap +0.361   PASS
+                           shuffled curves  eta0 [0.212, 0.182, 0.191, 0.195, 0.166, 0.23]
+                                            eta1 [0.364, 0.548, 0.641, 0.649, 0.642, 0.632]
+    scrambled s0         boundary t=5800  map (2, 0, 3)  snapshot 50 of 50 agents  pop 50 frozen
+                           MATCHED   eta0 0.289  eta1 0.308   gap +0.019
+                           SHUFFLED  eta0 0.163  eta1 0.150   gap -0.013
+                           shuffled curves  eta0 [0.239, 0.196, 0.123, 0.178, 0.139, 0.116]
+                                            eta1 [0.196, 0.134, 0.152, 0.116, 0.146, 0.171]
+    fixed s0             boundary t=5800  map (1, 2, 4)  snapshot 299 of 299 agents  pop 299 frozen
+                           MATCHED   eta0 0.374  eta1 0.374   gap +0.000
+                           SHUFFLED  eta0 0.201  eta1 0.201   gap +0.000
+                           shuffled curves  eta0 [0.148, 0.166, 0.209, 0.224, 0.222, 0.271]
+                                            eta1 [0.148, 0.166, 0.209, 0.224, 0.222, 0.271]
+    REQUIREMENT (plastic, shuffled, eta1 - eta0 >= 0.10): 1/1   PASS
+    THE CLAIM LINE.  Record this number: it is the v3.11 reference the v3.12
+    result must not shrink below.   mean gap +0.361
+    reference levels: chance 0.200, type-blind 0.33
+
+row 4  GENE ROWS (corroborating only)
+  eta2   phase 1 -> phase 2
+    fixed                  [0.088] -> [0.077]
+    scrambled              [0.089] -> [0.084]
+    plastic (W2)           [0.189] -> [0.173]
+  lam2   phase 1 -> phase 2
+    fixed                  [0.802] -> [0.693]
+    scrambled              [0.718] -> [0.704]
+    plastic (W2)           [0.469] -> [0.513]
+  eta1   phase 1 -> phase 2
+    fixed                  [0.119] -> [0.07]
+    scrambled              [0.102] -> [0.122]
+    plastic (W2)           [0.083] -> [0.075]
+  unwired scaffold genes -- drift scale for a heritable scalar:
+    nav_dir      fixed: 4.90  plastic (W2): 6.02
+    nav_here     fixed: 3.38  plastic (W2): 6.79
+
+row 5  if row 3 is NULL with rows 1-2 clean, that is the first earned statement about
+       the learner's limit: the rule does not hold a two-item conjunction even where the
+       opportunity is dense, the credit immediate and two-sided, and no approach
+       behaviour is required.  Spend the one rule-form change there.
+------------------------------------------------------------------------------

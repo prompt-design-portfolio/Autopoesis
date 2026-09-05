@@ -1,5 +1,5 @@
 """
-v3.12 analysis -- the preparation world, after the v3.10 acceptance run.
+v3.11 analysis -- the preparation world, after the v3.10 acceptance run.
 
 Two parameter changes (prep_every 2000 -> 700, prep_value 1.5 -> 1.0) and three rule fixes; see
 "Changes after the v3.10 acceptance" in spec_v3_11.md.
@@ -24,7 +24,7 @@ try:
 except Exception:
     plt = None
 
-from sim import Config, run, N_PREPS, N_TYPES, PREP0, N_MAPPINGS, all_mappings
+from sim import Config, run, N_PREPS, PREP0
 
 # ---------------------------------------------------------------------------
 # the world -- v3.1 metabolism throughout, the chain at the agreed cover targets
@@ -32,24 +32,16 @@ from sim import Config, run, N_PREPS, N_TYPES, PREP0, N_MAPPINGS, all_mappings
 WORLD = dict(
     # phase 1 is v3.1, unchanged
     flip_every=300, eta_init=0.2, hidden=24,
-    # 6.0 (was 3.0).  D5's readability criterion -- >= 3 preparations per TYPE per era in
-    # `fixed` -- fails at 3.0 once the food is split three ways (median 2.6, min 1.2).  Raised
-    # per the ruling: raise spawn density, NEVER lengthen the era, since a longer era is more
-    # time for the sorting this world exists to outrun.  Judged on `fixed` only, per rule 9.
-    spawn_per_patch=6.0, food_value=0.7, poison_value=0.5,
+    spawn_per_patch=3.0, food_value=0.7, poison_value=0.5,
     repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=800, init_pop=300,
     # phase 2 adds three preparations.  Nothing else changes -- no new inputs, no items,
     # stations or nuts.  The fact to be learned sits on EVERY meal.
-    # v3.12: prep_value = (K-1) * prep_fail = 4 * 0.25 = 1.0 puts the CHANCE EV of a preparation
-    # at exactly zero: (1/5)(+1.0) - (4/5)(0.25) = 0.  Income to a KNOWING agent is unchanged from
-    # v3.11 at +1.00 a meal, so max_pop stays 800.  The halved penalty is the targeted part:
-    # SORTING runs on energy -- a mismatched genotype pays prep_fail on 4 preparations in 5 -- but
-    # the LEARNING signal is a sign, m = +/-1 as literals in resolve_action, independent of both
-    # prep_value and prep_fail.  So this slows selection and leaves learning untouched.  Eating raw is +0.10 at chance and +0.70 knowing the flip, so
+    # prep_value 1.0 against prep_fail 0.5 puts the CHANCE EV of a preparation at exactly zero:
+    # (1/3)(+1.0) + (2/3)(-0.5) = 0.  Eating raw is +0.10 at chance and +0.70 knowing the flip, so
     # preparation now pays ONLY through knowledge of the mapping, and a population cannot ride the
     # preparation payoff up to the cap without it.  (v3.10 acceptance ran prep_value 1.5, where a
     # chance preparation paid +0.17 and every outcome arm sat at 675-799 against a cap of 800.)
-    prep_value=1.0, prep_fail=0.25,
+    prep_value=1.0, prep_fail=0.5,
     # BACK TO 700.  350 was tried and reverted: it shortened the LEARNER's payoff window without
     # touching the sorting mechanism at all (pre-registered prediction failed both ways -- fixed
     # 0.642 against a predicted 0.52-0.56, plastic 0.575 against 0.65-0.70, so the learner lost to
@@ -73,8 +65,8 @@ def _v(**kw):
     return dict(kw=dict(**dict(WORLD, **kw)), phases=STAGED)
 
 VARIANTS = {
-    # uniform over the AVAILABLE actions: 5 in phase 1 (preparations masked), 10 in phase 2.
-    # So the conditional null is 1/5 then 1/10 per action, and 5/10 = 0.500 for "any preparation".
+    # uniform over the AVAILABLE actions: 5 in phase 1 (preparations masked), 8 in phase 2.
+    # So the conditional null is 1/5 then 1/8 per action, and 3/8 for "any preparation".
     # Exempt from row 0: a random walker belongs at the population floor.
     "random policy":       _v(mode="random"),
     "fixed":               _v(mode="fixed"),
@@ -93,8 +85,8 @@ COLORS = {"random policy": "tab:grey", "fixed": "tab:red", "scrambled": "black",
           "plastic (W2)": "tab:blue", "fixed + B (ceiling)": "tab:purple"}
 
 # Three levels on the preparation task, and the middle one is the one to watch:
-CHANCE = 1.0 / N_PREPS    # a random preparation: 1/5 = 0.200
-TYPE_BLIND = 1.0 / N_TYPES  # 1/3 = 0.333. "always prep_k" for a k that is useful in this era: right for one food
+CHANCE = 1.0 / 3.0        # a random preparation
+TYPE_BLIND = 0.5          # "always prep_k" for a k that is useful in this era: right for one food
                           # type, wrong for the other, and NO type knowledge at all.  Note that
                           # ACROSS eras such a policy scores only 1/3 -- with distinct mappings, k
                           # is useless in a third of them (EV -0.5/meal there) -- so a genome beats
@@ -388,29 +380,21 @@ ROWS = [
 
 def prep_hit(L, ff=False):
     """Event-weighted prep hit over both food types."""
-    pre = "f_" if ff else ""
-    if not has(L, f"{pre}n_prep0"):
+    a, b = (("f_n_prep0", "f_n_prep1"), ("f_n_ok0", "f_n_ok1")) if ff else \
+           (("n_prep0", "n_prep1"), ("n_ok0", "n_ok1"))
+    if not has(L, a[0]):
         return np.nan
-    n = float(np.sum([sum(r[f"{pre}n_prep{t}"] for t in range(N_TYPES)) for r in L]))
-    k = float(np.sum([sum(r[f"{pre}n_ok{t}"] for t in range(N_TYPES)) for r in L]))
+    n = float(np.sum([r[a[0]] + r[a[1]] for r in L]))
+    k = float(np.sum([r[b[0]] + r[b[1]] for r in L]))
     return k / n if n else np.nan
 
 
-def hit_t(L, t, ff=False):
-    """Hit on food type `t`.  T is a parameter now, so nothing indexes 0/1 by name."""
-    return rate(L, _k(f"n_ok{t}", ff), _k(f"n_prep{t}", ff))
-
-
-def hits_by_type(L, ff=False):
-    return [hit_t(L, t, ff) for t in range(N_TYPES)]
-
-
-def hit_a(L, ff=False):          # kept: the frozen-replay and probe code reads two of them
-    return hit_t(L, 0, ff)
+def hit_a(L, ff=False):
+    return rate(L, _k("n_ok0", ff), _k("n_prep0", ff))
 
 
 def hit_b(L, ff=False):
-    return hit_t(L, 1, ff)
+    return rate(L, _k("n_ok1", ff), _k("n_prep1", ff))
 
 
 def type_share_a(L, ff=False):
@@ -419,22 +403,14 @@ def type_share_a(L, ff=False):
     type knowledge at all."""
     if not has(L, _k("n_prep0", ff)):
         return np.nan
-    per = [float(np.sum([r[_k(f"n_prep{t}", ff)] for r in L])) for t in range(N_TYPES)]
-    tot = sum(per)
-    return (per[0] / tot) if tot else np.nan
-
-
-def type_shares(L, ff=False):
-    per = [float(np.sum([r[_k(f"n_prep{t}", ff)] for r in L])) for t in range(N_TYPES)]
-    tot = sum(per)
-    return [p / tot for p in per] if tot else [np.nan] * N_TYPES
+    a = float(np.sum([r[_k("n_prep0", ff)] for r in L]))
+    b = float(np.sum([r[_k("n_prep1", ff)] for r in L]))
+    return a / (a + b) if (a + b) else np.nan
 
 
 def type_blind_level(L, ff=False):
-    """The level "always prep_k" reaches: the share of the commonest type.  With balanced
-    encounters that is 1/T; with skew it is higher, and 1/T is then the wrong reference."""
-    sh = type_shares(L, ff)
-    return max(sh) if np.all(np.isfinite(sh)) else np.nan
+    sa = type_share_a(L, ff)
+    return max(sa, 1.0 - sa) if np.isfinite(sa) else np.nan
 
 
 def surv_curve(L, ff=False):
@@ -626,9 +602,9 @@ def summary(results):
     w = 24
     nseed = len(results[names[0]])
     print("=" * (20 + w * len(names)))
-    print(f"v3.12 -- the preparation world, T=3 K=5.  {nseed} seeds.  Prep hit: chance {CHANCE:.3f}, "
+    print(f"v3.11 -- the preparation world.  {nseed} seeds.  Prep hit: chance {CHANCE:.3f}, "
           f"type-blind {TYPE_BLIND:.2f}, full {FULL:.2f}.  Chance safe rate 0.500.  Random-policy "
-          f"action share 1/5 in phase 1, 1/10 in phase 2, 0.500 for any preparation.")
+          f"action share 1/5 in phase 1, 1/8 in phase 2.")
     print("=" * (20 + w * len(names)))
 
     for label, sel in [("PHASE 1 (food only) -- second half", lambda r: phase_half(r, 0)),
@@ -765,25 +741,23 @@ def _decision_numbers(results):
     print("          (1) `fixed` first-preparation hit, LATE in the era -- the genome alone;")
     print("          (2) the per-era A+B sum -- above 1 means the genomes condition on type;")
     print("          (3) row 3b's matched/shuffled genome hit with learning off.")
-    hf = v(F, P2, FF(prep_hit))
+    hf, hfa, hfb = v(F, P2, FF(prep_hit)), v(F, P2, FF(hitA)), v(F, P2, FF(hitB))
     tbl = v(F, P2, FF(type_blind_level))
-    print(f"  fixed prep hit {np.round(hf,3).tolist()}   all-agents {np.round(v(F,P2,prep_hit),3).tolist()}")
-    for t in range(N_TYPES):
-        print(f"    per type {t}  {np.round(v(F, P2, FF(lambda L, ff=False, t=t: hit_t(L, t, ff))),3).tolist()}"
-              f"   share {np.round(v(F, P2, FF(lambda L, ff=False, t=t: type_shares(L, ff)[t])),3).tolist()}")
-    print(f"  ITS OWN TYPE-BLIND LEVEL = max over the T preparation shares {np.round(tbl,3).tolist()}"
+    print(f"  fixed prep hit {np.round(hf,3).tolist()}   per type A {np.round(hfa,3).tolist()}  B {np.round(hfb,3).tolist()}")
+    print(f"  all-agents     {np.round(v(F,P2,prep_hit),3).tolist()}   per type A "
+          f"{np.round(v(F,P2,hitA),3).tolist()}  B {np.round(v(F,P2,hitB),3).tolist()}")
+    print(f"  ITS OWN TYPE-BLIND LEVEL = max(share_A, share_B) {np.round(tbl,3).tolist()}"
           f"   -- NOT 0.5 when encounters are skewed.  fixed - its own level"
           f" {np.round(hf - tbl,3).tolist()}")
     fired = int(np.sum(hf > 0.55))
     print(f"  above 0.55 in {fired}/{nseed}   (recorded, not a stop -- see row 3b for how much of")
     print("  this the genome carries and how much the rule adds)")
-    print("  Read the per-type split: one type high and the rest near 0 is type-blind (allowed);")
-    print(f"  all {N_TYPES} above {TYPE_BLIND:.3f} in `fixed` would be genes holding the conjunction.")
-    print("  READ IT PER ERA.  The phase half spans several mapping eras, so a genome that")
-    print("  switches its preparation between them averages into a FALSE flat reading.")
-    print("  A pure mixture of type-blind genotypes has the per-type hits summing to <= 1;")
-    print("  a SUM ABOVE 1 means the genomes are conditioning on food type, whatever the")
-    print("  phase-half aggregate says.")
+    print("  Read the per-type split: one type high and the other near 0 is type-blind (allowed);")
+    print("  both above 0.5 in `fixed` would be genes holding the conjunction (not allowed).")
+    print("  READ IT PER ERA.  The phase half spans TWO mapping eras, so a genome that switches")
+    print("  its preparation between them averages into a FALSE one-high-one-low reading.  A pure")
+    print("  mixture of type-blind genotypes has P(hit|A) + P(hit|B) <= 1; a SUM ABOVE 1 means the")
+    print("  genomes are conditioning on food type, whatever the phase-half aggregate says.")
     for n in (F, PL, S):
         if n not in results:
             continue
@@ -822,23 +796,6 @@ def _decision_numbers(results):
     print("  that the instrument reads synapses and nothing else.")
     for n in names:
         print(f"    {n:<22} {np.round(v(n, P2, lambda L: half(L, 'prep_gain_innate')), 3).tolist()}")
-
-    print("\nrow 1c  STANDING VARIATION -- is the premise of this world true for THIS population?")
-    print(f"        The space is P({N_PREPS},{N_TYPES}) = {N_MAPPINGS} mappings.  If the population")
-    print("        holds genotypes for most of them, a remap needs no adaptation and survival")
-    print("        sorting promotes a matching one, exactly as in the six-mapping world.  The")
-    print("        premise of v3.12 is that it CANNOT.  This measures it rather than arguing it.")
-    print("        `above` is the direct statement: how many of the mappings the population would")
-    print("        score above type-blind on.  A handful means the space exceeds standing")
-    print("        variation.  A large number means v3.12 has NOT achieved what it was built for,")
-    print("        and that is the finding whatever row 3b then says.")
-    print(f"    {'arm':<22}{'triples':>9}{'valid':>7}{'held>=1':>9}{'>=5':>6}{'>=20':>7}"
-          f"{'above/' + str(N_MAPPINGS):>11}")
-    for n in names:
-        g = lambda key: np.nanmean(v(n, P2, lambda L: half(L, key)))
-        print(f"    {n:<22}{g('sv_triples'):>9.1f}{g('sv_valid'):>7.1f}{g('sv_held1'):>9.1f}"
-              f"{g('sv_held5'):>6.1f}{g('sv_held20'):>7.1f}{g('sv_above'):>11.1f}")
-    print("    (`nan` means the checkpoint predates the probe -- run checkpoint_audit)")
 
     print("\nrow 2  RIG CHECKS -- nothing below is read until these are clean.")
     print("  (a) food learning survives the switch.  READ ON WHOLE-PHASE FOUNDER-FREE SAFE RATE")
@@ -902,14 +859,10 @@ def _decision_numbers(results):
     print("  Each arm's OWN type-blind level is printed too: with skewed encounters the level is")
     print("  max(share_A, share_B), and a hit at that level carries no type knowledge.")
     for n in names:
-        per = [v(n, P2, FF(lambda L, ff=False, t=t: hit_t(L, t, ff))) for t in range(N_TYPES)]
-        allabove = np.ones(nseed, dtype=bool)
-        for pt in per:
-            allabove &= (pt > TYPE_BLIND)
-        print(f"    {n:<22} " + "  ".join(f"t{t} {np.round(per[t],3).tolist()}"
-                                          for t in range(N_TYPES)))
-        print(f"    {'':<22} all {N_TYPES} above {TYPE_BLIND:.3f} in {int(allabove.sum())}/{nseed}"
-              f"   its type-blind level {np.round(v(n,P2,FF(type_blind_level)),3).tolist()}")
+        a_, b_ = v(n, P2, FF(hitA)), v(n, P2, FF(hitB))
+        print(f"    {'':<22} its type-blind level {np.round(v(n,P2,FF(type_blind_level)),3).tolist()}")
+        both = int(np.sum((a_ > TYPE_BLIND) & (b_ > TYPE_BLIND)))
+        print(f"    {n:<22} A {np.round(a_,3).tolist()}  B {np.round(b_,3).tolist()}   both > {TYPE_BLIND} in {both}/{nseed}")
     pr = v(PL, P2, lambda L: half(L, "probe_adv"))
     ao, ay = v(PL, P2, lambda L: half(L, "hit_old")), v(PL, P2, lambda L: half(L, "hit_young"))
     ag = v(PL, P2, lambda L: float(curve(L, "att", True)[-1] - curve(L, "att", True)[0]))

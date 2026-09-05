@@ -116,13 +116,6 @@ class Config:
                                   # window is H.  That is what makes the replay an attribution.
     era_snap_keep: int = 2        # era-boundary snapshots retained (rolling, most recent last)
     era_snap_max: int = 300       # agents sampled per snapshot, to bound the pickle
-    type_spawn_w: tuple = None    # OPEN 3a: relative spawn weight per food type.  Type 2 has only
-                                  # ONE consumption route (preparation) where types 0 and 1 have two
-                                  # (raw eating as well), so at equal spawn it accumulates -- 49-55%
-                                  # of standing food in the v3.12 pre-check at spawn_per_patch 6.0.
-                                  # The spec's pre-agreed fix is to lower C's SPAWN rate, never to
-                                  # let `eat` consume it: consuming would let a naive agent clear
-                                  # the board of exactly the food the experiment is about.
     force_mapping: tuple = None   # DIAGNOSTIC ONLY: pin the mapping and stop all redraws, so a
                                   # replay can be run against a KNOWN mapping.  A knockout that
                                   # re-seeds the world gets that seed's FIRST mapping, which is
@@ -211,19 +204,13 @@ SR_W = 4            # survivor-conditioned since-remap: preparations required ea
                     # remap.  8 was too wide -- at prep_every 350 an era barely held it and
                     # n fell to 3 agent-remaps in `scrambled`.  Corroborating only.
 SURV_EARLY = 2      # survivor curve early half: preparations 1-2 (late half is 6-10)
-# v3.12: T food types and K preparations, both parameters rather than literals.  The mapping
-# space is P(K,T) = K!/(K-T)!, and it has to exceed what standing variation can cover -- in the
-# six-mapping world of v3.10-v3.11 a remap needed no adaptation at all, because the population
-# already carried a genotype for the new mapping and survival sorting simply promoted it.
-N_TYPES = 3              # A, B, C.  C exists only once preparations are live, and is INEDIBLE RAW.
-N_PREPS = 5              # prep_1 .. prep_5
-EAT = 4                  # 0-3 move, 4 eat, 5..(5+K-1) prepare
-PREP0 = 5
-N_ACTIONS = PREP0 + N_PREPS          # 10
-N_MAPPINGS = 60                      # P(5,3); asserted against the enumeration in the self-test
+N_ACTIONS = 8            # 0-3 move, 4 eat, 5-7 prep_1..3.  v3.10: the recipe chain is gone; the
+EAT = 4                  # fact to be learned sits on EVERY meal, so there is no approach behaviour
+PREP0 = 5                # to evolve.  Preparations are masked in phase 1, which is therefore
+N_PREPS = 3              # exactly v3.1's five actions.
 INTERACT = None           # retired with the chain
 MOVES = np.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
-N_PAIRS = N_TYPES * N_PREPS      # the ceiling's private table: one cell per (food type, prep)
+N_PAIRS = 6                                      # 3 items x 2 stations
 
 
 # --------------------------------------------------------------------------
@@ -233,20 +220,18 @@ N_PAIRS = N_TYPES * N_PREPS      # the ceiling's private table: one cell per (fo
 #             4,5,6 item types   7,8 station types   9 nuts   10 goal
 # --------------------------------------------------------------------------
 
-# v3.12 channel map.  The item / station / nut / goal / inventory / tool channels are RETIRED --
-# they have been dead since v3.10 and carrying them meant every genome spent capacity on inputs
-# that were structurally zero.  What remains is exactly what this world contains.
-#   channels: 0 .. T-1  food types      T  occupancy      T+1  food_any (appetite)
-FOOD_CH = 0
-OCC_CH = N_TYPES
-APPETITE_CH = N_TYPES + 1
-N_CH = N_TYPES + 2                   # 5
+N_CH = 11
+APPETITE_CH = 3
+ITEM_CH = 4
+STATION_CH = 7
+NUT_CH = 9
+GOAL_CH = 10
 
-HERE = N_CH * 4                      # 20 .. 24   'here' value of each channel
-ENERGY = HERE + N_CH                 # 25
-N_IN = ENERGY + 1                    # 26
-INV = None                           # retired
-TOOL = None                          # retired
+HERE = N_CH * 4              # 44 .. 54   'here' value of each channel
+ENERGY = HERE + N_CH         # 55
+INV = ENERGY + 1             # 56,57,58   inventory one-hot over item types
+TOOL = INV + 3               # 59
+N_IN = TOOL + 1              # 60
 
 
 def dirsum(w, v):
@@ -264,9 +249,8 @@ def pair_id(item, station):
 class World:
     def __init__(self, cfg, rng):
         self.cfg, self.rng, g = cfg, rng, cfg.grid
-        self.food = np.zeros((N_TYPES, g, g), dtype=bool)
-        self.safe = 0                  # which of types 0,1 is safe to eat RAW.  Type 2 has no raw
-                                       # value at all, so the flip does not touch it.
+        self.food = np.zeros((2, g, g), dtype=bool)
+        self.safe = 0
         self.patches = rng.integers(0, g, size=(cfg.n_patches, 2))
         self.items = np.full((g, g), -1, dtype=np.int8)
         self.nuts = np.zeros((g, g), dtype=bool)
@@ -310,12 +294,16 @@ class World:
             self.stations[(py + dy) % g, (px + dx) % g] = st
 
     def _draw_mapping(self, old):
-        """A mapping sends each of the T food types to a DISTINCT preparation, so the space is
-        P(K, T) = K!/(K-T)!.  A redraw differs from the previous mapping in at least one type; it
-        is drawn uniformly over the whole space, so it may agree with `old` on some types."""
+        """One correct preparation per food type, and the two types map to DIFFERENT preparations,
+        so exactly one preparation is useless in any era and the task cannot be solved without
+        discriminating food type.  A redraw differs from the old mapping in at least one type."""
         while True:
-            m = tuple(int(x) for x in self.rng.choice(N_PREPS, N_TYPES, replace=False))
-            if old is None or m != tuple(old):
+            a = int(self.rng.integers(N_PREPS))
+            b = int(self.rng.integers(N_PREPS))
+            if a == b:
+                continue
+            m = (a, b)
+            if old is None or m != old:
                 return m
 
     def new_recipe(self, t):
@@ -349,17 +337,7 @@ class World:
             for dy, dx in rng.integers(-r, r + 1, size=(k, 2)):
                 y, x = (py + dy) % g, (px + dx) % g
                 if not self.food[:, y, x].any():
-                    # type 2 exists only once preparations are live: phase 1 is exactly v3.1's
-                    # two-type flip world, which is what keeps row 1a anchored to v3.1's published
-                    # range.  The third type arrives at the switch, with the preparations.
-                    n_live = N_TYPES if self.chain_on else 2
-                    w = cfg.type_spawn_w
-                    if w is None or not self.chain_on:
-                        ft = int(rng.integers(n_live))
-                    else:
-                        p = np.asarray(w[:n_live], dtype=float); p = p / p.sum()
-                        ft = int(rng.choice(n_live, p=p))
-                    self.food[ft, y, x] = True
+                    self.food[rng.integers(2), y, x] = True
 
 
         return changed_recipe
@@ -461,12 +439,11 @@ class Agent:
         return c
 
     def act(self, obs, cfg, rng, chain_on=True):
-        # All K preparations are masked while phase 2 is off, so phase 1 is EXACTLY v3.1's five
-        # actions and its gate applies unchanged.  ONLY the action space changes at the switch --
-        # the third food type appears then too, but it is a channel that is simply empty in phase
-        # 1, not a new input.  The null is masked too, so its per-action share is 1/5 in phase 1
-        # and 1/10 in phase 2, and 5/10 = 0.500 for "any preparation".
-        n_av = N_ACTIONS if chain_on else PREP0        # 10 in phase 2, 5 in phase 1
+        # The three preparations are masked while phase 2 is off, so phase 1 is EXACTLY v3.1's
+        # five actions and its gate applies unchanged.  ONLY the action space changes at the
+        # switch -- no new inputs.  The null is masked too, so its per-action share is 1/5 in
+        # phase 1 and 1/8 in phase 2, and 3/8 for "any preparation".
+        n_av = N_ACTIONS if chain_on else PREP0        # 8 in phase 2, 5 in phase 1
         if cfg.mode == "random":
             return int(rng.integers(0, n_av))          # the behavioural null: no policy, no learning
         alive = self.integrity >= cfg.integrity_threshold
@@ -547,16 +524,6 @@ def wire_nav(W1, W2, nav_dir, nav_here, scaffold_food=True, scaffold_chain=True)
 GENOME = ("W1", "b1", "W2", "b2", "eta1", "eta2", "lam1", "lam2", "repair", "nav_dir", "nav_here")
 
 
-def _sv_log(agents, cfg, chain_on):
-    """Standing variation, flattened for the log.  Only meaningful once preparations are live."""
-    if not chain_on:
-        return dict(triples=np.nan, valid=np.nan, held1=np.nan, held5=np.nan, held20=np.nan,
-                    above=np.nan)
-    d = standing_variation(agents, cfg)
-    return dict(triples=d["n_triples"], valid=d["n_valid"], held1=d["held"][1],
-                held5=d["held"][5], held20=d["held"][20], above=d["n_above"])
-
-
 def snapshot(agents):
     """Genomes only: innate weights and genes.  Nothing learned (H) is saved."""
     out = []
@@ -612,56 +579,10 @@ def prep_gain(agents, cfg, mapping, learned=True, n_sample=40):
     vals = []
     for i in idx:
         a = agents[i]
-        for ft in range(N_TYPES):
+        for ft in range(2):
             p = np.array([prep_pref(a, cfg, ft, k, learned) for k in range(N_PREPS)])
             vals.append(p[mapping[ft]] - np.delete(p, mapping[ft]).mean())
     return float(np.mean(vals))
-
-
-def innate_mapping(a, cfg):
-    """The mapping this agent's GENOME would apply: argmax preparation per food type, from the
-    innate probe (learned=False), so nothing the agent has learned enters it."""
-    return tuple(int(np.argmax([prep_pref(a, cfg, ft, k, False) for k in range(N_PREPS)]))
-                 for ft in range(N_TYPES))
-
-
-def standing_variation(agents, cfg, n_sample=400, thresholds=(1, 5, 20)):
-    """D2 -- the probe that makes the v3.12 premise CHECKABLE rather than argued.
-
-    The premise is that P(K,T) = 60 mappings exceeds what a population can hold in standing
-    variation, so a remap usually finds no matching genotype to promote and the only route to the
-    new mapping is within a life.  That is an empirical claim about this population, and this
-    measures it directly.
-
-    Returns:
-      n_triples    distinct innate argmax triples present at all
-      n_valid      of those, how many are VALID mappings (T distinct preparations) -- a triple
-                   with a repeat is a genome that has not separated the types
-      held[thr]    valid mappings carried by at least `thr` living agents
-      n_above      how many of the P(K,T) mappings the population would score ABOVE the
-                   type-blind level 1/T on, if that mapping were the one in force.  THIS is the
-                   direct statement of the premise: a handful of 60 means the space exceeds
-                   standing variation; a large number means v3.12 has not achieved what it was
-                   built for, and that is the finding whatever row 3b then says.
-    """
-    if not agents:
-        return dict(n_triples=0, n_valid=0, held={t: 0 for t in thresholds}, n_above=0, n=0)
-    idx = (np.arange(len(agents)) if len(agents) <= n_sample
-           else np.random.default_rng(0).choice(len(agents), n_sample, replace=False))
-    tri = [innate_mapping(agents[int(i)], cfg) for i in idx]
-    from collections import Counter
-    c = Counter(tri)
-    valid = {m: k for m, k in c.items() if len(set(m)) == N_TYPES}
-    held = {t: int(sum(1 for k in valid.values() if k >= t)) for t in thresholds}
-    n = len(tri)
-    above = 0
-    for m in all_mappings():
-        # expected hit if THIS were the mapping: mean over agents of the fraction of types the
-        # agent's innate argmax gets right
-        score = sum(sum(1 for t_ in range(N_TYPES) if tr[t_] == m[t_]) for tr in tri) / (n * N_TYPES)
-        if score > 1.0 / N_TYPES:
-            above += 1
-    return dict(n_triples=len(c), n_valid=len(valid), held=held, n_above=above, n=n)
 
 
 def probe_advantage(agents, cfg, mapping, n_sample=40):
@@ -733,18 +654,13 @@ def resolve_action(a, action, world, cfg, rng, t=0):
         a.energy -= cfg.move_cost
         return 0.0, "move", {}
 
-    has_food = bool(world.food[:, y, x].any())
+    has_food = bool(world.food[0, y, x] or world.food[1, y, x])
     if not has_food:
         a.energy -= cfg.noop_cost
         return 0.0, "noop", {}
-    ftype = int(np.argmax(world.food[:, y, x]))
+    ftype = 0 if world.food[0, y, x] else 1
 
     if action == EAT:
-        if ftype >= 2:
-            # INEDIBLE RAW.  Energy change exactly 0, m = 0, and the cell is NOT consumed -- if
-            # eating destroyed it, a naive agent could clear the board of precisely the food this
-            # experiment is about.  The step is wasted and nothing else happens.
-            return 0.0, "eat_inedible", {"ftype": ftype}
         world.food[ftype, y, x] = False
         if ftype == world.safe:
             a.energy += cfg.food_value
@@ -800,8 +716,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              trace_w=0.0, bridge1_sum=0.0, bridge1_n=0, rec_sum=0.0, rec_n=0,
              e_bonus=0.0, noops=0, raw_meals=0, prep_meals=0,
              on_food=0, on_food_eat=0, on_food_prep=0,
-             **{f"prep_n{i}": 0 for i in range(N_TYPES)},
-             **{f"prep_ok{i}": 0 for i in range(N_TYPES)},
+             prep_n0=0, prep_ok0=0, prep_n1=0, prep_ok1=0,
              first_n=0, first_ok=0, surv_n=0, surv_early=0, surv_late=0,
              srm_n=0, srm_pre=0, srm_post=0, first_n_late=0, first_ok_late=0)
     # FOUNDER-FREE mirror.  Injected agents are fresh random genomes; their own events dilute
@@ -809,9 +724,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     # that need injecting -- so a non-learning arm reads as MORE random the worse it does.  WF
     # accumulates the same events with injected agents' own events excluded.  Their children are
     # not tagged, so descent back into the population is counted from the first generation.
-    WF = {k: 0 for k in ("eats", "safe", "attempts", "correct", "first_n", "first_ok",
-                         *[f"prep_n{i}" for i in range(N_TYPES)],
-                         *[f"prep_ok{i}" for i in range(N_TYPES)],
+    WF = {k: 0 for k in ("eats", "safe", "attempts", "correct", "prep_n0", "prep_ok0",
+                         "prep_n1", "prep_ok1", "first_n", "first_ok",
                          "surv_n", "surv_early", "surv_late", "srm_n", "srm_pre", "srm_post",
                          "first_n_late", "first_ok_late")}
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
@@ -862,11 +776,21 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
         for a in agents:
             occ[a.y, a.x] += 1
         pad = lambda arr: np.pad(np.asarray(arr, dtype=float), v, mode="wrap")
-        pF = [pad(world.food[i]) for i in range(N_TYPES)]
+        pA, pB = pad(world.food[0]), pad(world.food[1])
         pO = pad(np.minimum(occ, 3) / 3.0)
         # the food_any channel exists only to drive the instinct; with no food scaffold it is dead,
         # which makes phase 1's live inputs exactly v3.1's set (4 dirsums x 3 channels + 3 here + energy)
-        pFood = sum(pF) if cfg.scaffold_food else np.zeros_like(pF[0])
+        pFood = (pA + pB) if cfg.scaffold_food else np.zeros_like(pA)
+        if world.chain_on:
+            pI = [pad(world.items == i) for i in range(cfg.n_items)]
+            pS = [pad(world.stations == s) for s in range(cfg.n_stations)]
+            pN = pad(world.nuts)
+        else:
+            z = np.zeros_like(pA)
+            pI = [z] * cfg.n_items
+            pS = [z] * cfg.n_stations
+            pN = z
+
         rng.shuffle(agents)
         survivors, newborns = [], []
 
@@ -874,9 +798,34 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             y, x = a.y, a.x
             sl = (slice(y, y + win), slice(x, x + win))
 
-            chans = [p[sl] for p in pF] + [pO[sl], pFood[sl]]
+            # what, if anything, this agent believes about the six pairs.
+            # Zero in every condition except the hand-wired ceiling.
+            if cfg.private_mem:
+                pb = a.B.reshape(cfg.n_items, cfg.n_stations)
+                prefs = np.clip(np.concatenate([pb.max(1), pb.max(0)]), -1, 2)
+                attract = np.clip(1.0 + cfg.pref_gain * prefs, 0.0, 1.0 + cfg.pref_gain)
+            else:
+                pb = None
+                attract = np.ones(cfg.n_items + cfg.n_stations)
+
+            # the stage machine: it points at a CLASS of thing, never at which one.  With
+            # scaffold_chain off it is only an observation channel -- nothing is wired to it.
+            if not (world.chain_on and cfg.goal_channel):
+                goal = np.zeros((win, win))
+            elif a.tool:
+                goal = pN[sl]
+            elif a.item >= 0:
+                goal = sum(attract[cfg.n_items + s] * pS[s][sl] for s in range(cfg.n_stations))
+            else:
+                goal = sum(attract[i] * pI[i][sl] for i in range(cfg.n_items))
+
+            chans = [pA[sl], pB[sl], pO[sl], pFood[sl]] + [p[sl] for p in pI] + [p[sl] for p in pS] + [pN[sl], goal]
+            inv = np.zeros(cfg.n_items)
+            if a.item >= 0:
+                inv[a.item] = 1.0
             obs = np.concatenate([dirsum(c, v) for c in chans]
-                                 + [[c[v, v] for c in chans], [a.energy / cfg.max_energy]])
+                                 + [[c[v, v] for c in chans], [a.energy / cfg.max_energy], inv,
+                                    [1.0 if a.tool else 0.0]])
             action = a.act(obs, cfg, rng, world.chain_on)
             if track_recency and not world.chain_on:
                 a.e2_hist.append(a.e2.copy())          # phase 1 only: the chain would confound it
@@ -885,9 +834,11 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
 
             a.integrity = np.minimum(1.0, a.integrity - cfg.decay + a.repair * cfg.repair_gain)
             a.energy -= cfg.base_cost + a.repair * cfg.repair_cost * cfg.hidden
+            if a.item >= 0 or a.tool:
+                a.energy -= cfg.carry_cost
 
-            on_food = bool(world.food[:, y, x].any())
-            ft_here = int(np.argmax(world.food[:, y, x])) if on_food else -1
+            on_food = bool(world.food[0, y, x] or world.food[1, y, x])
+            ft_here = (0 if world.food[0, y, x] else 1) if on_food else -1
 
             # ---- the B ceiling forces its argmax preparation once it has evidence for this type.
             # There is no navigation to steer here, so a hand-wired POLICY OVERRIDE is the honest
@@ -1042,12 +993,9 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 probe_adv=probe_advantage(agents, cfg, world.mapping),
                 prep_gain=prep_gain(agents, cfg, world.mapping, True),
                 prep_gain_innate=prep_gain(agents, cfg, world.mapping, False),
-                **{f"sv_{k}": v_ for k, v_ in _sv_log(agents, cfg, world.chain_on).items()},
                 probe_adv_food=probe_advantage_food(agents, cfg, world.safe),
                 food_gain_innate=food_gain(agents, cfg, world.safe, False),
-                crop_safe=float(world.food[world.safe].sum() / max(1, world.food[:2].sum())),
-                food_share=[float(world.food[i].sum() / max(1, world.food.sum()))
-                            for i in range(N_TYPES)],
+                crop_safe=float(world.food[world.safe].sum() / max(1, world.food.sum())),
                 e_fail_per_1k=1000.0 * W["e_fail"] / max(W["steps"], 1),
                                                                           # attempts, so the
                                                                           # fail-cost arm's world
@@ -1058,9 +1006,10 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 prep_share=(W["prep_meals"] / (W["prep_meals"] + W["raw_meals"]))
                            if (W["prep_meals"] + W["raw_meals"]) else np.nan,
                 n_prep=W["prep_meals"], n_raw=W["raw_meals"],
-                **{f"n_prep{i}": W[f"prep_n{i}"] for i in range(N_TYPES)},
-                **{f"n_ok{i}": W[f"prep_ok{i}"] for i in range(N_TYPES)},
-                mapping=tuple(int(x) for x in world.mapping),   # T entries, not two
+                prep_hit0=(W["prep_ok0"] / W["prep_n0"]) if W["prep_n0"] else np.nan,
+                prep_hit1=(W["prep_ok1"] / W["prep_n1"]) if W["prep_n1"] else np.nan,
+                n_prep0=W["prep_n0"], n_ok0=W["prep_ok0"], n_prep1=W["prep_n1"], n_ok1=W["prep_ok1"],
+                map_a=int(world.mapping[0]), map_b=int(world.mapping[1]),
                 prep_per_life=W["prep_meals"] / max(W["deaths"], 1),
                 n_first=W["first_n"], n_first_ok=W["first_ok"],
                 n_first_late=W["first_n_late"], n_first_ok_late=W["first_ok_late"],
@@ -1073,8 +1022,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 # founder-free: the same events with injected agents' own events excluded
                 f_n_eats=WF["eats"], f_n_safe=WF["safe"],
                 f_n_attempts_raw=WF["attempts"], f_n_correct=WF["correct"],
-                **{f"f_n_prep{i}": WF[f"prep_n{i}"] for i in range(N_TYPES)},
-                **{f"f_n_ok{i}": WF[f"prep_ok{i}"] for i in range(N_TYPES)},
+                f_n_prep0=WF["prep_n0"], f_n_ok0=WF["prep_ok0"],
+                f_n_prep1=WF["prep_n1"], f_n_ok1=WF["prep_ok1"],
                 f_n_first=WF["first_n"], f_n_first_ok=WF["first_ok"],
                 f_n_first_late=WF["first_n_late"], f_n_first_ok_late=WF["first_ok_late"],
                 f_n_surv=WF["surv_n"], f_n_surv_early=WF["surv_early"],
@@ -1130,8 +1079,8 @@ def replay_mapping_selftest(seeds=(0, 1, 2, 3, 4, 5), verbose=True):
 
     pinned = run(Config(seed=99, mode="fixed", n_steps=600, chain=True, scaffold_food=False,
                         prep_every=350, force_mapping=fm), verbose=False)
-    c1 = (tuple(pinned["final_mapping"]) == tuple(fm)
-          and all(tuple(w["mapping"]) == tuple(fm) for w in pinned["log"])
+    c1 = (pinned["final_mapping"] == fm
+          and all((w["map_a"], w["map_b"]) == fm for w in pinned["log"])
           and not pinned["recipe_changes"])
 
     drawn = []
@@ -1225,36 +1174,20 @@ def learning_rule_selftest(seed=0, verbose=True):
         print(f"  learning rule self-test: {'PASS' if passed else 'FAIL'}")
     return passed
 
-def all_mappings():
-    """Every mapping that sends the T food types to DISTINCT preparations -- the space the
-    population has to cover by standing variation if it is to track remaps by sorting alone."""
-    from itertools import permutations
-    return [tuple(p) for p in permutations(range(N_PREPS), N_TYPES)]
-
-
 def world_semantics_selftest(verbose=True):
-    """Every (action, food cell, mapping) row of the action x cell table, ENUMERATED FROM T AND K
-    rather than from literals: (1 eat + K preparations) x (1 empty + T food cells) x P(K,T)
-    mappings, plus the poison rows, the moves, phase-1 masking, and mapping distinctness.
-
-    Each row constructs the cell, calls one resolve_action, and asserts the energy delta, the
-    modulator, the event, and whether the food cell was consumed.  This is the test that would
-    catch a mapping applied to the wrong food type -- and at T = 3, K = 5 there are 1440 outcome
-    rows, far past what would be caught by eye.
-
-    THE ROW THAT IS NEW IN v3.12: food type 2 is INEDIBLE RAW.  `eat` on it must give an energy
-    change of exactly 0, m = 0, and must NOT consume the cell.
-    """
+    """Every (action, food cell, mapping) row of the action x cell table: 4 actions
+    {eat, prep_1..3} x 3 cell states {empty, food A, food B} x 6 distinct mappings = 72 rows,
+    plus the moves and the poison rows.  Each constructs the cell, calls one resolve_action, and
+    asserts the energy delta, the modulator, the event, and that the food cell was consumed.
+    This is the test that would catch a mapping applied to the wrong food type."""
     cfg = Config(mode="fixed", scaffold_food=False, scaffold_chain=False)
     rng = np.random.default_rng(0)
-    MAPPINGS = all_mappings()
-    assert len(MAPPINGS) == N_MAPPINGS, f"expected {N_MAPPINGS} mappings, enumerated {len(MAPPINGS)}"
+    MAPPINGS = [(a, b) for a in range(N_PREPS) for b in range(N_PREPS) if a != b]
 
-    def fresh(food=None, mapping=None, safe=0):
+    def fresh(food=None, mapping=(0, 1), safe=0):
         w = World(cfg, np.random.default_rng(0))
-        w.food[:] = False
-        w.safe, w.mapping = safe, (mapping if mapping is not None else MAPPINGS[0])
-        w.chain_on = True
+        w.food[:] = False; w.items[:] = -1; w.nuts[:] = False; w.stations[:] = -1
+        w.safe, w.mapping = safe, mapping
         a = Agent(cfg, np.random.default_rng(1), 0, 5, 5)
         a.energy = 3.0
         if food is not None:
@@ -1263,19 +1196,14 @@ def world_semantics_selftest(verbose=True):
 
     fails, n = [], 0
     for mapping in MAPPINGS:
-        for food in [None] + list(range(N_TYPES)):
+        for food in (None, 0, 1):
             for action in [EAT] + [PREP0 + k for k in range(N_PREPS)]:
                 a, w = fresh(food=food, mapping=mapping, safe=0)
                 e0 = a.energy
                 m, ev, _ = resolve_action(a, action, w, cfg, rng)
                 d = a.energy - e0
-                should_consume = True
                 if food is None:
                     d_exp, m_exp, ev_exp = -cfg.noop_cost, 0.0, "noop"
-                    should_consume = False
-                elif action == EAT and food >= 2:
-                    d_exp, m_exp, ev_exp = 0.0, 0.0, "eat_inedible"   # <-- the v3.12 row
-                    should_consume = False
                 elif action == EAT:
                     safe = (food == 0)
                     d_exp = cfg.food_value if safe else -cfg.poison_value
@@ -1287,16 +1215,14 @@ def world_semantics_selftest(verbose=True):
                     d_exp = cfg.prep_value if ok else -cfg.prep_fail
                     m_exp = 1.0 if ok else -1.0
                     ev_exp = "prep_ok" if ok else "prep_bad"
-                gone = (food is None) or (not w.food[food, 5, 5])
-                consumed_ok = (gone == should_consume) or food is None
-                ok_row = abs(d - d_exp) < 1e-9 and m == m_exp and ev == ev_exp and consumed_ok
+                consumed = (food is None) or (not w.food[food, 5, 5])
+                ok_row = abs(d - d_exp) < 1e-9 and m == m_exp and ev == ev_exp and consumed
                 n += 1
                 if not ok_row:
-                    fails.append(f"map {mapping} food {food} action {action}: got dE {d:+.3f} "
-                                 f"m {m:+.0f} {ev} consumed={gone}, expected dE {d_exp:+.3f} "
-                                 f"m {m_exp:+.0f} {ev_exp} consumed={should_consume}")
-    # the flip covers both raw types both ways, and must NOT touch type 2
-    for food, safe in ((0, 1), (1, 1), (0, 0), (1, 0)):
+                    fails.append(f"map {mapping} food {food} action {action}: got dE {d:+.3f} m {m:+.0f} "
+                                 f"{ev} consumed={consumed}, expected dE {d_exp:+.3f} m {m_exp:+.0f} {ev_exp}")
+    # eat on the OTHER safe setting, so both eat outcomes are covered for both types
+    for food, safe in ((0, 1), (1, 1)):
         a, w = fresh(food=food, safe=safe)
         e0 = a.energy
         m, ev, _ = resolve_action(a, EAT, w, cfg, rng)
@@ -1305,14 +1231,6 @@ def world_semantics_selftest(verbose=True):
         n += 1
         if abs((a.energy - e0) - d_exp) > 1e-9 or m != m_exp:
             fails.append(f"eat food {food} safe {safe}: dE {a.energy-e0:+.3f} m {m:+.0f}")
-    for safe in (0, 1):                       # type 2 is inedible under EITHER flip setting
-        a, w = fresh(food=2, safe=safe)
-        e0 = a.energy
-        m, ev, _ = resolve_action(a, EAT, w, cfg, rng)
-        n += 1
-        if abs(a.energy - e0) > 1e-9 or m != 0.0 or ev != "eat_inedible" or not w.food[2, 5, 5]:
-            fails.append(f"eat type 2 under safe={safe}: dE {a.energy-e0:+.4f} m {m} {ev} "
-                         f"cell_present={bool(w.food[2,5,5])} -- the flip must not touch type 2")
     # moves
     for action in range(4):
         a, w = fresh()
@@ -1321,39 +1239,33 @@ def world_semantics_selftest(verbose=True):
         n += 1
         if abs((a.energy - e0) + cfg.move_cost) > 1e-9 or m != 0.0 or ev != "move":
             fails.append(f"move {action}: dE {a.energy-e0:+.4f} m {m} {ev}")
-    # all K preparations are masked while phase 2 is off
+    # the preparations are masked while phase 2 is off
     cfgm = Config(mode="fixed", action_noise=0.0, scaffold_food=False, scaffold_chain=False)
     am = Agent(cfgm, np.random.default_rng(3), 0, 0, 0)
     obs = np.zeros(N_IN); obs[ENERGY] = 0.5
     chosen = {am.act(obs, cfgm, np.random.default_rng(k), chain_on=False) for k in range(60)}
+    masked = all(c < PREP0 for c in chosen)
     n += 1
-    if not all(c < PREP0 for c in chosen):
-        fails.append("a preparation was chosen in phase 1; all K must be masked")
-    # type 2 must not be spawned in phase 1
-    w1 = World(cfg, np.random.default_rng(11)); w1.chain_on = False
-    for t in range(400):
-        w1.step(t)
-    n += 1
-    if w1.food[2].any():
-        fails.append("food type 2 appeared in phase 1; it must arrive only at the switch")
-    # mappings: T distinct preparations, and a redraw changes at least one type
+    if not masked:
+        fails.append("a preparation was chosen in phase 1; they must be masked")
+    # the two types must map to DIFFERENT preparations
     w = World(cfg, np.random.default_rng(7))
-    draws = [w._draw_mapping(w.mapping) for _ in range(300)]
-    n += 3
-    if not all(len(set(m)) == N_TYPES for m in draws):
-        fails.append("a mapping gave the same preparation to two food types")
-    if not all(w._draw_mapping(m) != m for m in draws):
+    draws = [w._draw_mapping(w.mapping) for _ in range(200)]
+    distinct = all(m[0] != m[1] for m in draws)
+    differs = all(w._draw_mapping(m) != m for m in draws)      # a redraw changes the mapping
+    n += 2
+    if not distinct:
+        fails.append("a mapping gave the same preparation to both food types")
+    if not differs:
         fails.append("a redraw returned the mapping it was meant to replace")
-    if len(set(draws)) < N_MAPPINGS // 2:
-        fails.append(f"only {len(set(draws))} distinct mappings in 300 draws of {N_MAPPINGS}")
     if verbose:
-        print(f"  {n} rows checked: (1 eat + {N_PREPS} preps) x (1 empty + {N_TYPES} food cells)"
-              f" x {len(MAPPINGS)} mappings, plus the inedible-raw rows, the flip, moves,"
-              f" phase-1 masking and mapping distinctness")
+        print(f"  {n} rows checked: 4 actions x 3 cells x {len(MAPPINGS)} mappings, "
+              f"plus poison rows, moves, masking and mapping distinctness")
         print(f"  world-semantics self-test: {'PASS' if not fails else 'FAIL'}")
         for f in fails[:8]:
             print("   ", f)
     return not fails
+
 
 
 # v3.9 amendment 3: the chain is co-located with foraging, so the world criterion is IN-PATCH,
