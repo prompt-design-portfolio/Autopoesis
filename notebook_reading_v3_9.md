@@ -1,4 +1,32 @@
-## 8. Pre-check note — the abstention observed under amendment 2
+## 8. Result — the stop condition was invoked
+
+**The recipe world is closed for individual-learner tests.** The full write-up is
+`v3_9_finding.md`; the short form:
+
+A multi-step chain whose payoff arrives only at the end is **not discoverable by an individual
+learner under autopoietic economics without an instinct**. At ~0.5 attempts per life, an attempt at
+chance is worth ≈ **+0.37 energy** against a lifetime income of several meals — about **5%** — and a
+four-step approach behaviour cannot be selected out of that differential in twenty generations.
+
+| pass | `fixed` att/life | `random` att/life | P(interact \| at station) vs null |
+|---|---|---|---|
+| 1 — payoff size | 0.21 | 0.16 | P(int \| on item) 0.124 vs 0.165 |
+| 2 — journey length | 0.56 | 0.96 | — |
+| 3 — co-location | 0.38 | 0.58 | 0.135 vs 0.156 |
+
+Station density at 3× the agreed band moved the null only 0.96 → 2.16; `tool_value` 1.5 → 8.0
+*lowered* it. Co-location halved item supply without creating a gradient.
+
+**Correction to the pre-check reading:** plastic's phase-2 population of 45 was a window transient,
+not co-location taxing foraging — a full run at seed 0 held 107–209 with pickups ~1/1k. The chain
+costs almost nothing because almost nobody touches it.
+
+**What the rig fixes established.** Fix A restored food learning across the chain: v3.8's 0.65 → 0.50
+decay in every arm did **not** recur (`plastic` holds 0.622 and 0.579 in phase 2, `probe_adv` (food)
+above 1.0). The one agreed rule-form change is **not** spent — the learner was never tested on a rig
+that could show it.
+
+## 8b. Pre-check note — the abstention observed under amendment 2
 
 *An observation from a 1-seed pre-check, not a claim.* Before the chain was co-located, with
 `tool_value` 1.5 and a carry tax, `plastic (W2)` **declined 99.7% of station opportunities** and
