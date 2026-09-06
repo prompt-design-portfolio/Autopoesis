@@ -463,14 +463,21 @@ def surv_remap(L, ff=False):
     population-level since-remap curve is open to the objection that the agents alive at
     preparation 1 are not the ones alive at 10; this is not, because it is the same agent across
     the same remap."""
-    from sim import SR_W
     if not has(L, _k("n_srm", ff)):
         return np.nan, np.nan, np.nan, 0
+    # USE THE WINDOW THE RUN ACTUALLY USED, not the current module constant.  A checkpoint
+    # written under SR_W = 4 and read under SR_W = 8 would halve every rate, silently.
+    if "sr_w" not in L[0]:
+        # The window is UNKNOWN: this checkpoint predates the field, and its counters were summed
+        # over whatever SR_W the build then had.  Dividing by the current constant would be a
+        # guess that produces a plausible number.  Return nan; the printer drops the line.
+        return np.nan, np.nan, np.nan, -1
+    w = int(L[0]["sr_w"])
     n = float(np.sum([r[_k("n_srm", ff)] for r in L]))
     if not n:
-        return np.nan, np.nan, np.nan, 0
-    pre = float(np.sum([r[_k("n_srm_pre", ff)] for r in L])) / (SR_W * n)
-    post = float(np.sum([r[_k("n_srm_post", ff)] for r in L])) / (SR_W * n)
+        return np.nan, np.nan, np.nan, w * 0
+    pre = float(np.sum([r[_k("n_srm_pre", ff)] for r in L])) / (w * n)
+    post = float(np.sum([r[_k("n_srm_post", ff)] for r in L])) / (w * n)
     return pre, post, post - pre, int(n)
 
 
@@ -952,14 +959,28 @@ def _decision_numbers(results):
         e = np.nanmean([x[0] for x in rows]); l = np.nanmean([x[1] for x in rows])
         d = np.array([x[2] for x in rows], dtype=float); nn = int(np.sum([x[3] for x in rows]))
         print(f"    {n:<22}{e:>11.3f}{l:>12.3f}{np.nanmean(d):>9.3f}{nn:>10d}   per seed {np.round(d,3).tolist()}")
-    print(f"  (ii) SURVIVOR-CONDITIONED SINCE-REMAP -- CORROBORATING ONLY, {SR_W}-preparation window.")
+    _srw = {int(P2(r)[0].get("sr_w", SR_W)) for n_ in names for r in results[n_] if P2(r)}
+    _srw_s = sorted(_srw) if _srw else [SR_W]
+    print(f"  (ii) SURVIVOR-CONDITIONED SINCE-REMAP -- CORROBORATING ONLY, "
+          f"{'/'.join(map(str,_srw_s))}-preparation window.")
+    if _srw_s != [SR_W]:
+        print(f"       NOTE: these runs were written with SR_W = {'/'.join(map(str,_srw_s))} and the")
+        print(f"       current build uses {SR_W}.  The rates below use each run's OWN window, so")
+        print(f"       they are correct -- but they are NOT the {SR_W}-window measurement, and the")
+        print(f"       v3.11 finding showed a {_srw_s[0]}-window cannot see the recovery it is for.")
+        print("       Treat them as the old measurement, and re-run to get the new one.")
     print(f"       Counted only if it made {SR_W} preparations BEFORE a remap and {SR_W} after, so a fall")
     print("       and recovery cannot be a change of sample.  The population-level since-remap")
     print("       curve below IS open to that objection; this line is not.")
     print(f"    {'arm':<22}{'8 before':>10}{'8 after':>10}{'change':>9}{'n agent-remaps':>16}")
-    thin = []
+    thin, unknown = [], []
     for n in names:
         rows = [surv_remap(P2(r), True) for r in results[n]]
+        if any(x[3] == -1 for x in rows):
+            unknown.append(n)
+            print(f"    {n:<22}{'--':>10}{'--':>10}{'--':>9}{'--':>16}"
+                  f"   DROPPED: window not recorded in this checkpoint")
+            continue
         pre = np.nanmean([x[0] for x in rows]); post = np.nanmean([x[1] for x in rows])
         d = np.array([x[2] for x in rows], dtype=float)
         per_seed_n = [x[3] for x in rows]; nn = int(np.sum(per_seed_n))
@@ -970,6 +991,11 @@ def _decision_numbers(results):
             continue
         print(f"    {n:<22}{pre:>10.3f}{post:>10.3f}{np.nanmean(d):>9.3f}{nn:>16d}"
               f"   per seed {np.round(d,3).tolist()}")
+    if unknown:
+        print(f"    {len(unknown)} arm(s) dropped because the checkpoint predates the recorded")
+        print("    window.  Their counters were summed over whatever SR_W that build used, and")
+        print(f"    dividing by the current {SR_W} would be a guess producing a plausible number.")
+        print("    This line is CORROBORATING ONLY, so nothing in the reading depends on it.")
     if thin:
         print(f"    The line is DROPPED where n < {SRM_MIN_N} in any seed, never narrowed back: a")
         print("    narrower window does not measure the same thing less precisely, it measures the")

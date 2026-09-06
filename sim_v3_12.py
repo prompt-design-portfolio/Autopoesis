@@ -1083,6 +1083,10 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 n_first_late=W["first_n_late"], n_first_ok_late=W["first_ok_late"],
                 n_surv=W["surv_n"], n_surv_early=W["surv_early"], n_surv_late=W["surv_late"],
                 n_srm=W["srm_n"], n_srm_pre=W["srm_pre"], n_srm_post=W["srm_post"],
+                # the window these counters were summed over.  SR_W is a module constant, so a
+                # checkpoint written under one value and read under another would divide by the
+                # wrong denominator -- silently, with a plausible number.  Recorded per window.
+                sr_w=SR_W,
                 noops_per_1k=1000.0 * W["noops"] / max(W["steps"], 1),
                 e_bonus_per_1k=1000.0 * W["e_bonus"] / max(W["steps"], 1),     # share of energy income from nuts
                 att_n=ATT[1:, 0].tolist(), att_correct=ATT[1:, 1].tolist(),
