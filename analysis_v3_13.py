@@ -41,7 +41,7 @@ WORLD = dict(
     # per the ruling: raise spawn density, NEVER lengthen the era, since a longer era is more
     # time for the sorting this world exists to outrun.  Judged on `fixed` only, per rule 9.
     spawn_per_patch=6.0, food_value=0.7, poison_value=0.5,
-    repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=800, init_pop=300,
+    repro_threshold=3.0, repro_cost=1.5, max_energy=5.0, max_pop=1000, init_pop=300,
     # phase 2 adds three preparations.  Nothing else changes -- no new inputs, no items,
     # stations or nuts.  The fact to be learned sits on EVERY meal.
     # v3.12: prep_value = (K-1) * prep_fail = 4 * 0.25 = 1.0 puts the CHANCE EV of a preparation
@@ -86,13 +86,20 @@ VARIANTS = {
     "plastic + record":     _v(mode="plastic", plastic_layers="W2", record="real"),
     "plastic + noise":      _v(mode="plastic", plastic_layers="W2", record="noise"),
     "fixed + record":       _v(mode="fixed", record="real"),
+    # SLOW LABELS, brought forward from the deferred follow-up.  label_every = 3 x prep_every, so
+    # a label's meaning outlives what it names by three eras -- v3.5's tempo condition.  Meaning
+    # is still not inheritable: a genome fixing on "label j -> preparation k" is right for three
+    # eras and then wrong, which is far inside evolutionary time.
+    "plastic + record (slow)": _v(mode="plastic", plastic_layers="W2", record="real",
+                                  label_every=3 * WORLD["prep_every"]),
 }
 
 NULL = "plastic"        # v3.13 has no random arm: the baseline is v3.12's learner
 OUTCOME_ARMS = [n for n in VARIANTS if n != NULL]
 
 COLORS = {"plastic": "tab:grey", "plastic + record": "tab:blue",
-          "plastic + noise": "black", "fixed + record": "tab:red"}
+          "plastic + noise": "black", "fixed + record": "tab:red",
+          "plastic + record (slow)": "tab:green"}
 
 # Three levels on the preparation task, and the middle one is the one to watch:
 CHANCE = 1.0 / N_PREPS    # a random preparation: 1/5 = 0.200
@@ -617,14 +624,28 @@ def gate_r_permutation(run_, n_perm=400, seed=0):
     inheritable.  A large positive z means it is not, and the run is not read.
     """
     rng = np.random.default_rng(seed)
-    mats = []
+    # GROUP BY PI-EPOCH, not by era.  `plastic + record (slow)` holds one pi across 3 eras BY
+    # DESIGN, so permuting per era would destroy consistency that legitimately exists there and
+    # inflate z -- the gate would fire on the arm's own definition.  An epoch is a run of eras
+    # sharing a pi; for the fast arms an epoch IS an era.
+    groups, cur, cur_pi = [], None, None
     for w in era_windows(run_):
         w = [x for x in w if "mi_counts" in x]
         if not w:
             continue
         c = np.sum([np.asarray(x["mi_counts"]) for x in w], axis=0)
-        if c.sum() > 0:
-            mats.append(c)
+        if c.sum() <= 0:
+            continue
+        pi_ = tuple(w[-1].get("pi", ()))
+        if pi_ != cur_pi:
+            if cur is not None:
+                groups.append(cur)
+            cur, cur_pi = c, pi_
+        else:
+            cur = cur + c
+    if cur is not None:
+        groups.append(cur)
+    mats = groups
     if not mats:
         return dict(obs=np.nan, null=np.nan, sd=np.nan, z=np.nan, eras=0)
     obs = _mi(np.sum(mats, axis=0))
@@ -650,6 +671,35 @@ def nfc(L, ff=False):
     mean = ssum / n if n else np.nan
     rate = c / (n + c) if (n + c) else np.nan
     return mean, rate, int(n + c)
+
+
+def first_prep_by_mark(L):
+    """(i) Among FIRST-EVER preparations, the hit rate split by whether a positive mark for this
+    food type was already on the cell.  A first preparation is the agent's own genome plus
+    whatever the world is telling it -- it has learned nothing and written nothing, and by the
+    no-self-echo property the mark cannot be its own.  So a gap here is the record being used."""
+    return (rate(L, "n_fp_pos_ok", "n_fp_pos"), rate(L, "n_fp_none_ok", "n_fp_none"),
+            float(np.sum([r.get("n_fp_pos", 0) for r in L])),
+            float(np.sum([r.get("n_fp_none", 0) for r in L])))
+
+
+def follow_split(L):
+    """Following, split by whether the mark's endorsed preparation is the CORRECT one now.
+
+    `endorsed == correct` is CONFOUNDED: agreeing with a mark that points at the right answer is
+    indistinguishable from simply being right.  `endorsed != correct` is the unconfounded cell --
+    a stale mark from before the mapping moved, where following it is a MISTAKE, so an agent that
+    follows it can only be reading it.  1/K is the null in both."""
+    return (rate(L, "n_follg_ok", "n_follg"), float(np.sum([r.get("n_follg", 0) for r in L])),
+            rate(L, "n_follb_ok", "n_follb"), float(np.sum([r.get("n_follb", 0) for r in L])))
+
+
+def follow_rate(L):
+    """(ii) P(chosen preparation = pi^-1(strongest positive label) | a positive mark is present),
+    against 1/K.  This is FOLLOWING the record, measured directly on behaviour rather than
+    inferred from an outcome -- an agent can be right for its own reasons, but it cannot agree
+    with the mark this often by accident."""
+    return rate(L, "n_foll_ok", "n_foll"), float(np.sum([r.get("n_foll", 0) for r in L]))
 
 
 def v313_precheck(results, control=None):
@@ -686,14 +736,14 @@ def v313_precheck(results, control=None):
     print("\n  GATE R, matched permutation null (each era's label axis permuted independently:")
     print("  era count, sample sizes and within-era structure preserved, only cross-era")
     print("  consistency destroyed).  z near 0 = pi is doing its job, meaning is not inheritable.")
-    print(f"  {'arm':<24}{'observed':>10}{'null':>9}{'sd':>8}{'z':>8}{'eras':>6}   verdict")
+    print(f"  {'arm':<24}{'observed':>10}{'null':>9}{'sd':>8}{'z':>8}{'epochs':>8}   verdict")
     for n in names:
         gp = gate_r_permutation(results[n][0])
         if not np.isfinite(gp["z"]):
             print(f"  {n:<24}{'--':>10}   (no record)"); continue
         v = "PASS" if gp["z"] <= 2.0 else "GATE R FIRES"
         print(f"  {n:<24}{gp['obs']:>10.3f}{gp['null']:>9.3f}{gp['sd']:>8.3f}"
-              f"{gp['z']:>8.2f}{gp['eras']:>6d}   {v}")
+              f"{gp['z']:>8.2f}{gp['eras']:>8d}   {v}")
 
     print("\n" + "=" * 78)
     print("sym_gain -- the heritable read gain, starting at 0.05 and free to go negative")
@@ -703,6 +753,18 @@ def v313_precheck(results, control=None):
         p1 = np.nanmean([half(phase_half(r, 0), "sym_gain") for r in results[n]])
         p2 = g(n, "sym_gain")
         print(f"  {n:<24}{p1:>10.4f}{p2:>10.4f}{p2 - p1:>+9.4f}{g(n, 'sym_gain_pos'):>10.3f}")
+    base = next((k for k in names if k == "plastic"), None)
+    if base:
+        b = abs(g(base, "sym_gain"))
+        print(f"\n  |gain| MINUS the no-record arm's -- THE LICENSING STATISTIC.")
+        print(f"  |gain| rises in every arm including `{base}`, which has no record at all, so a")
+        print("  rising magnitude on its own is not evidence of reading.  The sign is absorbable")
+        print("  by W1, so magnitude is the statistic and the no-record arm is the baseline.")
+        print(f"  {'arm':<26}{'|gain|':>9}{'baseline':>10}{'delta':>9}")
+        for n in names:
+            if n == base:
+                continue
+            print(f"  {n:<26}{abs(g(n,'sym_gain')):>9.4f}{b:>10.4f}{abs(g(n,'sym_gain')) - b:>+9.4f}")
     print("  trajectory over phase 2, 6 bins:")
     for n in names:
         r = results[n][0]
@@ -721,11 +783,40 @@ def v313_precheck(results, control=None):
         print(f"  {n:<24}{le:>10.4f}{i_:>10.4f}{le - i_:>+18.4f}")
 
     print("\n" + "=" * 78)
-    print("NEWBORN preparations-to-first-correct -- the TRANSMISSION line")
+    print("TRANSMISSION -- two conditioned lines, both on behaviour the agent could not have")
+    print("learned or written itself")
     print("=" * 78)
-    print("  A newborn has written nothing, so every mark it reads was left by someone else.")
-    print("  The control is the SAME WORLD with sym_gain forced to zero -- the store stays live,")
-    print("  only the reading is disabled.  Removing the store would change the world.")
+    print("  NO SELF-ECHO is a PROPERTY of the design, not an assumption: a preparation CONSUMES")
+    print("  the food cell, so the mark it writes cannot be read for a preparation until food")
+    print("  respawns there -- and the reader is then whoever is standing on it.  An agent can")
+    print("  never read its own mark about the food it just prepared.")
+    print("\n  (i) FIRST-EVER preparations, split by whether a positive mark was already present")
+    print(f"  {'arm':<26}{'P(ok|mark)':>12}{'P(ok|none)':>12}{'gap':>9}{'n mark':>9}{'n none':>9}")
+    for n in names:
+        pos, none, npos, nnone = first_prep_by_mark(P2(results[n][0]))
+        gap = pos - none if np.isfinite(pos) and np.isfinite(none) else np.nan
+        print(f"  {n:<26}{pos:>12.3f}{none:>12.3f}{gap:>+9.3f}{npos:>9.0f}{nnone:>9.0f}")
+    print("\n  (ii) FOLLOWING the record: P(chosen = pi^-1(strongest positive label) | mark present)")
+    print("       SPLIT by whether the mark endorses the CORRECT preparation.  Agreeing with a")
+    print("       mark that points at the right answer is indistinguishable from being right;")
+    print("       the STALE cell -- the mark endorses a preparation that is wrong for this type")
+    print("       now -- is the unconfounded one, because following it is a mistake.")
+    print("       AND 1/K is the WRONG null for the stale cell.  An agent that simply KNOWS the")
+    print("       correct preparation picks it and so never agrees with a stale mark, whatever it")
+    print("       reads.  The null is the chance of landing on the endorsed-but-wrong preparation")
+    print("       GIVEN you did not pick the correct one: (1 - hit) / (K - 1).")
+    print(f"  {'arm':<26}{'all':>8}{'endorse=ok':>12}{'STALE':>8}{'null':>8}{'ratio':>8}{'n stale':>9}")
+    for n in names:
+        f_, nn = follow_rate(P2(results[n][0]))
+        gg, ng, bb, nb = follow_split(P2(results[n][0]))
+        h = prep_hit(P2(results[n][0]), True)
+        null = (1.0 - h) / (N_PREPS - 1) if np.isfinite(h) else np.nan
+        print(f"  {n:<26}{f_:>8.3f}{gg:>12.3f}{bb:>8.3f}{null:>8.3f}"
+              f"{(bb / null if null else np.nan):>8.2f}{nb:>9.0f}")
+    print("       ratio > 1 = FOLLOWS a mark it should not; ratio < 1 = AVOIDS it.  Either way")
+    print("       the label was read: you cannot avoid what you cannot see.  The noise arm is the")
+    print("       reference for how far from 1 an unread channel sits.")
+    print("\n  preparations-to-first-correct -- CORROBORATING ONLY, over agents that reached 5")
     print(f"  {'arm':<32}{'mean preps':>12}{'censored':>10}{'n':>8}")
     for n in names:
         m, c, nn = nfc(P2(results[n][0]), True)
@@ -733,7 +824,11 @@ def v313_precheck(results, control=None):
     if control:
         for n, r in control.items():
             m, c, nn = nfc(P2(r), True)
+            pos, none, npos, nnone = first_prep_by_mark(P2(r))
+            f_, fn = follow_rate(P2(r))
             print(f"  {n + '  [sym_gain = 0]':<32}{m:>12.3f}{c:>10.3f}{nn:>8d}")
+            print(f"    its (i) P(ok|mark) {pos:.3f} vs P(ok|none) {none:.3f}  gap {pos-none:+.3f}"
+                  f"   its (ii) follow {f_:.3f}")
 
     print("\n" + "=" * 78)
     print("POPULATION and the store")

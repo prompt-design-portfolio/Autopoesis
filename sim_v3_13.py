@@ -316,6 +316,7 @@ class World:
         # the gate is read POOLED ACROSS ERAS, where pi has rotated and the association must have
         # collapsed to the noise arm's level.
         self.mi = np.zeros((N_PREPS, 2, N_PREPS))
+        self.n_remaps = 0            # remaps since the chain came on; pi rotation counts THESE
         self.food = np.zeros((N_TYPES, g, g), dtype=bool)
         self.safe = 0                  # which of types 0,1 is safe to eat RAW.  Type 2 has no raw
                                        # value at all, so the flip does not touch it.
@@ -388,9 +389,14 @@ class World:
 
     def new_recipe(self, t):
         self.mapping = self._draw_mapping(self.mapping)
-        # pi is redrawn WITH the mapping unless label_every says otherwise.  The tempo follow-up
-        # (label_every a multiple of prep_every) is the only thing that separates them.
-        if not self.cfg.label_every or (t % self.cfg.label_every == 0):
+        # pi is redrawn WITH the mapping unless label_every says otherwise.  SLOW LABELS
+        # (label_every a multiple of prep_every) make a label's meaning OUTLIVE what it names --
+        # v3.5's tempo condition.  Counted in REMAPS, not steps: chain_start is not 0, so a
+        # modulo on t would redraw pi at arbitrary moments unrelated to the mapping.
+        self.n_remaps += 1
+        every = max(1, int(round(self.cfg.label_every / max(1, self.cfg.prep_every)))) \
+            if self.cfg.label_every else 1
+        if self.n_remaps % every == 0:
             self.pi = self._draw_pi()
         self.recipe_changes.append(t)
         self.last_remap = t
@@ -456,7 +462,7 @@ class Agent:
 
     __slots__ = ("W1", "b1", "W2", "b2", "H1", "H2", "e1", "e2", "eta1", "eta2", "lam1", "lam2",
                  "integrity", "repair", "nav_dir", "nav_here", "energy", "y", "x", "item", "tool", "B",
-                 "sym_gain", "nfc_done",
+                 "sym_gain", "nfc_done", "nfc_at",
                  "lineage", "gen", "born", "injected",
                  "attempts", "successes", "eats", "safe_eats", "cracks",
                  "since_recipe", "tool_made_t", "used_tool", "age_bins", "e2_hist", "prep_hist",
@@ -481,7 +487,8 @@ class Agent:
         self.lam1 = rng.uniform(0.5, 0.95); self.lam2 = rng.uniform(0.5, 0.95)
         self.integrity = np.ones(h)
         self.sym_gain = 0.0 if cfg.sym_gain_lock else float(cfg.sym_gain_init)
-        self.nfc_done = False        # has this agent had its first correct preparation recorded?
+        self.nfc_done = False        # has this agent had its first correct preparation yet?
+        self.nfc_at = 0              # at which of its own preparations
         self.repair = rng.uniform(0.2, 0.8)
         self.energy = cfg.founder_energy
         self.y, self.x = y, x
@@ -517,7 +524,7 @@ class Agent:
         c.repair = float(np.clip(self.repair + rng.normal(0, cfg.gene_sigma), 0, 1))
         c.nav_dir = float(np.clip(self.nav_dir + rng.normal(0, cfg.nav_sigma), 0, cfg.nav_max))
         c.nav_here = float(np.clip(self.nav_here + rng.normal(0, cfg.nav_sigma), 0, cfg.nav_max))
-        c.nfc_done = False
+        c.nfc_done = False; c.nfc_at = 0
         c.sym_gain = (0.0 if cfg.sym_gain_lock
                       else float(self.sym_gain + rng.normal(0, cfg.gene_sigma)))
         wire_nav(c.W1, c.W2, c.nav_dir, c.nav_here, cfg.scaffold_food, cfg.scaffold_chain)   # the instinct comes from the gene, not from mutated synapses
@@ -951,7 +958,9 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              **{f"prep_ok{i}": 0 for i in range(N_TYPES)},
              first_n=0, first_ok=0, surv_n=0, surv_early=0, surv_late=0,
              srm_n=0, srm_pre=0, srm_post=0, first_n_late=0, first_ok_late=0,
-             nfc_n=0, nfc_sum=0, nfc_cens=0)
+             nfc_n=0, nfc_sum=0, nfc_cens=0,
+             fp_pos_n=0, fp_pos_ok=0, fp_none_n=0, fp_none_ok=0, foll_n=0, foll_ok=0,
+             follg_n=0, follg_ok=0, follb_n=0, follb_ok=0)
     # FOUNDER-FREE mirror.  Injected agents are fresh random genomes; their own events dilute
     # every event-weighted metric toward chance, and the dilution is heaviest in exactly the arms
     # that need injecting -- so a non-learning arm reads as MORE random the worse it does.  WF
@@ -1093,18 +1102,50 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                     W["correct"] += 1; a.successes += 1; W["e_bonus"] += cfg.prep_value
                 else:
                     W["e_fail"] += cfg.prep_fail
+                # --- the READ CONTEXT, sampled BEFORE this preparation's own write ---
+                # NO SELF-ECHO BY CONSTRUCTION: a preparation CONSUMES the food cell, so the mark
+                # it writes cannot be read for a preparation until food respawns there -- by which
+                # time the reader is whoever is standing on it.  An agent can never read its own
+                # mark about the food it just prepared.
+                if cfg.record != "none":
+                    col = world.marks[ft, :, y, x]
+                    pos = col > 0.05                       # decayed dust does not count
+                    if pos.any():
+                        lab = int(np.argmax(np.where(pos, col, -np.inf)))
+                        inv = {l_: k_ for k_, l_ in enumerate(world.pi)}
+                        endorsed = inv[lab]
+                        agrees = (info["prep"] == endorsed)
+                        W["foll_n"] += 1; W["foll_ok"] += agrees
+                        if endorsed == world.mapping[ft]:
+                            W["follg_n"] += 1; W["follg_ok"] += agrees
+                        else:
+                            # THE UNCONFOUNDED CELL.  The mark endorses a preparation that is
+                            # WRONG for this type now -- a stale mark, from before the mapping
+                            # moved.  Following it is a mistake, so an agent that follows it is
+                            # demonstrably reading the mark rather than being right for its own
+                            # reasons.  1/K is still the null.
+                            W["follb_n"] += 1; W["follb_ok"] += agrees
+                        if a.attempts == 1:
+                            W["fp_pos_n"] += 1; W["fp_pos_ok"] += ok
+                    elif a.attempts == 1:
+                        W["fp_none_n"] += 1; W["fp_none_ok"] += ok
                 world.write_mark(ft, info["prep"], bool(ok), y, x, cfg)   # AUTOMATIC, costless
                 # NEWBORN preparations-to-first-correct.  A newborn has written nothing, so every
                 # mark it reads was left by someone else: this is the TRANSMISSION line, and it is
                 # not substitutable by the frozen replay, which cannot tell an agent using its own
                 # marks from one using another's.
-                if not a.nfc_done and a.attempts <= cfg.nfc_max:
-                    if ok:
-                        W["nfc_n"] += 1; W["nfc_sum"] += a.attempts; a.nfc_done = True
+                # CONDITIONED ON REACHING nfc_max PREPARATIONS.  Recorded only at the moment the
+                # agent makes its nfc_max-th, so the sample is agents that actually got that far
+                # and censoring is not confounded by short lives.  Corroborating only.
+                if ok and not a.nfc_done:
+                    a.nfc_done = True; a.nfc_at = a.attempts
+                if a.attempts == cfg.nfc_max:
+                    if a.nfc_at:
+                        W["nfc_n"] += 1; W["nfc_sum"] += a.nfc_at
                         if fnd:
-                            WF["nfc_n"] += 1; WF["nfc_sum"] += a.attempts
-                    elif a.attempts == cfg.nfc_max:
-                        W["nfc_cens"] += 1; a.nfc_done = True     # no correct one in the window
+                            WF["nfc_n"] += 1; WF["nfc_sum"] += a.nfc_at
+                    else:
+                        W["nfc_cens"] += 1
                         if fnd:
                             WF["nfc_cens"] += 1
                 if cfg.private_mem:
@@ -1259,6 +1300,12 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 store_gain=store_gain(agents, cfg, world.pi, True) if cfg.record != "none" else np.nan,
                 store_gain_innate=store_gain(agents, cfg, world.pi, False) if cfg.record != "none" else np.nan,
                 n_nfc=W["nfc_n"], nfc_sum=W["nfc_sum"], n_nfc_cens=W["nfc_cens"],
+                n_fp_pos=W["fp_pos_n"], n_fp_pos_ok=W["fp_pos_ok"],
+                n_fp_none=W["fp_none_n"], n_fp_none_ok=W["fp_none_ok"],
+                n_foll=W["foll_n"], n_foll_ok=W["foll_ok"],
+                n_follg=W["follg_n"], n_follg_ok=W["follg_ok"],
+                n_follb=W["follb_n"], n_follb_ok=W["follb_ok"],
+                n_remaps=world.n_remaps, pi_every=max(1, int(round(cfg.label_every / max(1, cfg.prep_every))) if cfg.label_every else 1),
                 f_n_nfc=WF["nfc_n"], f_nfc_sum=WF["nfc_sum"], f_n_nfc_cens=WF["nfc_cens"],
                 mi_counts=world.mi.copy(), pi=tuple(world.pi),
                 **mark_stats(world, cfg),
@@ -1353,6 +1400,20 @@ def record_semantics_selftest(verbose=True):
         n += 1
         if np.abs(w.marks).sum() > 1e-9:
             fails.append(f"eat on type {ft} wrote a mark; only preparations write")
+    # 3b: NO SELF-ECHO.  A preparation CONSUMES the food cell, so the mark it writes cannot be
+    # read for a preparation until food respawns there -- and the reader is then whoever is
+    # standing on it.  An agent can never read its own mark about the food it just prepared.
+    # This is a PROPERTY of the design, not a defect, and it is what makes the self-marking
+    # confound structurally weak rather than merely unlikely.
+    for ft in range(N_TYPES):
+        a, w, cfg = fresh(food=ft)
+        m, ev, info = resolve_action(a, PREP0 + 0, w, cfg, np.random.default_rng(0))
+        w.write_mark(ft, 0, bool(info["ok"]), 5, 5, cfg)
+        n += 2
+        if w.food[:, 5, 5].any():
+            fails.append(f"no-self-echo: type {ft} cell still holds food after a preparation")
+        if np.abs(w.marks[:, :, 5, 5]).sum() == 0:
+            fails.append(f"no-self-echo: type {ft} wrote no mark, so the check is vacuous")
     # 4: noise preserves sign and density, destroys the label association
     a, w, cfg = fresh(record="noise", food=0)
     labs = set()

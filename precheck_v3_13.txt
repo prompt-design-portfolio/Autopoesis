@@ -3,7 +3,7 @@ SELF-TESTS
 ==============================================================================
   1455 rows checked: (1 eat + 5 preps) x (1 empty + 3 food cells) x 60 mappings, plus the inedible-raw rows, the flip, moves, phase-1 masking and mapping distinctness
   world-semantics self-test: PASS
-  245 rows checked: automatic write (label, sign, type, cell) over 3 types x 5 preparations, eat-writes-nothing, noise, none, pi redraw, decay half-life 173 steps, read channels, sym_gain
+  251 rows checked: automatic write (label, sign, type, cell) over 3 types x 5 preparations, eat-writes-nothing, noise, none, pi redraw, decay half-life 173 steps, read channels, sym_gain
   record-semantics self-test: PASS
   injected agent tagged: True   ordinary agent untagged: True   injected agent's child untagged: True
   founder-free counts never exceed all-agents: True
@@ -18,32 +18,6 @@ SELF-TESTS
   m = +1: chosen action 0, its logit moved +0.2869  OK
   m = -1: chosen action 0, its logit moved -0.2869  OK
   learning rule self-test: PASS
-  eta 0: hit 0.501 -> 0.486  (drift +0.014)   pop [300]   max_gen [0]
-  eta 1: hit 0.558 -> 0.703  (drift +0.144)   pop [300]   max_gen [0]
-  required: with eta 0 the hit does not move (drift <= 0.05), and pop and max_gen
-  are single-valued across the window -- nothing but H can change.
-  frozen-replay self-test: PASS
-  world semantics      PASS
-  record semantics     PASS
-  founder tag          PASS
-  replay mapping       PASS
-  learning rule        PASS
-  frozen replay        PASS
-
-T=3 K=5 mappings=60 N_IN=31 READ=26 | arms ['plastic', 'plastic + record', 'plastic + noise', 'fixed + record']
-mark half-life 173 steps vs prep_every 700 | sym_gain_init 0.05 | nfc window 5
-[1/4] plastic seed=0  199s   elapsed 3.3 min, est. stage total 13 min
-[2/4] plastic + record seed=0  190s   elapsed 6.5 min, est. stage total 13 min
-[3/4] plastic + noise seed=0  170s   elapsed 9.3 min, est. stage total 12 min
-[4/4] fixed + record seed=0  74s   elapsed 10.5 min, est. stage total 11 min
-
-4 arms, 3000-step phases: 10.5 min
-control (plastic + record, sym_gain locked to 0): 12.3 min total
-
-==============================================================================
-GATE R -- MI between (label, sign) and the correct preparation, bits
-==============================================================================
-  Within an era MI is maximal BY CONSTRUCTION (label = pi(k)); that is the design.
 
 ==============================================================================
 GATE R -- MI between (label, sign) and the correct preparation, bits
@@ -52,13 +26,15 @@ GATE R -- MI between (label, sign) and the correct preparation, bits
   The gate is the POOLED value, which must be at or below the noise arm's.
   arm                        pooled  per-era mean   n writes
   plastic                       nan           nan          0
-  plastic + record            0.677         1.073      37086
-  plastic + noise             0.107         0.231      39855
+  plastic + record            1.200         1.009      38324
+  plastic + noise             0.343         0.260      41963
   fixed + record              1.124         0.939      20635
+  plastic + record (slow)     1.253         0.958      37636
 
   against the noise arm (the form originally specified) -- NOT the gate:
-    plastic + record         pooled - noise +0.570
-    fixed + record           pooled - noise +1.017
+    plastic + record         pooled - noise +0.858
+    fixed + record           pooled - noise +0.781
+    plastic + record (slow)  pooled - noise +0.910
     That comparison is confounded.  Pooled MI has a FLOOR set by the number of
     eras -- with E eras a label takes only E meanings -- and the noise arm has
     different within-era structure, so the difference mixes 'pi rotates' with
@@ -67,25 +43,38 @@ GATE R -- MI between (label, sign) and the correct preparation, bits
   GATE R, matched permutation null (each era's label axis permuted independently:
   era count, sample sizes and within-era structure preserved, only cross-era
   consistency destroyed).  z near 0 = pi is doing its job, meaning is not inheritable.
-  arm                       observed     null      sd       z  eras   verdict
+  arm                       observed     null      sd       z  epochs   verdict
   plastic                         --   (no record)
-  plastic + record             0.605    0.554   0.117    0.44     5   PASS
-  plastic + noise              0.151    0.151   0.000   -0.10     5   PASS
-  fixed + record               0.892    0.699   0.093    2.08     5   GATE R FIRES
+  plastic + record             0.896    0.738   0.117    1.35       5   PASS
+  plastic + noise              0.246    0.246   0.000    0.59       5   PASS
+  fixed + record               0.892    0.699   0.093    2.08       5   GATE R FIRES
+  plastic + record (slow)      1.024    0.913   0.151    0.73       2   PASS
 
 ==============================================================================
 sym_gain -- the heritable read gain, starting at 0.05 and free to go negative
 ==============================================================================
   arm                        phase 1   phase 2   change  frac > 0
-  plastic                    -0.1165   -0.2860  -0.1695     0.030
-  plastic + record           -0.1165   -0.3397  -0.2232     0.045
-  plastic + noise            -0.1165   -0.4483  -0.3319     0.013
+  plastic                    -0.1165   -0.4290  -0.3125     0.044
+  plastic + record           -0.1165   -0.1719  -0.0554     0.233
+  plastic + noise            -0.1165   -0.3531  -0.2366     0.039
   fixed + record              0.0013   -0.0675  -0.0687     0.276
+  plastic + record (slow)    -0.1165   -0.3504  -0.2339     0.116
+
+  |gain| MINUS the no-record arm's -- THE LICENSING STATISTIC.
+  |gain| rises in every arm including `plastic`, which has no record at all, so a
+  rising magnitude on its own is not evidence of reading.  The sign is absorbable
+  by W1, so magnitude is the statistic and the no-record arm is the baseline.
+  arm                          |gain|  baseline    delta
+  plastic + record             0.1719    0.4290  -0.2571
+  plastic + noise              0.3531    0.4290  -0.0759
+  fixed + record               0.0675    0.4290  -0.3615
+  plastic + record (slow)      0.3504    0.4290  -0.0786
   trajectory over phase 2, 6 bins:
-    plastic                 [-0.2776, -0.2881, -0.2887, -0.2882, -0.2813, -0.2877]
-    plastic + record        [-0.2932, -0.2973, -0.2876, -0.3288, -0.4149, -0.4183]
-    plastic + noise         [-0.4289, -0.4445, -0.4475, -0.447, -0.4365, -0.4829]
+    plastic                 [-0.3667, -0.4434, -0.4707, -0.4515, -0.4399, -0.4119]
+    plastic + record        [-0.2303, -0.2394, -0.2433, -0.1297, -0.1185, -0.0751]
+    plastic + noise         [-0.3235, -0.3727, -0.3665, -0.3626, -0.3497, -0.3442]
     fixed + record          [-0.0334, -0.0701, -0.0817, -0.0967, -0.0708, -0.0506]
+    plastic + record (slow) [-0.2309, -0.3416, -0.3994, -0.3762, -0.3602, -0.3716]
 
 ==============================================================================
 store_gain -- how much more the agent wants the preparation a POSITIVE mark endorses
@@ -95,30 +84,64 @@ store_gain -- how much more the agent wants the preparation a POSITIVE mark endo
   inside its own life.
   arm                        learned    innate  learned - innate
   plastic                        nan       nan              +nan
-  plastic + record           -0.2744   -0.2183           -0.0561
-  plastic + noise            -0.0356   -0.0984           +0.0629
+  plastic + record           -0.0214   -0.1154           +0.0940
+  plastic + noise             0.1252   -0.0089           +0.1341
   fixed + record             -0.0709   -0.0709           +0.0000
+  plastic + record (slow)    -0.1011   -0.1156           +0.0145
 
 ==============================================================================
-NEWBORN preparations-to-first-correct -- the TRANSMISSION line
+TRANSMISSION -- two conditioned lines, both on behaviour the agent could not have
+learned or written itself
 ==============================================================================
-  A newborn has written nothing, so every mark it reads was left by someone else.
-  The control is the SAME WORLD with sym_gain forced to zero -- the store stays live,
-  only the reading is disabled.  Removing the store would change the world.
+  NO SELF-ECHO is a PROPERTY of the design, not an assumption: a preparation CONSUMES
+  the food cell, so the mark it writes cannot be read for a preparation until food
+  respawns there -- and the reader is then whoever is standing on it.  An agent can
+  never read its own mark about the food it just prepared.
+
+  (i) FIRST-EVER preparations, split by whether a positive mark was already present
+  arm                         P(ok|mark)  P(ok|none)      gap   n mark   n none
+  plastic                            nan         nan     +nan        0        0
+  plastic + record                 0.257       0.136   +0.120     3722     1363
+  plastic + noise                  0.327       0.087   +0.241     2984     2635
+  fixed + record                   0.554       0.400   +0.154     1011      992
+  plastic + record (slow)          0.385       0.204   +0.181     2095     1741
+
+  (ii) FOLLOWING the record: P(chosen = pi^-1(strongest positive label) | mark present)
+       SPLIT by whether the mark endorses the CORRECT preparation.  Agreeing with a
+       mark that points at the right answer is indistinguishable from being right;
+       the STALE cell -- the mark endorses a preparation that is wrong for this type
+       now -- is the unconfounded one, because following it is a mistake.
+       AND 1/K is the WRONG null for the stale cell.  An agent that simply KNOWS the
+       correct preparation picks it and so never agrees with a stale mark, whatever it
+       reads.  The null is the chance of landing on the endorsed-but-wrong preparation
+       GIVEN you did not pick the correct one: (1 - hit) / (K - 1).
+  arm                            all  endorse=ok   STALE    null   ratio  n stale
+  plastic                        nan         nan     nan   0.123     nan        0
+  plastic + record             0.485       0.716   0.041   0.124    0.33    10309
+  plastic + noise              0.202       0.649   0.096   0.123    0.78    22013
+  fixed + record               0.433       0.542   0.051   0.147    0.35     2274
+  plastic + record (slow)      0.633       0.743   0.353   0.122    2.89     7015
+       ratio > 1 = FOLLOWS a mark it should not; ratio < 1 = AVOIDS it.  Either way
+       the label was read: you cannot avoid what you cannot see.  The noise arm is the
+       reference for how far from 1 an unread channel sits.
+
+  preparations-to-first-correct -- CORROBORATING ONLY, over agents that reached 5
   arm                               mean preps  censored       n
-  plastic                                1.907     0.036    2419
-  plastic + record                       1.688     0.037    2549
-  plastic + noise                        1.920     0.073    2311
-  fixed + record                         1.586     0.018    1584
+  plastic                                1.837     0.057    2286
+  plastic + record                       1.881     0.039    1903
+  plastic + noise                        1.991     0.031    2453
+  fixed + record                         1.615     0.022    1346
+  plastic + record (slow)                1.785     0.041    2072
 
 ==============================================================================
 POPULATION and the store
 ==============================================================================
   arm                        pop p1   pop p2   inj p2  prep hit  mark dens   |mark|
-  plastic                       306      763     0.00     0.493        nan      nan
-  plastic + record              306      717     0.00     0.519     0.4899    0.231
-  plastic + noise               306      637     0.00     0.479     0.5679    0.248
+  plastic                       306      857     0.00     0.508        nan      nan
+  plastic + record              306      812     0.00     0.505     0.5074    0.223
+  plastic + noise               306      861     0.00     0.507     0.5664    0.263
   fixed + record                168      261     0.23     0.411     0.2420    0.234
+  plastic + record (slow)       306      694     0.00     0.512     0.4365    0.246
 
 TRANSITION -- 500-step bins, 2000 steps either side of the preparations going live
 
@@ -129,9 +152,9 @@ TRANSITION -- 500-step bins, 2000 steps either side of the preparations going li
       2000-2500        314   0.587   0.187   0.626    0.066     0.00
       2500-3000        330   0.606   0.182   0.647    0.067     0.00
       3000-3500        417   0.565   0.165   0.632    0.058    39.44  <- switch
-      3500-4000        786   0.573   0.162   0.623    0.061    33.90
-      4000-4500        798   0.611   0.169   0.610    0.099    36.75
-      4500-5000        770   0.600   0.167   0.592    0.063    37.95
+      3500-4000        621   0.572   0.159   0.621    0.056    35.50
+      4000-4500        720   0.532   0.155   0.637    0.067    36.80
+      4500-5000        950   0.597   0.157   0.623    0.082    34.12
 
   plastic + record   (switch at t = 3000)
                bin     pop    safe    eta2    lam2   h_norm   att/1k
@@ -140,9 +163,9 @@ TRANSITION -- 500-step bins, 2000 steps either side of the preparations going li
       2000-2500        314   0.587   0.187   0.626    0.066     0.00
       2500-3000        330   0.606   0.182   0.647    0.067     0.00
       3000-3500        425   0.550   0.177   0.615    0.057    35.88  <- switch
-      3500-4000        763   0.596   0.174   0.610    0.061    32.88
-      4000-4500        796   0.568   0.183   0.614    0.087    35.05
-      4500-5000        788   0.561   0.200   0.606    0.098    34.36
+      3500-4000        694   0.580   0.176   0.601    0.057    34.39
+      4000-4500        947   0.569   0.179   0.576    0.066    30.86
+      4500-5000        995   0.554   0.174   0.576    0.098    28.99
 
   plastic + noise   (switch at t = 3000)
                bin     pop    safe    eta2    lam2   h_norm   att/1k
@@ -151,9 +174,9 @@ TRANSITION -- 500-step bins, 2000 steps either side of the preparations going li
       2000-2500        314   0.587   0.187   0.626    0.066     0.00
       2500-3000        330   0.606   0.182   0.647    0.067     0.00
       3000-3500        409   0.560   0.174   0.619    0.057    38.04  <- switch
-      3500-4000        559   0.605   0.184   0.606    0.070    35.15
-      4000-4500        486   0.583   0.186   0.597    0.076    49.68
-      4500-5000        777   0.573   0.191   0.614    0.095    39.06
+      3500-4000        645   0.604   0.183   0.602    0.063    34.21
+      4000-4500        587   0.651   0.188   0.583    0.067    36.73
+      4500-5000        803   0.532   0.196   0.585    0.070    34.40
 
   fixed + record   (switch at t = 3000)
                bin     pop    safe    eta2    lam2   h_norm   att/1k
@@ -165,3 +188,14 @@ TRANSITION -- 500-step bins, 2000 steps either side of the preparations going li
       3500-4000         98   0.458   0.067   0.651    0.000    59.82
       4000-4500        101   0.551   0.103   0.604    0.000    61.38
       4500-5000         56   0.412   0.164   0.508    0.000    64.91
+
+  plastic + record (slow)   (switch at t = 3000)
+               bin     pop    safe    eta2    lam2   h_norm   att/1k
+      1000-1500        207   0.626   0.173   0.608    0.047     0.00
+      1500-2000        276   0.593   0.190   0.604    0.056     0.00
+      2000-2500        314   0.587   0.187   0.626    0.066     0.00
+      2500-3000        330   0.606   0.182   0.647    0.067     0.00
+      3000-3500        425   0.550   0.177   0.615    0.057    35.88  <- switch
+      3500-4000        679   0.583   0.174   0.602    0.057    34.01
+      4000-4500        883   0.548   0.174   0.580    0.059    32.85
+      4500-5000        439   0.630   0.187   0.565    0.067    40.44

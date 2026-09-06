@@ -93,6 +93,7 @@ is a public good — and that is a clean negative rather than a re-derivation of
 | `plastic + record` | real | yes | the claim |
 | `plastic + noise record` | **labels randomised on write** | yes | the store's mere presence |
 | `fixed + record` | real | **no** | whether a genome can use a record without learning |
+| **`plastic + record (slow)`** | real, **`label_every` = 3 × `prep_every`** | yes | **whether a label's meaning outliving what it names is what the binding needs** |
 
 `noise record` is the load-bearing control. A store changes the world: channels exist, cells carry
 state, decay runs. An arm that improves *because a store exists* is not an arm that improved
@@ -103,28 +104,30 @@ destroyed.
 `fixed + record` is the genetic control. With `π` redrawn each era it should get nothing, and if it
 does get something, the meaning is leaking through the wiring.
 
-## Gate R
+## Gate R — RULED: the matched permutation null
 
 **The record's meaning must not be available to selection.** This is the v3.13 stop row.
 
-The drafted form does not transfer literally, and I should say so rather than restate it as though
-it did. In the previous draft, writing was a policy, and the gate asked whether the *architecture*
-supplied the symbol→preparation mapping. Here writing is deterministic by construction, so **within
-an era the mutual information between `(label, sign)` and the correct preparation is maximal — that
-is the point of the design, not a fault.**
+**The form I specified was the wrong instrument, and the pre-check showed it.** Pooled MI against
+the `noise record` arm fires on both real-record arms (+0.570 and +1.017 bits). That is the
+estimator, not a leak:
 
-The gate that carries the same intent under automatic writing is the **cross-era** one:
+- **Pooled MI has a floor set by the number of eras.** With E eras a label takes only E meanings,
+  so the empirical association cannot wash out however well `π` is doing its job. Measured:
+  `plastic + record` pooled **0.677 over ~3 eras and 0.605 over 5** — it decays with era count,
+  not toward the noise arm.
+- **The noise arm is not a matched comparison.** Its within-era structure differs, so the
+  difference mixes "π rotates" with "labels are random within an era".
 
-> **Gate R.** Pooled **across eras**, the mutual information between `(label, sign)` and the correct
-> preparation must be at or below the level the `noise record` arm produces. Reported per era as
-> well, where it is expected to be high.
->
-> A cross-era association above noise means `π` is not doing its job — the label→preparation binding
-> is stable enough for selection to capture — and the run is not read.
+> **Gate R.** Permute **each era's label axis independently** and pool. Era count, sample sizes and
+> within-era structure are all preserved; only cross-era consistency is destroyed — which is
+> exactly what the gate asks. **z ≤ 2.0** means the observed pooled association is no stronger than
+> chance given the era count: `π` is doing its job and meaning is not inheritable. Above that, the
+> run is not read.
 
-**DECISION 4 — RULED.** Gate R is the cross-era form above: pooled across eras, MI at or below the
-`noise record` arm's level, with the per-era value reported alongside. The check it performs is
-exactly "meaning is not inheritable", which is what the mechanism claims.
+Pre-check, 1 seed, 5 eras: `plastic + record` z **+0.44** PASS · `plastic + noise` z **−0.10**
+PASS · `fixed + record` z **+2.08** FIRES. The last is the arm where a genome could exploit a
+leak, so it is the one to watch; at 1 seed and 5 eras it is not decisive.
 
 Carried over unchanged: **row 0** at `pop < 80` · **row 1a** against v3.1 · **row 1b** as a measured
 genetic baseline · **row 1c** standing variation · **rig checks 2(a)–(c)** · founder-free metrics
@@ -141,6 +144,19 @@ with founder share printed · each arm's own type-blind level.
   is now: innate ≈ 0 says the genome cannot read the record (which `π` guarantees), and learned > 0
   says this agent bound it inside its own life.
 - **`mark_pref` is dropped.** There is no writing policy.
+
+### The `sym_gain` statistic — RULED
+
+**|gain| in a record arm minus |gain| in the no-record arm, per seed.**
+
+The magnitude, not the sign: the sign is absorbable by `W1`, so it carries no information about
+whether the channel is read. And the baseline is not zero — the pre-check found **|gain| rises in
+every arm including `plastic`, which has no record at all** (+0.170 plastic, +0.223 record,
+**+0.332 noise**). An unused gene grows on drift, and noise grew most. So a rising magnitude on its
+own is not evidence of reading, and the no-record arm is the only honest baseline.
+
+**This replaces the tempo follow-up's licensing statistic** — the follow-up is no longer
+conditional on anything, it is an arm in this experiment.
 
 **DECISION 5 — RULED.** An agent reads marks it wrote itself. That is memory, not transmission, and
 no probe on the standing population separates them. **The newborn line separates them**, because a
@@ -170,13 +186,32 @@ learned to read a mark, but only its own.
 Randomised is the primary comparison because it holds the observation statistics fixed; **erased is
 reported as the third cell** so the contribution of the channels' mere presence is visible.
 
-> **Claim (transmission).** **Newborn preparations-to-first-correct** — for agents in their first
-> preparations, how many preparations until the first correct one — is **lower in a marked world
-> than in an unmarked one**.
+> **Claim (transmission) — RULED. Two conditioned lines, replacing the newborn measure.**
 >
-> A newborn has written nothing and learned nothing. Every mark it reads came from another agent.
-> This is the line that says information *passed*, and it is not substitutable by the frozen-replay
-> pair, which cannot distinguish an agent using its own marks from an agent using someone else's.
+> **(i) Among FIRST-EVER preparations: P(correct | a positive mark for this type is on the cell)
+> vs P(correct | none), per arm.** A first preparation is the agent's genome plus whatever the
+> world is telling it — it has learned nothing and written nothing.
+>
+> **(ii) P(chosen preparation = π⁻¹(strongest positive label) | a positive mark is present),
+> against 1/K.** This is *following* the record, measured on behaviour rather than inferred from an
+> outcome. An agent can be right for its own reasons; it cannot agree with the mark this often by
+> accident.
+>
+> **Preparations-to-first-correct is kept as CORROBORATING ONLY, over agents that reached 5
+> preparations.** Conditioning on reaching 5 is what stops censoring being confounded by short
+> lives — which is how the pre-check's version read `fixed + record` as best at 1.586 while its
+> population was 261 against 717.
+
+### No self-echo — a property of the design, not a defect
+
+A preparation **consumes the food cell**. So the mark it writes cannot be read for a preparation
+until food respawns there, and the reader is then whoever is standing on it. **An agent can never
+read its own mark about the food it just prepared.**
+
+This is what makes the self-marking confound structurally weak rather than merely unlikely, and it
+is why the two lines above are transmission measures and not memory measures. It is checked in
+`record_semantics_selftest` — after a preparation the cell holds no food and the mark is present —
+so it is a verified property, not an argument.
 
 **DECISION 6 — RULED.** Preparations 1..n of a life, in a world with the store live against the same
 world with **`sym_gain` forced to zero**. Not the store removed: removing it changes the world —
@@ -202,35 +237,39 @@ and as the hit on preparation 1 alone.
 > v3.13 nulls on a **capacity** limit, not a public-goods one. That would be a new result, and it
 > is the reason this version is worth running where the previous draft was not.
 
-## The pre-registered follow-up, if v3.13 nulls on capacity
+## Slow labels — an ARM, not a follow-up
 
-The capacity null named in DECISION 7 is a specific failure with a specific remedy, and it is
-recorded **before the run** so it cannot be chosen after seeing the result.
+`π` is redrawn every **3 remaps** rather than every one, so a label's meaning **outlives what it
+names** by three eras. This is v3.5's tempo condition: two facts moving at different rates, with
+the slower one the thing that has to be learned.
 
-> **If v3.13 nulls on capacity** — the learner reads nothing not because the record is useless but
-> because binding a label that rotates every era is harder than the conjunction itself — **the next
-> change is to rotate labels SLOWER than the mapping.**
+**Meaning is still not inheritable.** A genome fixing on "label *j* means preparation *k*" is right
+for three eras and then wrong, far inside evolutionary time — and Gate R's permutation null tests
+exactly that, on this arm as on the others.
 
-`π` is redrawn every `label_every` steps with `label_every` a multiple of `prep_every`, so **a
-label's meaning outlives the thing it names**. The mapping still moves every era; the label→
-preparation binding persists across several. An agent then has more than one era in which to learn
-what label `j` means, while what label `j` *points at* keeps changing — so meaning is still not
-inheritable, because a genome that fixed on "label j → preparation π⁻¹(j)" would be right only
-until the next `π` redraw, and `label_every` is still far inside evolutionary time.
+It is an **arm now, not a follow-up conditional on a null**, so the comparison is made inside one
+experiment rather than across two. Nothing else moves with it: gates, probes and claims are
+identical across the record arms.
 
-**This is v3.5's tempo condition**: two facts moving at different rates, with the slower one the
-thing that has to be learned. The project has run that structure before and it is the natural home
-for a capacity result.
+> **The pre-registered reading, recorded before the run.**
+>
+> | fast (`plastic + record`) | slow (`plastic + record (slow)`) | conclusion |
+> |---|---|---|
+> | null | **positive** | **capacity limit confirmed, and the tempo condition established.** Binding a label that rotates every era is harder than the conjunction itself; give the label three eras and it binds. |
+> | null | null | **the first earned transmission null.** A record handed over free, costless to write, costless to read, its meaning stable for three eras, still carries nothing between agents. |
+> | positive | positive | the record works; read the margin for whether tempo helps. |
+> | positive | null | would need explaining before anything is claimed — slower meaning should not *hurt*. |
 
-**It is ONE CHANGE, not a rule change.** `label_every` moves from `prep_every` to a multiple of it,
-and nothing about the arms, the gates, the probes or the claims moves with it. The claim lines stay
-exactly as specified above — a rule change after a null would make the follow-up unreadable against
-v3.13, which is the whole reason for pre-registering it now.
+## The world, carried from v3.12 with one change
 
-> **The condition for firing it.** A capacity null is: `sym_gain` **does** rise in
-> `plastic + record` and not in `noise record` (so the channel is being attended to), **and**
-> `store_gain` learned is at or near zero (so nothing was bound). `sym_gain` failing to rise at all
-> is a different result and does **not** license this follow-up.
+`T = 3`, `K = 5`, 60 mappings, `prep_every` 700, `prep_value` 1.0 = (K−1)·`prep_fail` 0.25 so the
+chance EV of a preparation is exactly zero, `spawn_per_patch` 6.0.
+
+**`max_pop` 800 → 1000.** Selection on `sym_gain` needs fecundity: it is one scalar among several
+heritable genes, and a population held at the cap has its reproduction throttled, which is exactly
+the pressure that would have to move it. The pre-check found `plastic` at 763 of 800 — 95%, which
+would have failed the cap check — so the cap was binding on the arm that is the baseline for the
+licensing statistic.
 
 ## What is deferred
 
