@@ -558,6 +558,203 @@ def frozen_knockout(results, name, steps=FROZEN_STEPS, snap=-1):
     return out
 
 
+# ---------------------------------------------------------------- v3.13 readers
+
+def _mi(counts):
+    """Mutual information in bits between X = (label, sign) and Y = the correct preparation."""
+    c = np.asarray(counts, dtype=float).reshape(-1, counts.shape[-1])   # (label*sign, correct)
+    n = c.sum()
+    if n <= 0:
+        return np.nan
+    p = c / n
+    px, py = p.sum(1, keepdims=True), p.sum(0, keepdims=True)
+    nz = p > 0
+    return float(np.sum(p[nz] * np.log2(p[nz] / (px @ py)[nz])))
+
+
+def gate_r(run_, per_era=True):
+    """GATE R.  Pooled ACROSS eras, the mutual information between (label, sign) and the correct
+    preparation must be at or below the level the `noise record` arm produces.
+
+    Within an era it is maximal BY CONSTRUCTION -- label = pi(k) and sign = whether k was right,
+    so the mark names the preparation exactly.  That is the design, not a leak.  What must not
+    survive is the association ACROSS eras: pi is redrawn at every remap, so a genome that fixed on
+    "label j means preparation k" is right only until the next redraw.  A pooled MI above the noise
+    arm's means pi is not rotating fast enough for selection to be excluded, and the run is not
+    read.
+    """
+    L2 = phase_half(run_, 1)
+    if not L2 or "mi_counts" not in L2[0]:
+        return dict(pooled=np.nan, per_era=[], n=0)
+    pooled = np.sum([np.asarray(r["mi_counts"]) for r in L2], axis=0)
+    out = dict(pooled=_mi(pooled), n=float(pooled.sum()), per_era=[])
+    if per_era:
+        for w in era_windows(run_):
+            w = [r for r in w if "mi_counts" in r]
+            if not w:
+                continue
+            c = np.sum([np.asarray(r["mi_counts"]) for r in w], axis=0)
+            if c.sum() > 0:
+                out["per_era"].append(_mi(c))
+    return out
+
+
+def gate_r_permutation(run_, n_perm=400, seed=0):
+    """GATE R, on a MATCHED null.
+
+    The form I specified -- pooled MI compared against the `noise record` arm -- is the wrong
+    instrument, and the v3.13 pre-check showed why.  Pooled MI has a floor set by the NUMBER OF
+    ERAS: with E eras a label takes only E meanings, so the empirical association cannot wash out
+    however well pi is doing its job.  Measured: `plastic + record` pooled 0.677 over ~3 eras and
+    0.605 over 5 -- it decays with era count, not toward the noise arm.  And the noise arm is not
+    a matched comparison: it has different within-era structure, so the difference confounds "pi
+    rotates" with "labels are random within an era".
+
+    The matched null permutes EACH ERA'S LABEL AXIS INDEPENDENTLY: era count, sample sizes and
+    within-era structure are all preserved, and only cross-era consistency is destroyed.  That is
+    exactly the question the gate asks.  z near 0 means the observed pooled association is no
+    stronger than chance given the era count -- pi is doing its job and meaning is not
+    inheritable.  A large positive z means it is not, and the run is not read.
+    """
+    rng = np.random.default_rng(seed)
+    mats = []
+    for w in era_windows(run_):
+        w = [x for x in w if "mi_counts" in x]
+        if not w:
+            continue
+        c = np.sum([np.asarray(x["mi_counts"]) for x in w], axis=0)
+        if c.sum() > 0:
+            mats.append(c)
+    if not mats:
+        return dict(obs=np.nan, null=np.nan, sd=np.nan, z=np.nan, eras=0)
+    obs = _mi(np.sum(mats, axis=0))
+    null = []
+    for _ in range(n_perm):
+        tot = np.zeros_like(mats[0])
+        for m in mats:
+            tot += m[rng.permutation(m.shape[0])]
+        null.append(_mi(tot))
+    mu, sd = float(np.mean(null)), float(np.std(null))
+    return dict(obs=obs, null=mu, sd=sd, z=(obs - mu) / sd if sd > 0 else np.nan, eras=len(mats))
+
+
+def nfc(L, ff=False):
+    """Newborn preparations-to-first-correct: mean over agents that got one inside the window, and
+    the censoring rate (agents that did not).  Lower mean and lower censoring is better."""
+    p = "f_" if ff else ""
+    if not has(L, f"{p}n_nfc"):
+        return np.nan, np.nan, 0
+    n = float(np.sum([r[f"{p}n_nfc"] for r in L]))
+    c = float(np.sum([r[f"{p}n_nfc_cens"] for r in L]))
+    ssum = float(np.sum([r["f_nfc_sum" if ff else "nfc_sum"] for r in L]))
+    mean = ssum / n if n else np.nan
+    rate = c / (n + c) if (n + c) else np.nan
+    return mean, rate, int(n + c)
+
+
+def v313_precheck(results, control=None):
+    """The v3.13 pre-check reading.  Nothing here is a claim -- 1 seed, short phases."""
+    names = list(results)
+    P2 = lambda r: phase_half(r, 1)
+    g = lambda n, key: np.nanmean([half(P2(r), key) for r in results[n]])
+
+    print("\n" + "=" * 78)
+    print("GATE R -- MI between (label, sign) and the correct preparation, bits")
+    print("=" * 78)
+    print("  Within an era MI is maximal BY CONSTRUCTION (label = pi(k)); that is the design.")
+    print("  The gate is the POOLED value, which must be at or below the noise arm's.")
+    print(f"  {'arm':<24}{'pooled':>9}{'per-era mean':>14}{'n writes':>11}")
+    pooled = {}
+    for n in names:
+        rs = [gate_r(r) for r in results[n]]
+        pl = np.nanmean([x["pooled"] for x in rs])
+        pe = np.nanmean([np.nanmean(x["per_era"]) if x["per_era"] else np.nan for x in rs])
+        nn = np.nansum([x["n"] for x in rs])
+        pooled[n] = pl
+        print(f"  {n:<24}{pl:>9.3f}{pe:>14.3f}{nn:>11.0f}")
+    noise = next((k for k in names if "noise" in k), None)
+    if noise and np.isfinite(pooled.get(noise, np.nan)):
+        print(f"\n  against the noise arm (the form originally specified) -- NOT the gate:")
+        for n in names:
+            if n == noise or not np.isfinite(pooled[n]):
+                continue
+            print(f"    {n:<24} pooled - noise {pooled[n] - pooled[noise]:+.3f}")
+        print("    That comparison is confounded.  Pooled MI has a FLOOR set by the number of")
+        print("    eras -- with E eras a label takes only E meanings -- and the noise arm has")
+        print("    different within-era structure, so the difference mixes 'pi rotates' with")
+        print("    'labels are random within an era'.  The gate is the matched null below.")
+    print("\n  GATE R, matched permutation null (each era's label axis permuted independently:")
+    print("  era count, sample sizes and within-era structure preserved, only cross-era")
+    print("  consistency destroyed).  z near 0 = pi is doing its job, meaning is not inheritable.")
+    print(f"  {'arm':<24}{'observed':>10}{'null':>9}{'sd':>8}{'z':>8}{'eras':>6}   verdict")
+    for n in names:
+        gp = gate_r_permutation(results[n][0])
+        if not np.isfinite(gp["z"]):
+            print(f"  {n:<24}{'--':>10}   (no record)"); continue
+        v = "PASS" if gp["z"] <= 2.0 else "GATE R FIRES"
+        print(f"  {n:<24}{gp['obs']:>10.3f}{gp['null']:>9.3f}{gp['sd']:>8.3f}"
+              f"{gp['z']:>8.2f}{gp['eras']:>6d}   {v}")
+
+    print("\n" + "=" * 78)
+    print("sym_gain -- the heritable read gain, starting at 0.05 and free to go negative")
+    print("=" * 78)
+    print(f"  {'arm':<24}{'phase 1':>10}{'phase 2':>10}{'change':>9}{'frac > 0':>10}")
+    for n in names:
+        p1 = np.nanmean([half(phase_half(r, 0), "sym_gain") for r in results[n]])
+        p2 = g(n, "sym_gain")
+        print(f"  {n:<24}{p1:>10.4f}{p2:>10.4f}{p2 - p1:>+9.4f}{g(n, 'sym_gain_pos'):>10.3f}")
+    print("  trajectory over phase 2, 6 bins:")
+    for n in names:
+        r = results[n][0]
+        b = [round(float(half(w, "sym_gain")), 4) for w in _bins(r, 6)]
+        print(f"    {n:<24}{b}")
+
+    print("\n" + "=" * 78)
+    print("store_gain -- how much more the agent wants the preparation a POSITIVE mark endorses")
+    print("=" * 78)
+    print("  learned vs innate is the BINDING instrument: innate ~ 0 says the genome cannot read")
+    print("  the record (which redrawing pi guarantees); learned > 0 says this agent bound it")
+    print("  inside its own life.")
+    print(f"  {'arm':<24}{'learned':>10}{'innate':>10}{'learned - innate':>18}")
+    for n in names:
+        le, i_ = g(n, "store_gain"), g(n, "store_gain_innate")
+        print(f"  {n:<24}{le:>10.4f}{i_:>10.4f}{le - i_:>+18.4f}")
+
+    print("\n" + "=" * 78)
+    print("NEWBORN preparations-to-first-correct -- the TRANSMISSION line")
+    print("=" * 78)
+    print("  A newborn has written nothing, so every mark it reads was left by someone else.")
+    print("  The control is the SAME WORLD with sym_gain forced to zero -- the store stays live,")
+    print("  only the reading is disabled.  Removing the store would change the world.")
+    print(f"  {'arm':<32}{'mean preps':>12}{'censored':>10}{'n':>8}")
+    for n in names:
+        m, c, nn = nfc(P2(results[n][0]), True)
+        print(f"  {n:<32}{m:>12.3f}{c:>10.3f}{nn:>8d}")
+    if control:
+        for n, r in control.items():
+            m, c, nn = nfc(P2(r), True)
+            print(f"  {n + '  [sym_gain = 0]':<32}{m:>12.3f}{c:>10.3f}{nn:>8d}")
+
+    print("\n" + "=" * 78)
+    print("POPULATION and the store")
+    print("=" * 78)
+    print(f"  {'arm':<24}{'pop p1':>9}{'pop p2':>9}{'inj p2':>9}{'prep hit':>10}"
+          f"{'mark dens':>11}{'|mark|':>9}")
+    for n in names:
+        print(f"  {n:<24}"
+              f"{np.nanmean([half(phase_half(r,0),'pop') for r in results[n]]):>9.0f}"
+              f"{g(n,'pop'):>9.0f}{g(n,'injections'):>9.2f}"
+              f"{np.nanmean([prep_hit(P2(r), True) for r in results[n]]):>10.3f}"
+              f"{g(n,'mark_density'):>11.4f}{g(n,'mark_mean_abs'):>9.3f}")
+
+
+def _bins(run_, k):
+    L = phase_half(run_, 1) or run_["log"]
+    lo, hi = L[0]["t"], L[-1]["t"]
+    step = max(1, (hi - lo) // k)
+    return [[r for r in L if b < r["t"] <= b + step] for b in range(lo - 1, hi, step)][:k]
+
+
 def frozen_selftest(seed=0, verbose=True):
     """With learning OFF, a frozen replay's hit rate must not move across the window.
 

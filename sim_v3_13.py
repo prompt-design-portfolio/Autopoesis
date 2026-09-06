@@ -129,6 +129,12 @@ class Config:
                                   # record is evolved, not wired.  May go negative -- "do the
                                   # opposite of the mark" is a coherent policy and the right one
                                   # in `noise`.
+    sym_gain_lock: bool = False   # force sym_gain = 0 for every agent and every child.  This is
+                                  # the NEWBORN CONTROL: the store stays live -- same mark density,
+                                  # same cell state, same decay -- and only the READING is
+                                  # disabled.  Removing the store instead would change the world.
+    nfc_max: int = 5              # newborn preparations-to-first-correct: the window, in an
+                                  # agent's own first preparations.
     label_every: int = 0          # 0 = pi is redrawn with the mapping.  A MULTIPLE of prep_every
                                   # makes a label's meaning outlive what it names -- v3.5's tempo
                                   # condition, the pre-registered follow-up if v3.13 nulls on
@@ -305,6 +311,11 @@ class World:
         # evidence about type B.  T*K per cell: 60x60x3x5 = 54,000 floats, negligible.
         self.marks = np.zeros((N_TYPES, N_PREPS, g, g))
         self.pi = tuple(range(N_PREPS))       # label of preparation k is pi[k]; set below
+        # GATE R's joint sample: counts over (label, sign) x correct-preparation, taken at every
+        # WRITE.  Within an era this is deterministic by construction -- that IS the design -- so
+        # the gate is read POOLED ACROSS ERAS, where pi has rotated and the association must have
+        # collapsed to the noise arm's level.
+        self.mi = np.zeros((N_PREPS, 2, N_PREPS))
         self.food = np.zeros((N_TYPES, g, g), dtype=bool)
         self.safe = 0                  # which of types 0,1 is safe to eat RAW.  Type 2 has no raw
                                        # value at all, so the flip does not touch it.
@@ -373,6 +384,7 @@ class World:
             return
         label = self.pi[k] if cfg.record == "real" else int(self.rng.integers(N_PREPS))
         self.marks[ftype, label, y, x] = 1.0 if ok else -1.0
+        self.mi[label, 1 if ok else 0, self.mapping[ftype]] += 1.0
 
     def new_recipe(self, t):
         self.mapping = self._draw_mapping(self.mapping)
@@ -444,7 +456,7 @@ class Agent:
 
     __slots__ = ("W1", "b1", "W2", "b2", "H1", "H2", "e1", "e2", "eta1", "eta2", "lam1", "lam2",
                  "integrity", "repair", "nav_dir", "nav_here", "energy", "y", "x", "item", "tool", "B",
-                 "sym_gain",
+                 "sym_gain", "nfc_done",
                  "lineage", "gen", "born", "injected",
                  "attempts", "successes", "eats", "safe_eats", "cracks",
                  "since_recipe", "tool_made_t", "used_tool", "age_bins", "e2_hist", "prep_hist",
@@ -468,7 +480,8 @@ class Agent:
         self.eta1 = rng.uniform(0, cfg.eta_init); self.eta2 = rng.uniform(0, cfg.eta_init)
         self.lam1 = rng.uniform(0.5, 0.95); self.lam2 = rng.uniform(0.5, 0.95)
         self.integrity = np.ones(h)
-        self.sym_gain = float(cfg.sym_gain_init)   # heritable read gain, starts near zero
+        self.sym_gain = 0.0 if cfg.sym_gain_lock else float(cfg.sym_gain_init)
+        self.nfc_done = False        # has this agent had its first correct preparation recorded?
         self.repair = rng.uniform(0.2, 0.8)
         self.energy = cfg.founder_energy
         self.y, self.x = y, x
@@ -504,7 +517,9 @@ class Agent:
         c.repair = float(np.clip(self.repair + rng.normal(0, cfg.gene_sigma), 0, 1))
         c.nav_dir = float(np.clip(self.nav_dir + rng.normal(0, cfg.nav_sigma), 0, cfg.nav_max))
         c.nav_here = float(np.clip(self.nav_here + rng.normal(0, cfg.nav_sigma), 0, cfg.nav_max))
-        c.sym_gain = float(self.sym_gain + rng.normal(0, cfg.gene_sigma))
+        c.nfc_done = False
+        c.sym_gain = (0.0 if cfg.sym_gain_lock
+                      else float(self.sym_gain + rng.normal(0, cfg.gene_sigma)))
         wire_nav(c.W1, c.W2, c.nav_dir, c.nav_here, cfg.scaffold_food, cfg.scaffold_chain)   # the instinct comes from the gene, not from mutated synapses
         c.energy = cfg.start_energy
         c.y, c.x = self.y, self.x
@@ -935,7 +950,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              **{f"prep_n{i}": 0 for i in range(N_TYPES)},
              **{f"prep_ok{i}": 0 for i in range(N_TYPES)},
              first_n=0, first_ok=0, surv_n=0, surv_early=0, surv_late=0,
-             srm_n=0, srm_pre=0, srm_post=0, first_n_late=0, first_ok_late=0)
+             srm_n=0, srm_pre=0, srm_post=0, first_n_late=0, first_ok_late=0,
+             nfc_n=0, nfc_sum=0, nfc_cens=0)
     # FOUNDER-FREE mirror.  Injected agents are fresh random genomes; their own events dilute
     # every event-weighted metric toward chance, and the dilution is heaviest in exactly the arms
     # that need injecting -- so a non-learning arm reads as MORE random the worse it does.  WF
@@ -945,7 +961,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                          *[f"prep_n{i}" for i in range(N_TYPES)],
                          *[f"prep_ok{i}" for i in range(N_TYPES)],
                          "surv_n", "surv_early", "surv_late", "srm_n", "srm_pre", "srm_post",
-                         "first_n_late", "first_ok_late")}
+                         "first_n_late", "first_ok_late",
+                         "nfc_n", "nfc_sum", "nfc_cens")}
     ATT = np.zeros((cfg.n_attempts + 1, 2))     # attempt number in an agent's life -> (n, correct)
     ATT_R = np.zeros((cfg.n_attempts + 1, 2))   # attempts since the last recipe change
     ATT_F = np.zeros((cfg.n_attempts + 1, 2))   # ... both, founder-free
@@ -1077,6 +1094,19 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 else:
                     W["e_fail"] += cfg.prep_fail
                 world.write_mark(ft, info["prep"], bool(ok), y, x, cfg)   # AUTOMATIC, costless
+                # NEWBORN preparations-to-first-correct.  A newborn has written nothing, so every
+                # mark it reads was left by someone else: this is the TRANSMISSION line, and it is
+                # not substitutable by the frozen replay, which cannot tell an agent using its own
+                # marks from one using another's.
+                if not a.nfc_done and a.attempts <= cfg.nfc_max:
+                    if ok:
+                        W["nfc_n"] += 1; W["nfc_sum"] += a.attempts; a.nfc_done = True
+                        if fnd:
+                            WF["nfc_n"] += 1; WF["nfc_sum"] += a.attempts
+                    elif a.attempts == cfg.nfc_max:
+                        W["nfc_cens"] += 1; a.nfc_done = True     # no correct one in the window
+                        if fnd:
+                            WF["nfc_cens"] += 1
                 if cfg.private_mem:
                     j = ft * N_PREPS + info["prep"]
                     a.B[j] = 0.7 * a.B[j] + 0.3 * (1.0 if ok else -1.0)   # exact credit, hand-wired
@@ -1223,6 +1253,15 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 # checkpoint written under one value and read under another would divide by the
                 # wrong denominator -- silently, with a plausible number.  Recorded per window.
                 sr_w=SR_W,
+                # v3.13
+                sym_gain=float(np.mean([a.sym_gain for a in agents])),
+                sym_gain_pos=float(np.mean([a.sym_gain > 0 for a in agents])),
+                store_gain=store_gain(agents, cfg, world.pi, True) if cfg.record != "none" else np.nan,
+                store_gain_innate=store_gain(agents, cfg, world.pi, False) if cfg.record != "none" else np.nan,
+                n_nfc=W["nfc_n"], nfc_sum=W["nfc_sum"], n_nfc_cens=W["nfc_cens"],
+                f_n_nfc=WF["nfc_n"], f_nfc_sum=WF["nfc_sum"], f_n_nfc_cens=WF["nfc_cens"],
+                mi_counts=world.mi.copy(), pi=tuple(world.pi),
+                **mark_stats(world, cfg),
                 noops_per_1k=1000.0 * W["noops"] / max(W["steps"], 1),
                 e_bonus_per_1k=1000.0 * W["e_bonus"] / max(W["steps"], 1),     # share of energy income from nuts
                 att_n=ATT[1:, 0].tolist(), att_correct=ATT[1:, 1].tolist(),
@@ -1244,6 +1283,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 meal_n=MEALS[1:, 0].tolist(), meal_safe=MEALS[1:, 1].tolist(),
             ))
             ATT[:] = 0; ATT_R[:] = 0; MEALS[:] = 0; ATT_F[:] = 0; ATT_R_F[:] = 0
+            world.mi[:] = 0.0        # per-window counts; the reader pools per era or overall
             for k in W:
                 W[k] = 0 if isinstance(W[k], int) else 0.0
             for k in WF:
