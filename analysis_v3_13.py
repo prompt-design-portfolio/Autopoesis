@@ -1,5 +1,5 @@
 """
-v3.12 analysis -- the preparation world, after the v3.10 acceptance run.
+v3.13 analysis -- the record -- the preparation world, after the v3.10 acceptance run.
 
 Two parameter changes (prep_every 2000 -> 700, prep_value 1.5 -> 1.0) and three rule fixes; see
 "Changes after the v3.10 acceptance" in spec_v3_11.md.
@@ -24,7 +24,7 @@ try:
 except Exception:
     plt = None
 
-from sim import (Config, run, N_PREPS, N_TYPES, PREP0, N_MAPPINGS, all_mappings,
+from sim_v3_13 import (Config, run, N_PREPS, N_TYPES, PREP0, N_MAPPINGS, all_mappings,
                  SR_W, SURV_EARLY)
 
 SRM_MIN_N = 30      # survivor-conditioned since-remap: minimum agent-remaps per seed.  Below this
@@ -77,24 +77,22 @@ def _v(**kw):
     return dict(kw=dict(**dict(WORLD, **kw)), phases=STAGED)
 
 VARIANTS = {
-    # uniform over the AVAILABLE actions: 5 in phase 1 (preparations masked), 10 in phase 2.
-    # So the conditional null is 1/5 then 1/10 per action, and 5/10 = 0.500 for "any preparation".
-    # Exempt from row 0: a random walker belongs at the population floor.
-    "random policy":       _v(mode="random"),
-    "fixed":               _v(mode="fixed"),
-    # the control that carries row 3: same plasticity, same H magnitudes, random-sign m
-    "scrambled":           _v(mode="plastic", plastic_layers="W2", scramble=True),
-    "plastic (W2)":        _v(mode="plastic", plastic_layers="W2"),
-    # hand-wired (food type, preparation) table with exact credit, forcing its argmax once it has
-    # evidence.  A policy override, the honest analogue of v2's veto.  Reference, not matched.
-    "fixed + B (ceiling)": _v(mode="fixed", private_mem=True),
+    # v3.13's four arms.  `plastic` is v3.12's world unchanged -- the baseline the record must
+    # beat.  `noise record` is the load-bearing control: a store changes the world (channels
+    # exist, cells carry state, decay runs), and an arm that improves because a store EXISTS is
+    # not an arm that improved because information PASSED.  Noise holds mark density, sign and
+    # decay identical and destroys only the label->preparation association.
+    "plastic":              _v(mode="plastic", plastic_layers="W2", record="none"),
+    "plastic + record":     _v(mode="plastic", plastic_layers="W2", record="real"),
+    "plastic + noise":      _v(mode="plastic", plastic_layers="W2", record="noise"),
+    "fixed + record":       _v(mode="fixed", record="real"),
 }
 
-NULL = "random policy"
+NULL = "plastic"        # v3.13 has no random arm: the baseline is v3.12's learner
 OUTCOME_ARMS = [n for n in VARIANTS if n != NULL]
 
-COLORS = {"random policy": "tab:grey", "fixed": "tab:red", "scrambled": "black",
-          "plastic (W2)": "tab:blue", "fixed + B (ceiling)": "tab:purple"}
+COLORS = {"plastic": "tab:grey", "plastic + record": "tab:blue",
+          "plastic + noise": "black", "fixed + record": "tab:red"}
 
 # Three levels on the preparation task, and the middle one is the one to watch:
 CHANCE = 1.0 / N_PREPS    # a random preparation: 1/5 = 0.200
@@ -451,7 +449,7 @@ def surv_curve(L, ff=False):
     n = float(np.sum([r[_k("n_surv", ff)] for r in L]))
     if not n:
         return np.nan, np.nan, np.nan, 0
-    from sim import SURV_EARLY
+    from sim_v3_13 import SURV_EARLY
     e = float(np.sum([r[_k("n_surv_early", ff)] for r in L])) / (SURV_EARLY * n)
     l = float(np.sum([r[_k("n_surv_late", ff)] for r in L])) / (5 * n)
     return e, l, l - e, int(n)
@@ -463,7 +461,7 @@ def surv_remap(L, ff=False):
     population-level since-remap curve is open to the objection that the agents alive at
     preparation 1 are not the ones alive at 10; this is not, because it is the same agent across
     the same remap."""
-    from sim import SR_W
+    from sim_v3_13 import SR_W
     if not has(L, _k("n_srm", ff)):
         return np.nan, np.nan, np.nan, 0
     n = float(np.sum([r[_k("n_srm", ff)] for r in L]))
@@ -509,7 +507,7 @@ def frozen_replay(run_, mapping, eta, steps=FROZEN_STEPS, snap=-1, seed_offset=7
     `snap["mapping"]` and is sorted for it.  `mapping` is what to pin for the replay: pass that one
     for MATCHED, any other for SHUFFLED.
     """
-    from sim import Config, run as _run
+    from sim_v3_13 import Config, run as _run
     sn = run_["era_snaps"][snap]
     cfg = dict(run_["cfg"]); cfg.pop("seed", None); cfg.pop("n_steps", None)
     cfg.update(eta_scale=float(eta), force_mapping=tuple(mapping), frozen=True,
@@ -568,7 +566,7 @@ def frozen_selftest(seed=0, verbose=True):
     v3.11 knockout never had: it used a live population, where selection moved the number and the
     reading was attributed to the genome anyway.
     """
-    from sim import Config, run as _run
+    from sim_v3_13 import Config, run as _run
     kw = dict(WORLD); kw.update(mode="plastic", plastic_layers="W2")
     src = _run(Config(seed=seed, **kw), verbose=False,
                phases=[dict(n_steps=1500, chain=False), dict(n_steps=2100, chain=True)])

@@ -24,7 +24,17 @@ try:
 except Exception:
     plt = None
 
-from sim import Config, run, N_PREPS, PREP0
+from sim_v3_11 import Config, run, N_PREPS, PREP0
+
+# GUARD.  sim.py is the CURRENT world and is now v3.12 (T=3, K=5).  This module is the v3.11
+# reader and must bind to sim_v3_11 only -- importing `sim` here would silently run the addendum
+# in the wrong world, with three food types and five preparations, and every number would look
+# plausible.  Fail loudly instead.
+import sim_v3_11 as _s11
+assert _s11.N_PREPS == 3 and not hasattr(_s11, "N_TYPES"), (
+    "analysis_v3_11 is bound to the wrong sim: expected the v3.11 world (2 food types, "
+    f"3 preparations), got N_PREPS={_s11.N_PREPS}")
+
 
 # ---------------------------------------------------------------------------
 # the world -- v3.1 metabolism throughout, the chain at the agreed cover targets
@@ -423,7 +433,7 @@ def surv_curve(L, ff=False):
     n = float(np.sum([r[_k("n_surv", ff)] for r in L]))
     if not n:
         return np.nan, np.nan, np.nan, 0
-    from sim import SURV_EARLY
+    from sim_v3_11 import SURV_EARLY
     e = float(np.sum([r[_k("n_surv_early", ff)] for r in L])) / (SURV_EARLY * n)
     l = float(np.sum([r[_k("n_surv_late", ff)] for r in L])) / (5 * n)
     return e, l, l - e, int(n)
@@ -435,7 +445,7 @@ def surv_remap(L, ff=False):
     population-level since-remap curve is open to the objection that the agents alive at
     preparation 1 are not the ones alive at 10; this is not, because it is the same agent across
     the same remap."""
-    from sim import SR_W
+    from sim_v3_11 import SR_W
     if not has(L, _k("n_srm", ff)):
         return np.nan, np.nan, np.nan, 0
     n = float(np.sum([r[_k("n_srm", ff)] for r in L]))
@@ -481,7 +491,7 @@ def frozen_replay(run_, mapping, eta, steps=FROZEN_STEPS, snap=-1, seed_offset=7
     `snap["mapping"]` and is sorted for it.  `mapping` is what to pin for the replay: pass that one
     for MATCHED, any other for SHUFFLED.
     """
-    from sim import Config, run as _run
+    from sim_v3_11 import Config, run as _run
     sn = run_["era_snaps"][snap]
     cfg = dict(run_["cfg"]); cfg.pop("seed", None); cfg.pop("n_steps", None)
     cfg.update(eta_scale=float(eta), force_mapping=tuple(mapping), frozen=True,
@@ -532,6 +542,77 @@ def frozen_knockout(results, name, steps=FROZEN_STEPS, snap=-1):
     return out
 
 
+def addendum_reference(results, name="plastic (W2)", steps=FROZEN_STEPS, snaps=(-1, -2, -3)):
+    """THE v3.12 NON-SHRINK REFERENCE.
+
+    v3.11's row 3b ran in its old, broken form -- a 10-step window on a run-end snapshot -- so the
+    grid produced no usable reference.  The frozen replay has never run on v3.11.  This is what
+    produces the number: the same frozen-population replay v3.12 uses, on v3.11's world, over
+    several era boundaries per seed.
+
+    Reported per seed as the SHUFFLED eta1 - eta0 gap, which is the quantity the v3.12 result must
+    not shrink below.  Several boundaries are read per seed because one boundary is one sample of
+    the population's state, and the reference should not rest on the last one alone.
+    """
+    rows = []
+    for r in results[name]:
+        avail = len(r.get("era_snaps") or [])
+        if not avail:
+            rows.append(dict(seed=r["cfg"]["seed"], missing=True)); continue
+        for k in snaps:
+            if abs(k) > avail:
+                continue
+            sn = r["era_snaps"][k]
+            fm = tuple(sn["mapping"])
+            cell = {}
+            for tag, mp in (("matched", fm), ("shuffled", shuffle_mapping(fm))):
+                for eta in (0, 1):
+                    rr = frozen_replay(r, mp, eta, steps=steps, snap=k)
+                    cell[f"{tag}_{eta}"] = dict(hit=prep_hit(rr["log"]),
+                                                pop=half(rr["log"], "pop"),
+                                                gen=half(rr["log"], "max_gen"))
+            rows.append(dict(seed=r["cfg"]["seed"], snap=k, t=sn["t"], mapping=fm,
+                             n_snap=len(sn["genomes"]), missing=False, **cell))
+    return rows
+
+
+def print_addendum(results, name="plastic (W2)"):
+    rows = addendum_reference(results, name)
+    print("=" * 92)
+    print("v3.11 ADDENDUM -- the frozen-replay reference for v3.12's non-shrink clause")
+    print("=" * 92)
+    print("Era-boundary snapshot, population FROZEN (births, deaths and injection off; energy")
+    print("tracked and spent but not lethal), 300 steps, matched and shuffled mapping, eta 0 and 1.")
+    print("Nothing can change but H.  The SHUFFLED gap is the reference.")
+    print(f"\n    {'seed':>5}{'snap':>6}{'t':>7}{'map':>8}{'MATCH e0':>10}{'e1':>8}"
+          f"{'| SHUF e0':>11}{'e1':>8}{'GAP':>9}{'pop':>7}{'gen':>6}")
+    gaps = {}
+    for k in rows:
+        if k.get("missing"):
+            print(f"    seed {k['seed']}: no era snapshots -- this run predates them.")
+            continue
+        m0, m1 = k["matched_0"]["hit"], k["matched_1"]["hit"]
+        s0, s1 = k["shuffled_0"]["hit"], k["shuffled_1"]["hit"]
+        g = s1 - s0
+        gaps.setdefault(k["seed"], []).append(g)
+        print(f"    {k['seed']:>5}{k['snap']:>6}{k['t']:>7}{str(k['mapping']):>8}"
+              f"{m0:>10.3f}{m1:>8.3f}{s0:>11.3f}{s1:>8.3f}{g:>+9.3f}"
+              f"{k['matched_0']['pop']:>7.0f}{k['matched_0']['gen']:>6.1f}")
+    if not gaps:
+        return None
+    per_seed = {sd: float(np.mean(v)) for sd, v in sorted(gaps.items())}
+    allg = [g for v in gaps.values() for g in v]
+    print(f"\n    per-seed mean shuffled gap: "
+          + "  ".join(f"seed {sd} {g:+.3f}" for sd, g in per_seed.items()))
+    print(f"    >= 0.10 in {sum(g >= 0.10 for g in per_seed.values())}/{len(per_seed)} seeds"
+          f"   (v3.11's own requirement)")
+    print(f"\n    *** v3.12 NON-SHRINK REFERENCE = {np.mean(list(per_seed.values())):+.3f} ***")
+    print(f"    (mean over {len(allg)} boundary replays; per-seed min {min(per_seed.values()):+.3f})")
+    print("    v3.12's shuffled gap must not fall below this.  Record it in spec_v3_12.md before")
+    print("    the v3.12 grid is read, so the comparison cannot be chosen after the fact.")
+    return per_seed
+
+
 def frozen_selftest(seed=0, verbose=True):
     """With learning OFF, a frozen replay's hit rate must not move across the window.
 
@@ -540,7 +621,7 @@ def frozen_selftest(seed=0, verbose=True):
     v3.11 knockout never had: it used a live population, where selection moved the number and the
     reading was attributed to the genome anyway.
     """
-    from sim import Config, run as _run
+    from sim_v3_11 import Config, run as _run
     kw = dict(WORLD); kw.update(mode="plastic", plastic_layers="W2")
     src = _run(Config(seed=seed, **kw), verbose=False,
                phases=[dict(n_steps=1500, chain=False), dict(n_steps=2100, chain=True)])

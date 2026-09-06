@@ -14,14 +14,16 @@ CODE_SETUP = r'''# --- Colab check ---------------------------------------------
 # and pick both).  Nothing else is needed: pure numpy + matplotlib.
 import os, sys
 
-missing = [f for f in ("sim.py", "analysis.py") if not os.path.exists(f)]
+# v3.11 MODULES, NOT sim.py.  sim.py is the CURRENT world and is now v3.12 (T=3, K=5); importing
+# it here would run this notebook in the wrong world and every number would look plausible.
+missing = [f for f in ("sim_v3_11.py", "analysis_v3_11.py") if not os.path.exists(f)]
 if missing:
-    raise SystemExit(f"missing {missing} in {os.getcwd()} -- upload them next to this notebook")
+    raise SystemExit(f"missing {missing} in {os.getcwd()} -- upload the v3.11 modules next to this notebook")
 if os.getcwd() not in sys.path:
     sys.path.insert(0, os.getcwd())
 
 import numpy as np
-import sim, analysis as A
+import sim_v3_11 as sim, analysis_v3_11 as A
 
 print("numpy", np.__version__)
 print("observation size:", sim.N_IN, " actions:", sim.N_ACTIONS,
@@ -78,19 +80,12 @@ CODE_RUN = r'''# MODE picks the stage.  All stages share ONE checkpoint and each
 #   "acceptance"  fixed / scrambled / plastic (W2) x seeds 0-1, full.      ~60-75 min
 #   "grid"        continues: adds `random policy` and `fixed + B (ceiling)`
 #                 for seeds 0-1, and all five arms for seed 2.  Nine runs.  ~75-90 min
-MODE = "grid"
+MODE = "addendum"
 
 CKPT = "results_v3_11.pkl"
 CORE = ["fixed", "scrambled", "plastic (W2)"]
 ALL  = list(A.VARIANTS)
-
-# REFRESH: (arm, seed) pairs to re-run even though the checkpoint has them.  Fill this from the
-# audit printed below.  A checkpoint written before a field exists CANNOT be re-analysed for the
-# reads that depend on it -- those counters are accumulated inside the sim, not derived from the
-# log -- and `final_mapping` in particular is not reconstructable offline, because World shares
-# its rng with the agents.  Leave empty to continue without those lines (they print `nan`).
 REFRESH = []
-# REFRESH = [(a, s) for a in CORE for s in (0, 1)]     # <- to recover every read-side line
 
 if MODE == "quick":
     SEEDS, PHASE_STEPS, ARMS, OVERRIDES = [0], 1500, CORE, dict(prep_every=300, recipe_every=500)
@@ -98,10 +93,22 @@ if MODE == "quick":
 elif MODE == "acceptance":
     SEEDS, PHASE_STEPS, ARMS, OVERRIDES = [0, 1], 8000, CORE, {}
 elif MODE == "grid":
-    SEEDS, PHASE_STEPS, ARMS, OVERRIDES = [0, 1, 2], 8000, ALL, {}   # seeds 3-4 held in reserve
+    SEEDS, PHASE_STEPS, ARMS, OVERRIDES = [0, 1, 2], 8000, ALL, {}
+elif MODE == "addendum":
+    # The ONLY thing this mode produces: the frozen-replay reference for v3.12's non-shrink
+    # clause.  v3.11's grid ran row 3b in its old broken form (10-step window, run-end snapshot),
+    # so no usable reference exists.  This is a FRESH run of the plastic arm -- the grid's runs
+    # kept only the last two era boundaries, and the reference should not rest on one sample of
+    # the population's state.
+    #   era_snap_keep 32: keep EVERY era boundary (phase 2 holds ~11 at prep_every 700).
+    #   era_snap_max 300: agents sampled per snapshot, to bound the pickle.
+    SEEDS, PHASE_STEPS, ARMS = [0, 1, 2], 8000, ["plastic (W2)"]
+    OVERRIDES = dict(era_snap_keep=32, era_snap_max=300)
+    CKPT = "results_v3_11_addendum.pkl"
 else:
-    raise SystemExit(f"MODE must be quick / acceptance / grid, not {MODE!r}")
+    raise SystemExit(f"MODE must be quick / acceptance / grid / addendum, not {MODE!r}")
 
+variants = {k: A.VARIANTS[k] for k in ARMS}
 existing = A.load(CKPT)
 if existing:
     A.checkpoint_audit(existing)
@@ -113,7 +120,14 @@ results = A.run_experiment(seeds=SEEDS, phase_steps=PHASE_STEPS, variants=varian
 print("\nin the checkpoint:", {k: sorted(r["cfg"]["seed"] for r in v) for k, v in results.items()})
 '''
 
-CODE_SUMMARY = 'A.checkpoint_audit(results)\nA.summary(results)\n'
+CODE_SUMMARY = (
+    "A.checkpoint_audit(results)\n"
+    "if MODE == \"addendum\":\n"
+    "    # the addendum produces ONE number: the shuffled eta1 - eta0 gap.  The full summary is\n"
+    "    # not read here -- one arm cannot support the decision rows.\n"
+    "    A.print_addendum(results)\n"
+    "else:\n"
+    "    A.summary(results)\n")
 CODE_TRANSITION = 'A.transition_table(results, bin_size=500, span=2000)\n'
 CODE_CURVES = ('A.curves(results, "meal", "meal number in an agent\'s life")        # phase 1\n'
                'A.curves(results, "att",  "attempt number in an agent\'s life")     # phase 2\n'
