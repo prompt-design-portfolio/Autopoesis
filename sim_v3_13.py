@@ -960,7 +960,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              srm_n=0, srm_pre=0, srm_post=0, first_n_late=0, first_ok_late=0,
              nfc_n=0, nfc_sum=0, nfc_cens=0,
              fp_pos_n=0, fp_pos_ok=0, fp_none_n=0, fp_none_ok=0, foll_n=0, foll_ok=0,
-             follg_n=0, follg_ok=0, follb_n=0, follb_ok=0)
+             follg_n=0, follg_ok=0, follb_n=0, follb_ok=0,
+             follgf_n=0, follgf_ok=0, follbf_n=0, follbf_ok=0)
     # FOUNDER-FREE mirror.  Injected agents are fresh random genomes; their own events dilute
     # every event-weighted metric toward chance, and the dilution is heaviest in exactly the arms
     # that need injecting -- so a non-learning arm reads as MORE random the worse it does.  WF
@@ -1118,13 +1119,23 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                         W["foll_n"] += 1; W["foll_ok"] += agrees
                         if endorsed == world.mapping[ft]:
                             W["follg_n"] += 1; W["follg_ok"] += agrees
-                        else:
+                            if a.attempts == 1:
+                                W["follgf_n"] += 1; W["follgf_ok"] += agrees
+                        elif True:
                             # THE UNCONFOUNDED CELL.  The mark endorses a preparation that is
                             # WRONG for this type now -- a stale mark, from before the mapping
                             # moved.  Following it is a mistake, so an agent that follows it is
                             # demonstrably reading the mark rather than being right for its own
                             # reasons.  1/K is still the null.
                             W["follb_n"] += 1; W["follb_ok"] += agrees
+                            if a.attempts == 1:
+                                # (ii-newborn): the SAME stale-mark ratio over FIRST-EVER
+                                # preparations only.  The agent has learned nothing and written
+                                # nothing, and by the no-self-echo property the mark cannot be
+                                # its own -- so following one can only be transmission.  Kept
+                                # SEPARATE from (ii), which pools over a life and so mixes
+                                # transmission with an agent's own within-life binding.
+                                W["follbf_n"] += 1; W["follbf_ok"] += agrees
                         if a.attempts == 1:
                             W["fp_pos_n"] += 1; W["fp_pos_ok"] += ok
                     elif a.attempts == 1:
@@ -1305,6 +1316,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 n_foll=W["foll_n"], n_foll_ok=W["foll_ok"],
                 n_follg=W["follg_n"], n_follg_ok=W["follg_ok"],
                 n_follb=W["follb_n"], n_follb_ok=W["follb_ok"],
+                n_follgf=W["follgf_n"], n_follgf_ok=W["follgf_ok"],
+                n_follbf=W["follbf_n"], n_follbf_ok=W["follbf_ok"],
                 n_remaps=world.n_remaps, pi_every=max(1, int(round(cfg.label_every / max(1, cfg.prep_every))) if cfg.label_every else 1),
                 f_n_nfc=WF["nfc_n"], f_nfc_sum=WF["nfc_sum"], f_n_nfc_cens=WF["nfc_cens"],
                 mi_counts=world.mi.copy(), pi=tuple(world.pi),

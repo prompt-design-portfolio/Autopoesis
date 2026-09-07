@@ -15,10 +15,15 @@ can carry what a label means. Reading is an **observation**, so a null cannot be
    Note the grouping is by epoch, not era, or the slow arm would fire on its own definition.
 2. **`sym_gain`** — |gain| in a record arm **minus the no-record arm's**. |gain| rises everywhere on
    drift, so the no-record arm is the baseline.
-3. **Transmission (i)** — first-ever preparations split by whether a positive mark was present.
-4. **Transmission (ii)** — following, split by whether the mark endorses the correct preparation,
-   with the **stale** cell read against `(1 − hit)/(K − 1)`.
-5. Preparations-to-first-correct, corroborating, over agents that reached 5.
+3. **(i) — a DENSITY CHECK, not transmission.** First-ever preparations split by whether a
+   positive mark was present. Confounded: a mark exists only where someone recently *succeeded*.
+4. **(ii) — THE BINDING LINE.** Following, split by whether the mark endorses the correct
+   preparation, read on the **stale** cell against `(1 − hit)/(K − 1)`.
+5. **(ii-newborn) — THE TRANSMISSION LINE.** The same stale-mark ratio over **first-ever
+   preparations only**, kept separate from (ii): (ii) pools over a life and so mixes transmission
+   with an agent's own within-life binding; a first-ever preparation cannot.
+6. `sym_gain` — **reported only**, licensing nothing.
+7. Preparations-to-first-correct, corroborating, over agents that reached 5.
 
 ### What the pre-check established about the instruments
 
@@ -46,3 +51,13 @@ Read that way, the pre-check (1 seed, 3000-step phases — **not a result**) sho
 Ratio above 1 means the agent **follows** a mark it should not; below 1 means it **avoids** it.
 Either way the label was read — you cannot avoid what you cannot see. The noise arm at 0.78 is the
 reference for how far from 1 an unread channel sits.
+
+### If (ii-newborn) prints "NOT AVAILABLE"
+
+The counter is accumulated inside the sim at the preparation event and is **not derivable from the
+log** — the same class of thing as `final_mapping` in v3.11 and `sr_w` in v3.12. A checkpoint
+written before it exists cannot be re-analysed for it; the line prints `NOT AVAILABLE` and names
+the arms, rather than guessing. Re-run those arms with the current `sim_v3_13.py`.
+
+Everything else — Gate R, the binding line (ii), the density check, `sym_gain`, population, the
+transition table — reads correctly off a checkpoint without it.

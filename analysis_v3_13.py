@@ -694,6 +694,21 @@ def follow_split(L):
             rate(L, "n_follb_ok", "n_follb"), float(np.sum([r.get("n_follb", 0) for r in L])))
 
 
+def follow_split_newborn(L):
+    """(ii-newborn) -- the same stale-mark ratio over FIRST-EVER preparations only.
+
+    Kept SEPARATE from (ii).  (ii) pools over a life, so it mixes transmission with an agent's own
+    within-life binding; a first-ever preparation cannot.  The agent has learned nothing and
+    written nothing, and by the no-self-echo property the mark cannot be its own -- a preparation
+    consumes the food cell, so the mark it writes is unreadable for a preparation until food
+    respawns and the reader is then whoever is standing there.
+    """
+    if not has(L, "n_follbf"):
+        return np.nan, 0.0, np.nan, 0.0      # checkpoint predates the counter
+    return (rate(L, "n_follgf_ok", "n_follgf"), float(np.sum([r["n_follgf"] for r in L])),
+            rate(L, "n_follbf_ok", "n_follbf"), float(np.sum([r["n_follbf"] for r in L])))
+
+
 def follow_rate(L):
     """(ii) P(chosen preparation = pi^-1(strongest positive label) | a positive mark is present),
     against 1/K.  This is FOLLOWING the record, measured directly on behaviour rather than
@@ -756,7 +771,7 @@ def v313_precheck(results, control=None):
     base = next((k for k in names if k == "plastic"), None)
     if base:
         b = abs(g(base, "sym_gain"))
-        print(f"\n  |gain| MINUS the no-record arm's -- THE LICENSING STATISTIC.")
+        print(f"\n  |gain| MINUS the no-record arm's -- REPORTED ONLY, not a licensing condition.")
         print(f"  |gain| rises in every arm including `{base}`, which has no record at all, so a")
         print("  rising magnitude on its own is not evidence of reading.  The sign is absorbable")
         print("  by W1, so magnitude is the statistic and the no-record arm is the baseline.")
@@ -790,7 +805,12 @@ def v313_precheck(results, control=None):
     print("  the food cell, so the mark it writes cannot be read for a preparation until food")
     print("  respawns there -- and the reader is then whoever is standing on it.  An agent can")
     print("  never read its own mark about the food it just prepared.")
-    print("\n  (i) FIRST-EVER preparations, split by whether a positive mark was already present")
+    print("\n  (i) DENSITY CHECK -- NOT a transmission measure.  First-ever preparations split by")
+    print("  whether a positive mark was present.  A positive mark exists only where someone")
+    print("  recently SUCCEEDED, so it marks places and times where success is common: the gap is")
+    print("  a property of where marks are, not of what they say.  The pre-check proved it -- the")
+    print("  gap was LARGEST in `noise`, whose labels carry nothing.  Read it as a check that")
+    print("  marks are present and non-uniform, and nothing more.")
     print(f"  {'arm':<26}{'P(ok|mark)':>12}{'P(ok|none)':>12}{'gap':>9}{'n mark':>9}{'n none':>9}")
     for n in names:
         pos, none, npos, nnone = first_prep_by_mark(P2(results[n][0]))
@@ -816,6 +836,26 @@ def v313_precheck(results, control=None):
     print("       ratio > 1 = FOLLOWS a mark it should not; ratio < 1 = AVOIDS it.  Either way")
     print("       the label was read: you cannot avoid what you cannot see.  The noise arm is the")
     print("       reference for how far from 1 an unread channel sits.")
+    print("\n  (ii-newborn) THE TRANSMISSION LINE -- the same stale-mark ratio over FIRST-EVER")
+    print("  preparations only.  (ii) pools over a life and so mixes transmission with an agent's")
+    print("  own within-life binding; a first-ever preparation cannot -- it has learned nothing,")
+    print("  written nothing, and by no-self-echo the mark cannot be its own.")
+    print(f"  {'arm':<26}{'stale':>9}{'null':>8}{'ratio':>8}{'n':>9}")
+    missing = []
+    for n in names:
+        L = P2(results[n][0])
+        _, _, bb, nb = follow_split_newborn(L)
+        if not has(L, "n_follbf"):
+            missing.append(n); continue
+        h = prep_hit(L, True)
+        null = (1.0 - h) / (N_PREPS - 1) if np.isfinite(h) else np.nan
+        print(f"  {n:<26}{bb:>9.3f}{null:>8.3f}"
+              f"{(bb / null if null else np.nan):>8.2f}{nb:>9.0f}")
+    if missing:
+        print(f"  NOT AVAILABLE for {missing}: this checkpoint predates the counter.  It is")
+        print("  accumulated inside the sim at the preparation event and is not derivable from")
+        print("  the log -- the same class of thing as final_mapping in v3.11 and sr_w in v3.12.")
+        print("  Re-run those arms with the current sim_v3_13.py to get the transmission line.")
     print("\n  preparations-to-first-correct -- CORROBORATING ONLY, over agents that reached 5")
     print(f"  {'arm':<32}{'mean preps':>12}{'censored':>10}{'n':>8}")
     for n in names:

@@ -121,7 +121,11 @@ estimator, not a leak:
 
 > **Gate R.** Permute **each era's label axis independently** and pool. Era count, sample sizes and
 > within-era structure are all preserved; only cross-era consistency is destroyed — which is
-> exactly what the gate asks. **z ≤ 2.0** means the observed pooled association is no stronger than
+> exactly what the gate asks. Grouped by **π-epoch**, a run of eras sharing a `π` — not by era. `plastic + record (slow)` holds
+one `π` across three eras *by design*, so an era-wise null destroys consistency that legitimately
+exists there and the gate fires on the arm's own definition (measured: z +2.21 era-wise, **+0.73**
+epoch-wise). For the fast arms an epoch *is* an era, so nothing changes.
+**z ≤ 2.0** means the observed pooled association is no stronger than
 > chance given the era count: `π` is doing its job and meaning is not inheritable. Above that, the
 > run is not read.
 
@@ -155,8 +159,11 @@ every arm including `plastic`, which has no record at all** (+0.170 plastic, +0.
 **+0.332 noise**). An unused gene grows on drift, and noise grew most. So a rising magnitude on its
 own is not evidence of reading, and the no-record arm is the only honest baseline.
 
-**This replaces the tempo follow-up's licensing statistic** — the follow-up is no longer
-conditional on anything, it is an arm in this experiment.
+**DROPPED as a licensing condition; REPORTED ONLY.** It licenses nothing and gates nothing. The
+pre-check read it negative in every record arm (−0.257 record, −0.076 noise, −0.362 fixed, −0.079
+slow), while the stale-mark ratio — the sharper instrument — pointed the other way. A statistic
+that disagrees with the binding line and has no mechanism behind its sign should not decide
+anything; it is kept because a large unexplained move in it would be worth knowing about.
 
 **DECISION 5 — RULED.** An agent reads marks it wrote itself. That is memory, not transmission, and
 no probe on the standing population separates them. **The newborn line separates them**, because a
@@ -188,14 +195,28 @@ reported as the third cell** so the contribution of the channels' mere presence 
 
 > **Claim (transmission) — RULED. Two conditioned lines, replacing the newborn measure.**
 >
-> **(i) Among FIRST-EVER preparations: P(correct | a positive mark for this type is on the cell)
-> vs P(correct | none), per arm.** A first preparation is the agent's genome plus whatever the
-> world is telling it — it has learned nothing and written nothing.
+> **(ii) THE BINDING LINE — the stale-mark ratio.** P(chosen = π⁻¹(strongest positive label) | a
+> positive mark is present), **split by whether the mark endorses the correct preparation**, and
+> read on the **stale** cell — where the mark endorses a preparation that is *wrong* for this type
+> now, left before the mapping moved. Following a stale mark is a mistake, so an agent that
+> follows one can only be reading it.
 >
-> **(ii) P(chosen preparation = π⁻¹(strongest positive label) | a positive mark is present),
-> against 1/K.** This is *following* the record, measured on behaviour rather than inferred from an
-> outcome. An agent can be right for its own reasons; it cannot agree with the mark this often by
-> accident.
+> **The null is `(1 − hit)/(K − 1)`, not `1/K`.** An agent that knows the answer never agrees with
+> a stale mark whatever it reads, so `1/K` would score competence as illiteracy. The null is the
+> chance of landing on the endorsed-but-wrong preparation *given you did not pick the correct one*.
+> **Ratio above 1 = follows a mark it should not; below 1 = avoids one. Either way the label was
+> read — you cannot avoid what you cannot see.**
+>
+> **(ii-newborn) THE TRANSMISSION LINE — the same ratio over FIRST-EVER preparations only, kept
+> SEPARATE from (ii).** (ii) pools over a life, so it mixes transmission with an agent's own
+> within-life binding. A first-ever preparation cannot: the agent has learned nothing, written
+> nothing, and by no-self-echo the mark cannot be its own.
+>
+> **(i) is DEMOTED to a density check, not a transmission measure.** P(correct | mark) vs
+> P(correct | none) among first-ever preparations is confounded: a positive mark exists only where
+> someone recently *succeeded*, so it marks places and times where success is common. The pre-check
+> proved it — the gap was **largest in `noise`** (+0.241 against `record`'s +0.120), whose labels
+> carry nothing. Read it as a check that marks are present and non-uniform, and nothing more.
 >
 > **Preparations-to-first-correct is kept as CORROBORATING ONLY, over agents that reached 5
 > preparations.** Conditioning on reaching 5 is what stops censoring being confounded by short
