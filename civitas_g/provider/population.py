@@ -159,7 +159,26 @@ def store_run(session: Session, campaign: Campaign, result: RunResult) -> Run:
                 prev_mapping=tuple(int(x) for x in snap["mapping"]),
                 note="captured at an era boundary by cfg.store_snaps"),
         )
-        save_record(session, run, record, variant="real")
+        save_record(session, run, record, variant="real", capture="boundary")
+
+    final_snap = raw.get("final_store")
+    if final_snap is not None:
+        from civitas_g.store.persistence import save_record as _save
+        from civitas_g.store.record import Record as _Record
+        from civitas_g.store.record import RecordProvenance as _Prov
+
+        _save(session, run, _Record(
+            marks=np.asarray(final_snap["marks"], dtype="<f8"),
+            pi=tuple(int(x) for x in final_snap["pi"]),
+            provenance=_Prov(
+                run_seed=result.seed, arm=result.arm, t=int(final_snap["t"]), era_index=0,
+                engine_sha256=result.engine_sha256,
+                cfg_digest=hashlib.sha256(
+                    json.dumps(encode(raw["cfg"]), sort_keys=True).encode()).hexdigest(),
+                mapping=tuple(int(x) for x in final_snap["mapping"]),
+                prev_mapping=(),
+                note="the record as it stood when the run ended; this is what G3 inherits"),
+        ), variant="real", capture="final")
 
     for i, snap in enumerate(raw.get("era_snaps") or []):
         data, digest = _blob(snap)

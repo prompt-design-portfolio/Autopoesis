@@ -1,5 +1,5 @@
---- sim_v3_13.py	2026-09-08 03:04:39.264685895 +0000
-+++ /tmp/claude-0/-home-user-Autopoesis/c92f5ce7-2509-5a58-a852-a9aaabd61779/scratchpad/sim_v3_13_patched.py	2026-09-08 20:47:58.888792171 +0000
+--- /dev/fd/63	2026-09-08 22:01:21.901671341 +0000
++++ sim_v3_13.py	2026-09-08 22:00:37.423394480 +0000
 @@ -114,6 +114,11 @@
                                    # -- it is simply not lethal.  Nothing about the POPULATION can
                                    # change, so the only thing that can move a hit rate over the
@@ -44,33 +44,52 @@
      world.chain_on = schedule[0][1]
      for _ in range(100):
          world.step(-1)
-@@ -982,6 +998,7 @@
+@@ -982,7 +998,13 @@
      # because rng.shuffle reorders the list every step.
      _frozen_e = {id(a): float(a.energy) for a in agents} if cfg.frozen else {}
      era_snaps = []                                   # rolling era-boundary genome snapshots
 +    store_snaps = []                                 # rolling era-boundary RECORD snapshots
      prev_mapping = tuple(int(x) for x in world.mapping)
++    # The pi the CURRENT marks were written under.  new_recipe() redraws pi before the snapshot is
++    # taken, so world.pi at an era boundary is the pi of the era ABOUT TO START, not the one the
++    # store's marks carry.  Storing that pi would hand a reader a permutation that does not decode
++    # the record it came with -- a store that looks intact and says the wrong thing.
++    prev_pi = tuple(int(x) for x in world.pi)
      t0 = time.time()
  
-@@ -1010,6 +1027,13 @@
+     track_recency = (cfg.trace_recency and cfg.mode == "plastic"
+@@ -1010,7 +1032,15 @@
                  era_snaps.append(dict(t=t, mapping=prev_mapping, n_pop=len(agents),
                                        genomes=snapshot(samp)))
                  del era_snaps[:-cfg.era_snap_keep]
 +                if cfg.store_snaps:
 +                    # The RECORD at the same moment as the genomes.  Two different things: the
 +                    # genomes are what the population IS, the record is what it LEFT.
-+                    store_snaps.append(dict(t=t, mapping=prev_mapping,
-+                                            pi=tuple(int(x) for x in world.pi),
++                    # `prev_pi`, not world.pi: see where prev_pi is initialised.
++                    store_snaps.append(dict(t=t, mapping=prev_mapping, pi=prev_pi,
 +                                            marks=world.marks.copy()))
 +                    del store_snaps[:-cfg.era_snap_keep]
              prev_mapping = tuple(int(x) for x in world.mapping)
++            prev_pi = tuple(int(x) for x in world.pi)
              for a in agents:
                  a.since_recipe = 0
-@@ -1360,6 +1384,7 @@
+                 # SURVIVOR-CONDITIONED SINCE-REMAP: an agent qualifies only if it made SR_W
+@@ -1360,7 +1390,17 @@
                  # re-seeds the world does NOT get this mapping, so a genome test has to pin it.
                  final_mapping=tuple(int(x) for x in world.mapping),
                  era_snaps=era_snaps,     # genomes at era boundaries, with the mapping just lived
+-                cfg=asdict(cfg), final=snapshot(agents))
 +                store_snaps=store_snaps,  # the RECORD at those boundaries, when cfg.store_snaps
-                 cfg=asdict(cfg), final=snapshot(agents))
++                cfg=asdict(cfg), final=snapshot(agents),
++                # The record as it stood when the run ENDED -- mid-era, marks live under the pi
++                # still in force.  This is what a following population inherits; the era-boundary
++                # snapshots above are what the frozen assay replays against, and they are not the
++                # same moment.
++                final_store=(dict(t=total_steps,
++                                  mapping=tuple(int(x) for x in world.mapping),
++                                  pi=tuple(int(x) for x in world.pi),
++                                  marks=world.marks.copy())
++                             if cfg.store_snaps else None))
  
  
+ def record_semantics_selftest(verbose=True):

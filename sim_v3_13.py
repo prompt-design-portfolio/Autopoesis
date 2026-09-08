@@ -1000,6 +1000,11 @@ def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None):
     era_snaps = []                                   # rolling era-boundary genome snapshots
     store_snaps = []                                 # rolling era-boundary RECORD snapshots
     prev_mapping = tuple(int(x) for x in world.mapping)
+    # The pi the CURRENT marks were written under.  new_recipe() redraws pi before the snapshot is
+    # taken, so world.pi at an era boundary is the pi of the era ABOUT TO START, not the one the
+    # store's marks carry.  Storing that pi would hand a reader a permutation that does not decode
+    # the record it came with -- a store that looks intact and says the wrong thing.
+    prev_pi = tuple(int(x) for x in world.pi)
     t0 = time.time()
 
     track_recency = (cfg.trace_recency and cfg.mode == "plastic"
@@ -1030,11 +1035,12 @@ def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None):
                 if cfg.store_snaps:
                     # The RECORD at the same moment as the genomes.  Two different things: the
                     # genomes are what the population IS, the record is what it LEFT.
-                    store_snaps.append(dict(t=t, mapping=prev_mapping,
-                                            pi=tuple(int(x) for x in world.pi),
+                    # `prev_pi`, not world.pi: see where prev_pi is initialised.
+                    store_snaps.append(dict(t=t, mapping=prev_mapping, pi=prev_pi,
                                             marks=world.marks.copy()))
                     del store_snaps[:-cfg.era_snap_keep]
             prev_mapping = tuple(int(x) for x in world.mapping)
+            prev_pi = tuple(int(x) for x in world.pi)
             for a in agents:
                 a.since_recipe = 0
                 # SURVIVOR-CONDITIONED SINCE-REMAP: an agent qualifies only if it made SR_W
@@ -1385,7 +1391,16 @@ def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None):
                 final_mapping=tuple(int(x) for x in world.mapping),
                 era_snaps=era_snaps,     # genomes at era boundaries, with the mapping just lived
                 store_snaps=store_snaps,  # the RECORD at those boundaries, when cfg.store_snaps
-                cfg=asdict(cfg), final=snapshot(agents))
+                cfg=asdict(cfg), final=snapshot(agents),
+                # The record as it stood when the run ENDED -- mid-era, marks live under the pi
+                # still in force.  This is what a following population inherits; the era-boundary
+                # snapshots above are what the frozen assay replays against, and they are not the
+                # same moment.
+                final_store=(dict(t=total_steps,
+                                  mapping=tuple(int(x) for x in world.mapping),
+                                  pi=tuple(int(x) for x in world.pi),
+                                  marks=world.marks.copy())
+                             if cfg.store_snaps else None))
 
 
 def record_semantics_selftest(verbose=True):

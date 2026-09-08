@@ -195,14 +195,29 @@ ENGINE_VERSIONS: tuple[EngineVersion, ...] = (
         "remap; the only difference is the four added counters"),
     EngineVersion(
         "G2-store", "d5bb11c8a15290e7b1a082e8afd1ac3f21f7c098c8099e1e45e93fd4b5a37920",
-        "applied at G2",
+        "applied at G2, superseded within G2 by G2-store-fix",
         "adds Config.store_snaps (default False), run(..., init_store=None), an era-boundary copy "
         "of world.marks and pi beside the genome snapshot, and store_snaps in the returned dict. "
         "Nothing removed; analysis_v3_13.py untouched. Ruled under G2-D1 -- without it "
         "frozen_replay has no store to see, so A2.1's store arms and G3's population B are both "
         "unrunnable.",
         "engine_store_selftest: with both flags off, bit-identical to `G0`; with capture on, the "
-        "trajectory still does not move. Plus the G1 reproduction re-run against it."),
+        "trajectory still does not move. Plus the G1 reproduction re-run against it (182/182)."),
+    EngineVersion(
+        "G2-store-fix", "8e635fed1b0fbb19e7b04a67427b6f72cf143bfb18682a2fda4ab33e654a960e",
+        "corrected within G2",
+        "TWO CORRECTIONS TO G2-store, both found before any G3 number was produced. (1) The pi "
+        "stored with a boundary capture was the pi of the era ABOUT TO START, not the one the "
+        "marks were written under: new_recipe() redraws pi before the snapshot is taken. A store "
+        "carrying that pi looks intact and decodes to the wrong preparation for every type -- "
+        "measured, every type of every snapshot. The engine now tracks prev_pi exactly as it "
+        "tracks prev_mapping. (2) Adds final_store: the record as it stood when the run ENDED, "
+        "mid-era, marks live under the pi still in force. That is what a following population "
+        "inherits; the era-boundary snapshots are what the frozen assay replays against, and they "
+        "are not the same moment.",
+        "engine_store_selftest (trajectory-neutrality, unchanged) plus "
+        "store_decodes_selftest, which checks that the pi stored with a record actually decodes "
+        "that record's marks -- the check that would have caught (1)."),
 )
 
 CURRENT_ENGINE = ENGINE_VERSIONS[-1]

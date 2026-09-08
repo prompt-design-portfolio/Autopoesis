@@ -336,6 +336,58 @@ def _engine_store_selftest() -> SelfTestResult:
         f"a fresh world density {got:.6f} against {none:.6f} without.", milestone="G2")
 
 
+def _store_decodes_selftest() -> SelfTestResult:
+    """Does the pi stored with a record actually decode that record's marks?
+
+    This is the check that would have caught the defect it now guards. `new_recipe()` redraws pi
+    BEFORE the era-boundary snapshot is taken, so `world.pi` at that moment is the pi of the era
+    about to start -- not the one the store's marks carry. A record stored with that pi looks
+    entirely intact: the right density, the right signs, a valid permutation. It simply decodes to
+    the wrong preparation for every food type, which is the worst way for a store to be wrong,
+    because the arm that reads it produces a plausible null.
+
+    A positive mark at label j says preparation `pi^-1(j)` succeeded on that type at that cell. So
+    for the freshest marks -- the ones from the era just ended -- `pi^-1` of the positively marked
+    labels must include the preparation that era's mapping made correct.
+    """
+    import numpy as np
+
+    import sim_v3_13 as S
+
+    res = S.run(S.Config(seed=0, chain=True, record="real", store_snaps=True,
+                         prep_every=200, log_every=50, n_steps=900),
+                verbose=False, phases=[dict(n_steps=900, chain=True)])
+    snaps = list(res["store_snaps"]) + ([res["final_store"]] if res.get("final_store") else [])
+    if not snaps:
+        return SelfTestResult("store_decodes", "fail",
+                              "capture was on and produced no store snapshots", milestone="G2")
+
+    checked, bad = 0, []
+    for sn in snaps:
+        inverse = {label: k for k, label in enumerate(sn["pi"])}
+        for ftype in range(S.N_TYPES):
+            positive = np.argwhere(sn["marks"][ftype] > 1e-3)
+            if not len(positive):
+                continue
+            endorsed = {inverse[int(label)] for label, _, _ in positive}
+            checked += 1
+            if sn["mapping"][ftype] not in endorsed:
+                bad.append(f"t={sn['t']} type {ftype}: positively marked labels decode to "
+                           f"preparations {sorted(endorsed)}, and the correct preparation for "
+                           f"that era was {sn['mapping'][ftype]}")
+    if bad:
+        return SelfTestResult(
+            "store_decodes", "fail",
+            f"{len(bad)} of {checked} (snapshot, type) pairs decode wrongly. The stored pi is not "
+            f"the pi the marks were written under, so any population handed this record reads it "
+            f"through the wrong permutation. First: {bad[0]}", milestone="G2")
+    return SelfTestResult(
+        "store_decodes", "pass",
+        f"{checked} (snapshot, type) pairs across {len(snaps)} captures: the positively marked "
+        f"labels decode, through the stored pi, to the preparation that era's mapping made "
+        f"correct.", milestone="G2")
+
+
 def _assay_selftest() -> SelfTestResult:
     """D5, built at G2 as specified: the frozen assay's own two invariants.
 
@@ -586,7 +638,9 @@ def _registry() -> list[SelfTest]:
         SelfTest("assay_preconditions", _assay_preconditions_selftest,
                  milestone="G2", source="civitas_g.store.record"),
         SelfTest("engine_store", _engine_store_selftest,
-                 milestone="G2", source="sim_v3_13 (engine G2-store)"),
+                 milestone="G2", source="sim_v3_13 (engine G2-store-fix)"),
+        SelfTest("store_decodes", _store_decodes_selftest,
+                 milestone="G2", source="sim_v3_13 (engine G2-store-fix)"),
         SelfTest("b_founders_carry_no_h",
                  _g2_g3_unavailable(
                      "b_founders_carry_no_h", "G3",

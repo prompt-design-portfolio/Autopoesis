@@ -29,13 +29,13 @@ from civitas_g.store.record import Record, RecordProvenance, ScrambleMode
 
 
 def save_record(session: Session, run: Run | Any, record: Record, *,
-                variant: str = "real",
+                variant: str = "real", capture: str = "boundary",
                 derived_from: StoreArtifact | None = None) -> StoreArtifact:
     """Persist one record. The statistics are measured on the way in, not on the way out."""
     run_id = run.id if isinstance(run, Run) else run
     signs = record.sign_counts()
     artifact = StoreArtifact(
-        run_id=run_id, variant=variant,
+        run_id=run_id, variant=variant, capture=capture,
         derived_from=None if derived_from is None else derived_from.id,
         era_index=int(record.provenance.era_index), t=int(record.provenance.t),
         pi=list(record.pi),
@@ -70,15 +70,33 @@ def load_record(session: Session, artifact: StoreArtifact | Any) -> Record:
     return record
 
 
-def records_for_run(session: Session, run: Run | Any,
-                    variant: str = "real") -> list[Record]:
+def records_for_run(session: Session, run: Run | Any, variant: str = "real",
+                    capture: str = "boundary") -> list[Record]:
     """Every stored record for a run, in era order."""
     run_id = run.id if isinstance(run, Run) else run
     rows = session.execute(
         select(StoreArtifact)
-        .where(StoreArtifact.run_id == run_id, StoreArtifact.variant == variant)
+        .where(StoreArtifact.run_id == run_id, StoreArtifact.variant == variant,
+               StoreArtifact.capture == capture)
         .order_by(StoreArtifact.era_index)).scalars().all()
     return [load_record(session, row) for row in rows]
+
+
+def final_record(session: Session, run: Run | Any,
+                 variant: str = "real") -> Record | None:
+    """What the population left behind when it died. This is what G3 inherits.
+
+    Distinct from the last boundary capture, and the difference matters: a boundary capture is
+    taken at the instant a remap fires, so its freshest marks are already an era old and its pi has
+    just been superseded. The final capture is mid-era, with live marks under the pi still in
+    force -- the record as a living population was actually using it.
+    """
+    run_id = run.id if isinstance(run, Run) else run
+    row = session.execute(
+        select(StoreArtifact)
+        .where(StoreArtifact.run_id == run_id, StoreArtifact.variant == variant,
+               StoreArtifact.capture == "final")).scalars().first()
+    return None if row is None else load_record(session, row)
 
 
 def save_control_variants(session: Session, run: Run | Any, artifact: StoreArtifact,

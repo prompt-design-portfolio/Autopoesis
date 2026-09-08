@@ -189,14 +189,21 @@ class StoreArtifact(Base, UUIDPrimaryKey, Timestamped):
 
     __tablename__ = "g_store_artifacts"
     __table_args__ = (
-        UniqueConstraint("run_id", "era_index", "variant", name="uq_g_store_run_era_variant"),
+        UniqueConstraint("run_id", "capture", "era_index", "variant",
+                         name="uq_g_store_run_capture_era_variant"),
         Index("ix_g_store_content", "content_sha256"),
     )
 
     run_id: Mapped[uuid.UUID] = mapped_column(
         GUID(), ForeignKey("g_runs.id", ondelete="CASCADE"), nullable=False, index=True)
-    #: "real" | "hidden" | "scrambled:per_cell" | "scrambled:global"
+    #: "real" | "hidden" | "scrambled:per_cell" | "scrambled:global" -- WHAT the record holds.
     variant: Mapped[str] = mapped_column(String(32), nullable=False, default="real")
+    #: "boundary" | "final" -- WHEN it was taken, which is a different question and a
+    #: consequential one. A boundary capture is the moment the frozen assay replays against; the
+    #: final capture is the record a population left behind when it died, mid-era, with live marks
+    #: under the pi still in force. G3 inherits the second, not the first.
+    capture: Mapped[str] = mapped_column(String(16), nullable=False, default="boundary",
+                                         index=True)
     derived_from: Mapped[uuid.UUID | None] = mapped_column(
         GUID(), ForeignKey("g_store_artifacts.id", ondelete="SET NULL"), nullable=True)
 
