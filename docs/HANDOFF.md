@@ -36,8 +36,17 @@ CIVITAS_G_TEST_POSTGRES_URL=postgresql+psycopg://civitas@127.0.0.1:55432/civitas
 .venv/bin/python -m civitas_g world       # the world of record, arms, modulator table, layout
 .venv/bin/python -m civitas_g pins        # the G0 hashes against the working tree
 .venv/bin/python -m civitas_g selftest    # B§6; any failure halts a read
+.venv/bin/python -m civitas_g store       # G2: the store, and the decision that blocks it
 .venv/bin/python -m civitas_g reproduce --postgres-url "$PG"   # the G1 gate
 ```
+
+`notebooks/Civitas_G_Colab.ipynb` runs the world check, the G0 hashes, the self-tests and the
+reproduction on a Colab CPU without a local checkout — A5's "files come to me at the pre-check
+stage". It clones the branch rather than asking for uploads, because `civitas_g` is a package and
+not two loose files. Rebuild it with `make_notebook_civitas_g.py`; `nbcheck` compiles every cell
+before the file is written, and `tests_g/test_notebook.py` resolves every symbol it imports —
+which is the failure nbcheck structurally cannot catch, since a renamed symbol compiles fine and
+fails on Colab in front of whoever is trying to reproduce a number.
 
 The PostgreSQL cluster lives outside the scratchpad because the scratchpad's permissions are reset
 periodically, which kills the server mid-run.
