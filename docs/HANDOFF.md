@@ -82,7 +82,18 @@ periodically, which kills the server mid-run.
     no monkeypatch — and `touches_world_only_at_era_boundaries()` checks that rather than promising
     it. If you find yourself wanting a per-step hook, that is cognition arriving, and A1.1 forbids
     it.
-11. **`type_spawn_w` is `None` and five observation inputs are dead.** Both are recorded facts, not
+11. **The engine cannot hand out the store or take one in, and that is G2's whole blocker.**
+    `run()`'s result has `era_snaps` (genomes) and no marks; `World.__init__` always zeroes the
+    marks and redraws π. It cannot be worked around from the Civitas side: marks **overwrite**, so
+    the surviving array is not a function of anything the log records, and re-deriving it would
+    mean re-implementing `run()`. Do not try. Rule G2-D1 instead.
+12. **Two scrambles, and confusing them breaks a control.** `ScrambleMode.PER_CELL` is B§5.2's
+    `inherited scrambled`; `ScrambleMode.GLOBAL` is A2.1's `label-permuted` assay arm. A global
+    permutation is *isomorphic* to the real store — it says "label σ(j) marks what label j marked"
+    everywhere — so a population born into it faces exactly the learning problem the real store
+    poses, and the arm would read as a null while information had in fact passed. `scrambled_load`
+    checks the two are distinct.
+13. **`type_spawn_w` is `None` and five observation inputs are dead.** Both are recorded facts, not
     oversights. Changing the layout changes every genome and voids the reproduction; changing the
     spawn weights changes the world. They are G4 candidates with their own specs.
 
@@ -94,12 +105,12 @@ periodically, which kills the server mid-run.
 |---|---|---|
 | **G0** | audit and removal (B§1) | **audit delivered** (`docs/G0_G1.md`): the removal list against the tree, the reference hashes, nine findings. **The removal itself is not carried out.** |
 | **G1** | reproduction diff = 0 | **MET.** `precheck_v3_13.txt` reproduced **182/182 fields on SQLite and on PostgreSQL**, backends agreeing, from rows recomputed out of the database. `docs/G1_WRITEUP.md` |
-| G2 | the record as the artifact store | not started; needs an agreed spec (A3) |
+| **G2** | the record as the artifact store; Gate R, stale-mark lines, frozen assay reproduce through the store | **spec delivered** (`docs/G2_SPEC.md`); the store layer is **built and green**; the assay is **blocked on G2-D1** — see below |
 | G3 | the store outlives the run | not started |
 | G4 | a world that hardens | not started |
 | G5 | frozen-LLM reference arm | not started |
 
-144 G tests green on both backends; ruff clean; `nbcheck` green on all eight notebooks; eleven
+174 G tests green on both backends; ruff clean; `nbcheck` green on all eight notebooks; eleven
 available self-tests green. The M1–M13 suite still passes untouched (778 passed, 4 skipped, both
 backends), so the two lineages coexist without either disturbing the other — `civitas_g` imports
 nothing from `civitas/` except the kept dialect seam in `persistence/types.py`.
@@ -123,15 +134,19 @@ by A1.1: the agents were deterministic policies, not learners, and two domains i
 
 ## What remains
 
-1. **Carry out G0's removal.** `docs/G0_G1.md` §1 lists every path and line. One judgement call is
+1. **Rule on G2-D1: apply the engine patch?** This is the blocking decision and everything else in
+   G2 and G3 waits behind it. `run()` neither returns the store nor accepts one, so
+   `frozen_replay` has **never seen a store** — A2.1's `store visible / hidden / label-permuted`
+   arms have never been runnable, and G3's "population B born into A's record" is blocked by the
+   same fact. The patch is written, applies cleanly, and is **measured** trajectory-neutral;
+   it is deliberately **not applied**. `docs/patches/g2-store-capture-and-injection.diff`,
+   `docs/G2_SPEC.md` §2 and §5.
+2. **Carry out G0's removal.** `docs/G0_G1.md` §1 lists every path and line. One judgement call is
    already made and should be honoured: the four leak-check tests in `tests/test_domains.py` are
    the only executable statement of the §47 rule B§1 *keeps*, so they are re-homed to the vector
    adapter rather than deleted with the file.
-2. **Agree the G2 spec.** A3: no milestone starts until the previous gate is met and the next spec
-   is agreed. G1's gate is met.
-3. **Build `assay_selftest`** with G2's store (D5): with `record='none'` the frozen assay's
-   store-visible, store-hidden and label-permuted arms must be identical, and with `sym_gain = 0`
-   the permuted arm must equal the visible arm.
+3. **Finish `assay_selftest`** once G2-D1 is ruled. Two of its three clauses already run as
+   `assay_preconditions`; the third needs a replay that can see a store.
 
 ## Open issues
 

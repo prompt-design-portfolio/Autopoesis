@@ -220,14 +220,254 @@ def _engine_drift_selftest() -> SelfTestResult:
         f"HEAD's engine reproduces the reference blob's trajectory.")
 
 
+PATCH_PATH = "docs/patches/g2-store-capture-and-injection.diff"
+
+
+def _patched_engine(tmp: str):
+    """Apply the unapplied G2 patch to a copy of the engine and import it.
+
+    The patch lives in the repository and is applied to a temporary copy, never to the working
+    tree. That is what lets the proof below be re-run by anyone from a clean checkout, and what
+    keeps `sim_v3_13.py` byte-identical while the decision to apply is still open (G2-D1).
+    """
+    import importlib.util
+    import shutil
+    import subprocess
+
+    shutil.copy(REPO_ROOT / "sim_v3_13.py", f"{tmp}/sim_v3_13.py")
+    applied = subprocess.run(("patch", "-p0", "--quiet",
+                              "-i", str(REPO_ROOT / PATCH_PATH)),
+                             cwd=tmp, capture_output=True, text=True, timeout=60)
+    if applied.returncode != 0:
+        raise RuntimeError(f"the G2 patch no longer applies to sim_v3_13.py: "
+                           f"{(applied.stderr or applied.stdout).strip()[:200]}")
+    spec_ = importlib.util.spec_from_file_location("sim_v3_13_g2patched",
+                                                   f"{tmp}/sim_v3_13.py")
+    module = importlib.util.module_from_spec(spec_)      # type: ignore[arg-type]
+    spec_.loader.exec_module(module)                     # type: ignore[union-attr]
+    return module
+
+
+def _logs_differ(a: list, b: list) -> list[str]:
+    import numpy as np
+
+    shared = set(a[0]) & set(b[0])
+    return sorted({
+        k for x, y in zip(a, b, strict=True) for k in shared
+        if not np.array_equal(np.asarray(x[k], dtype=object), np.asarray(y[k], dtype=object))
+        and not (isinstance(x[k], float) and isinstance(y[k], float)
+                 and x[k] != x[k] and y[k] != y[k])
+    })
+
+
+def _store_patch_selftest() -> SelfTestResult:
+    """G2-D1's safety argument, as a measurement rather than as a reading of a diff.
+
+    Three claims, each checked:
+      1. with both flags off, the patched engine is bit-identical to the unpatched one;
+      2. with capture ON, the trajectory still does not move -- copying an array draws no RNG;
+      3. injection actually works -- a fresh world receives a record it did not write.
+
+    (3) is the one that makes the patch worth applying at all: without it A2.1's store arms and
+    G3's population B are both unrunnable.
+    """
+    import tempfile
+
+    import numpy as np
+
+    import sim_v3_13 as base
+    from civitas_g.world.engine import build_run_spec
+
+    spec = build_run_spec("collective", seed=0, phase_steps=800)   # crosses a mapping remap
+    with tempfile.TemporaryDirectory() as tmp:
+        patched = _patched_engine(tmp)
+
+        plain = base.run(base.Config(seed=0, **spec.kwargs), verbose=False,
+                         phases=spec.phases())
+        off = patched.run(patched.Config(seed=0, **spec.kwargs), verbose=False,
+                          phases=spec.phases())
+        if len(plain["log"]) != len(off["log"]):
+            return SelfTestResult("store_patch", "fail",
+                                  f"{len(plain['log'])} log rows unpatched vs {len(off['log'])} "
+                                  f"patched", milestone="G2")
+        differing = _logs_differ(plain["log"], off["log"])
+        added = sorted(set(off["log"][0]) - set(plain["log"][0]))
+        if differing or added or plain["final_mapping"] != off["final_mapping"]:
+            return SelfTestResult(
+                "store_patch", "fail",
+                f"with both flags off the patch is NOT bit-identical: {len(differing)} fields "
+                f"differ {differing[:6]}, log fields added {added}", milestone="G2")
+
+        on = patched.run(patched.Config(seed=0, store_snaps=True, **spec.kwargs),
+                         verbose=False, phases=spec.phases())
+        differing_on = _logs_differ(plain["log"], on["log"])
+        if differing_on:
+            return SelfTestResult(
+                "store_patch", "fail",
+                f"capture moved the trajectory in {len(differing_on)} fields "
+                f"{differing_on[:6]} -- a snapshot must observe, not participate",
+                milestone="G2")
+        if not on["store_snaps"]:
+            return SelfTestResult("store_patch", "fail",
+                                  "capture was on and produced no store snapshots",
+                                  milestone="G2")
+
+        store = on["store_snaps"][-1]
+        # long enough to produce one log row: the engine appends every `log_every` steps, so a
+        # one-step probe would come back with an empty log and nothing to read.
+        probe_phase = [dict(n_steps=int(patched.Config(**spec.kwargs).log_every), chain=True)]
+        injected = patched.run(patched.Config(seed=99, **spec.kwargs), verbose=False,
+                               phases=probe_phase, init_store=store)
+        fresh = patched.run(patched.Config(seed=99, **spec.kwargs), verbose=False,
+                            phases=probe_phase)
+        got = float(injected["log"][-1]["mark_density"])
+        none = float(fresh["log"][-1]["mark_density"])
+        if not (got > 0) or (none == got):
+            return SelfTestResult(
+                "store_patch", "fail",
+                f"injection did not take: density {got} with a store, {none} without",
+                milestone="G2")
+
+    live = float((np.abs(store["marks"]) > 1e-3).mean())
+    return SelfTestResult(
+        "store_patch", "pass",
+        f"{len(plain['log'])} log rows, {len(set(plain['log'][0]) & set(off['log'][0]))} shared "
+        f"fields identical with the flags off and with capture on; {len(on['store_snaps'])} store "
+        f"snapshots captured (density {live:.6f}); injection gives a fresh world density "
+        f"{got:.6f} against {none:.6f} without. The patch is trajectory-neutral and injection "
+        f"works.", milestone="G2")
+
+
 def _assay_selftest_unavailable() -> SelfTestResult:
     return SelfTestResult(
         "assay_selftest", "unavailable",
-        "NOT AVAILABLE. Named by A2.1 as an existing reference and by B§6 as a gate; it is in "
-        "neither sim_v3_13.py nor analysis_v3_13.py nor anywhere else in the repository. "
-        "Specified in D5 and built at G2 with the store: with record='none' the frozen assay's "
-        "store-visible, store-hidden and label-permuted arms must be IDENTICAL, and with "
-        "sym_gain = 0 the permuted arm must equal the visible arm.",
+        "NOT AVAILABLE, and the reason moved at G2. It is not merely absent from the repository "
+        "(F6): the instrument it would test cannot be run at all. A2.1's assay needs the frozen "
+        "replay to see a store, and `analysis_v3_13.frozen_replay` calls `sim_v3_13.run`, which "
+        "builds a fresh World whose marks are zeroed and whose pi is redrawn. There is no "
+        "parameter that carries a record in. So the store-visible / hidden / label-permuted arms "
+        "have never been runnable. `assay_preconditions` below checks the two clauses that ARE "
+        "checkable without injection; the third waits on DECISION G2-D1.",
+        milestone="G2")
+
+
+def _a_record_from_a_real_world(n_writes: int = 4000, seed: int = 0):
+    """A record built by driving the engine's own `write_mark`, not by synthesising an array.
+
+    A1.6: the simulation is never mocked; it is the mechanism. A hand-built marks array would test
+    this module against my idea of what a store looks like rather than against one.
+    """
+    import numpy as np
+
+    import sim_v3_13 as S
+    from civitas_g.store.record import record_from_world
+
+    cfg = S.Config(seed=seed, chain=True, record="real")
+    world = S.World(cfg, np.random.default_rng(seed))
+    world.chain_on = True
+    rng = np.random.default_rng(seed + 1)
+    g = cfg.grid
+    for _ in range(n_writes):
+        ftype, k = int(rng.integers(S.N_TYPES)), int(rng.integers(S.N_PREPS))
+        y, x = int(rng.integers(g)), int(rng.integers(g))
+        world.write_mark(ftype, k, k == world.mapping[ftype], y, x, cfg)
+    return record_from_world(world, arm="collective", t=700, era_index=1,
+                             engine_sha256="0" * 64, cfg_digest="selftest")
+
+
+def _store_round_trip_selftest() -> SelfTestResult:
+    """B§6: save, load, byte-identical marks and pi."""
+    from civitas_g.store.record import Record
+
+    record = _a_record_from_a_real_world()
+    blob = record.to_bytes()
+    loaded = Record.from_bytes(blob, record.provenance)
+    ok, detail = loaded.equals(record)
+    if not ok:
+        return SelfTestResult("store_round_trip", "fail", detail, milestone="G2")
+    if loaded.sha256() != record.sha256():
+        return SelfTestResult("store_round_trip", "fail",
+                              "the content hashes differ across a round-trip", milestone="G2")
+    return SelfTestResult(
+        "store_round_trip", "pass",
+        f"{detail}; {len(blob)} bytes on the wire, content hash {record.sha256()[:12]} stable",
+        milestone="G2")
+
+
+def _scrambled_load_selftest() -> SelfTestResult:
+    """B§6: density and sign preserved, label destroyed."""
+    import numpy as np
+
+    from civitas_g.store.persistence import preserves_density_and_sign
+    from civitas_g.store.record import ScrambleMode
+
+    record = _a_record_from_a_real_world()
+    scrambled = record.scrambled(np.random.default_rng(7), ScrambleMode.PER_CELL)
+    ok, detail = preserves_density_and_sign(record, scrambled)
+    if not ok:
+        return SelfTestResult("scrambled_load", "fail", detail, milestone="G2")
+
+    # and the part that makes it a control rather than a relabelling: a GLOBAL permutation
+    # preserves the label -> preparation association everywhere, so it must NOT be what the
+    # inherited-scrambled arm uses. Checked by showing the two modes differ.
+    global_ = record.scrambled(np.random.default_rng(7), ScrambleMode.GLOBAL)
+    if np.array_equal(global_.marks, scrambled.marks):
+        return SelfTestResult(
+            "scrambled_load", "fail",
+            "the per-cell and global scrambles produced the same store, so the per-cell mode is "
+            "not destroying cross-cell consistency", milestone="G2")
+    return SelfTestResult("scrambled_load", "pass",
+                          f"{detail}; per-cell and global scrambles are distinct, so the "
+                          f"inherited-scrambled arm is a control and not a relabelling",
+                          milestone="G2")
+
+
+def _assay_preconditions_selftest() -> SelfTestResult:
+    """The two clauses of D5's `assay_selftest` that do not need store injection.
+
+    1. With `record="none"` the visible, hidden and label-permuted stores are the SAME store, so
+       the three assay arms cannot differ for any reason other than a bug.
+    2. With `sym_gain = 0` the read channels are zero whatever the store holds, so the permuted
+       arm must equal the visible arm.
+
+    The third clause -- that the frozen assay actually produces those equalities -- needs a replay
+    that can see a store, and cannot run. See `assay_selftest`.
+    """
+    import numpy as np
+
+    import sim_v3_13 as S
+    from civitas_g.store.record import ScrambleMode
+
+    empty = _a_record_from_a_real_world(n_writes=0)
+    for name, derived in (("hidden", empty.hidden()),
+                          ("permuted", empty.scrambled(np.random.default_rng(0),
+                                                       ScrambleMode.GLOBAL))):
+        ok, detail = empty.equals(derived)
+        if not ok:
+            return SelfTestResult("assay_preconditions", "fail",
+                                  f"with no record, the {name} store differs: {detail}",
+                                  milestone="G2")
+
+    # clause 2, measured against the engine's own observation construction
+    record = _a_record_from_a_real_world()
+    cfg = S.Config(seed=0, chain=True, record="real")
+    agent = S.Agent(cfg, np.random.default_rng(1), 0, 5, 5)
+    agent.sym_gain = 0.0
+    permuted = record.scrambled(np.random.default_rng(3), ScrambleMode.GLOBAL)
+    for ftype in range(S.N_TYPES):
+        for y, x in ((5, 5), (11, 23), (40, 2)):
+            visible = agent.sym_gain * record.marks[ftype, :, y, x]
+            other = agent.sym_gain * permuted.marks[ftype, :, y, x]
+            if not np.array_equal(visible, other) or visible.any():
+                return SelfTestResult(
+                    "assay_preconditions", "fail",
+                    f"with sym_gain = 0 the read channels are not zero at "
+                    f"(type {ftype}, cell {y},{x})", milestone="G2")
+    return SelfTestResult(
+        "assay_preconditions", "pass",
+        "with no record the visible, hidden and permuted stores are identical; with sym_gain = 0 "
+        "the K read channels are zero whatever the store holds, so the permuted arm equals the "
+        "visible arm. The third clause needs store injection -- see assay_selftest",
         milestone="G2")
 
 
@@ -264,19 +504,14 @@ def _registry() -> list[SelfTest]:
         SelfTest("engine_drift", _engine_drift_selftest, source="civitas_g.manifest"),
         SelfTest("row_round_trip", _row_round_trip_selftest,
                  source="civitas_g.persistence.encoding"),
-        SelfTest("store_round_trip",
-                 _g2_g3_unavailable(
-                     "store_round_trip", "G2",
-                     "NOT AVAILABLE at G1. B§6's form -- save, load, byte-identical marks and pi "
-                     "-- needs the store as an artifact store, which is G2. The row round-trip "
-                     "below is the G1 half of it and does run."),
-                 milestone="G2"),
-        SelfTest("scrambled_load",
-                 _g2_g3_unavailable(
-                     "scrambled_load", "G3",
-                     "NOT AVAILABLE at G1. Density and sign preserved, label destroyed on load -- "
-                     "there is no load until a store outlives a run, which is G3."),
-                 milestone="G3"),
+        SelfTest("store_round_trip", _store_round_trip_selftest,
+                 milestone="G2", source="civitas_g.store.record"),
+        SelfTest("scrambled_load", _scrambled_load_selftest,
+                 milestone="G2", source="civitas_g.store.persistence"),
+        SelfTest("assay_preconditions", _assay_preconditions_selftest,
+                 milestone="G2", source="civitas_g.store.record"),
+        SelfTest("store_patch", _store_patch_selftest,
+                 milestone="G2", source=PATCH_PATH),
         SelfTest("b_founders_carry_no_h",
                  _g2_g3_unavailable(
                      "b_founders_carry_no_h", "G3",

@@ -152,6 +152,42 @@ def cmd_world(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_store(args: argparse.Namespace) -> int:
+    """G2's state: what the store layer can do, and the one thing it cannot."""
+    import sim_v3_13
+    from civitas_g.selftests import PATCH_PATH, REPO_ROOT
+    from civitas_g.store.record import ScrambleMode
+
+    print("THE RECORD AS AN ARTIFACT STORE (G2)\n")
+    source = (REPO_ROOT / "sim_v3_13.py").read_text()
+    applied = "store_snaps" in source and "init_store" in source
+    print(f"  engine patch:      {'APPLIED' if applied else 'NOT APPLIED (G2-D1 unruled)'}")
+    print(f"  patch file:        {PATCH_PATH}")
+    print(f"  run() returns the store:  {'yes' if applied else 'NO'}")
+    print(f"  run() accepts a store:    {'yes' if applied else 'NO'}")
+    if not applied:
+        print("\n  Consequence: frozen_replay builds a fresh World whose marks are zeroed and "
+              "whose\n  pi is redrawn, so A2.1's store-visible / hidden / label-permuted arms "
+              "have never been\n  runnable, and G3's population B cannot be born into A's "
+              "record. See docs/G2_SPEC.md §1.")
+
+    print(f"\n  store shape:       ({sim_v3_13.N_TYPES}, {sim_v3_13.N_PREPS}, "
+          f"{sim_v3_13.Config().grid}, {sim_v3_13.Config().grid}) signed floats")
+    print("\n  variants (A1.4: a control is stored BESIDE its parent, never in place of it)")
+    print(f"    {'real':<22}the record as captured")
+    print(f"    {'hidden':<22}same array, marks zeroed -- the presence control (A2.3)")
+    print(f"    {'scrambled:':<22}", end="")
+    print(f"{ScrambleMode.PER_CELL.value:<14}B§5.2's inherited-scrambled control")
+    print(f"    {'scrambled:':<22}{ScrambleMode.GLOBAL.value:<14}"
+          f"A2.1's label-permuted ASSAY arm -- not a control")
+    print("\n  A global permutation is isomorphic to the real store, so using it as the "
+          "inherited-\n  scrambled control would read as a null while information had passed. "
+          "See G2-D2.")
+    print("\n  provenance: at the ARTIFACT level (run, era, engine, mapping, pi). NOT per mark --")
+    print("  the engine's marks carry no writer and no timestamp. See G2-D5.")
+    return 0
+
+
 def cmd_reproduce(args: argparse.Namespace) -> int:
     from civitas_g.g1 import run_g1
 
@@ -182,6 +218,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("world", help="the world of record, the arms, and the adapter")
     s.set_defaults(func=cmd_world)
+
+    s = sub.add_parser("store", help="G2: the record as an artifact store, and its blocker")
+    s.set_defaults(func=cmd_store)
 
     s = sub.add_parser("reproduce", help="the G1 gate: reproduction diff = 0")
     s.add_argument("--sqlite-url", default="sqlite:///var/civitas_g.db")

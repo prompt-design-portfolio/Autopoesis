@@ -107,6 +107,9 @@ class Run(Base, UUIDPrimaryKey, Timestamped):
         order_by="EraRow.ordinal")
     snapshots: Mapped[list[EraSnapshot]] = relationship(
         back_populates="run", cascade="all, delete-orphan", order_by="EraSnapshot.ordinal")
+    stores: Mapped[list[StoreArtifact]] = relationship(
+        back_populates="run", cascade="all, delete-orphan",
+        order_by="StoreArtifact.era_index")
 
 
 class EraRow(Base, UUIDPrimaryKey):
@@ -169,6 +172,54 @@ class EraSnapshot(Base, UUIDPrimaryKey):
     run: Mapped[Run] = relationship(back_populates="snapshots")
 
 
+class StoreArtifact(Base, UUIDPrimaryKey, Timestamped):
+    """One era-boundary snapshot of the record, as a stored artifact (G2).
+
+    Separate from `EraSnapshot`, which holds genomes. They are snapshotted at the same moments and
+    are two different things: the genomes are what a population IS, the record is what it LEFT.
+    G3's claim turns on being able to hand the second to a population that never had the first.
+
+    `blob` is the record's own byte-exact serialisation, and `content_sha256` is over the marks and
+    pi rather than over the blob -- zlib output depends on the library version, so hashing the blob
+    would make two identical records hash differently on two machines.
+
+    A1.4: nothing is hard-deleted. A derived record -- hidden, scrambled, permuted -- is stored
+    beside its parent with `derived_from` set, never in place of it.
+    """
+
+    __tablename__ = "g_store_artifacts"
+    __table_args__ = (
+        UniqueConstraint("run_id", "era_index", "variant", name="uq_g_store_run_era_variant"),
+        Index("ix_g_store_content", "content_sha256"),
+    )
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("g_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    #: "real" | "hidden" | "scrambled:per_cell" | "scrambled:global"
+    variant: Mapped[str] = mapped_column(String(32), nullable=False, default="real")
+    derived_from: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("g_store_artifacts.id", ondelete="SET NULL"), nullable=True)
+
+    era_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    t: Mapped[int] = mapped_column(Integer(), nullable=False)
+    pi: Mapped[list[int]] = mapped_column(JSONVariant(), nullable=False)
+    mapping: Mapped[list[int]] = mapped_column(JSONVariant(), nullable=False)
+    prev_mapping: Mapped[list[int]] = mapped_column(JSONVariant(), nullable=False, default=list)
+
+    #: Measured on the way in, so a reader never has to decompress a blob to know what is in it,
+    #: and so a scramble that failed to preserve density is visible in a query.
+    density: Mapped[float] = mapped_column(Float(), nullable=False, default=0.0)
+    mean_abs: Mapped[float] = mapped_column(Float(), nullable=False, default=0.0)
+    n_positive: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
+    n_negative: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
+
+    blob: Mapped[bytes] = mapped_column(LargeBinary(), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSONVariant(), nullable=False)
+
+    run: Mapped[Run] = relationship(back_populates="stores")
+
+
 class Reproduction(Base, UUIDPrimaryKey, Timestamped):
     """One G1 gate result: a reading recomputed from the rows, against a reference summary.
 
@@ -203,4 +254,5 @@ class Reproduction(Base, UUIDPrimaryKey, Timestamped):
     campaign: Mapped[Campaign] = relationship(back_populates="reproductions")
 
 
-__all__ = ["Base", "Campaign", "Run", "EraRow", "EraSnapshot", "Reproduction"]
+__all__ = ["Base", "Campaign", "Run", "EraRow", "EraSnapshot", "StoreArtifact",
+           "Reproduction"]

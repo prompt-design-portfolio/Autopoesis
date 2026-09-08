@@ -40,3 +40,15 @@ def test_selftest_reports_the_gaps_and_still_exits_zero(capsys):
     out = capsys.readouterr().out
     assert "N/A" in out and "assay_selftest" in out
     assert code == 0
+
+
+def test_store_names_the_blocker_and_the_two_scrambles(capsys):
+    """G2's state has to be legible without reading the spec: the patch is not applied, and the
+    two scrambles are different controls."""
+    assert main(["store"]) == 0
+    out = capsys.readouterr().out
+    assert "NOT APPLIED" in out and "G2-D1" in out
+    assert "have never been" in out and "runnable" in out
+    assert "per_cell" in out and "global" in out
+    assert "isomorphic" in out
+    assert "NOT per mark" in out
