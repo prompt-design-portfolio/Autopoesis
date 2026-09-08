@@ -67,6 +67,22 @@ everything else rather than being helpfully removed.
 
 Anything more helpful than that is the experimenter playing the game.
 
+**Ruled (G5-D6): the field names stay, and the arm is therefore *generously* provisioned.**
+Building the rendering surfaced an asymmetry worth stating rather than absorbing. The learner's
+network receives thirty-one unlabelled floats; the rendering names them — `food_A_here`,
+`energy`, `read_channel_0`. Those names are more than the learner is given. The alternative,
+bare positional indices (`f20 = +0.42`), is closer to parity and was rejected: a frozen model
+handed thirty-one anonymous numbers cannot do anything at all, and an arm that produces zero
+because the presentation was deliberately impoverished tells a reader nothing they could not have
+guessed.
+
+So the reference arm is provisioned generously on purpose, and the consequence runs one way:
+**a poor number from this arm is more informative than a good one.** A good number is confounded
+with the presentation's help; a poor number is a model failing at a task it was given more
+context for than the learner ever had. Neither is a claim (§3.1). The names never cross the line
+that matters — `read_channel_j` is a position, not a preparation — which is the distinction
+`check_presentation_no_leak` enforces and §2.1 exists to protect.
+
 ### 2.2 What the model is told about the task
 
 The same problem one level up. A prompt that explains the preparation mapping, the era clock, or

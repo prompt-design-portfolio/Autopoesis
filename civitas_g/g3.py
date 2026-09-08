@@ -188,9 +188,15 @@ class G3Result:
 # running a succession
 # ---------------------------------------------------------------------------------------------
 
-def run_population_a(seed: int, phase_steps: int, *, verbose: bool = False) -> RunResult:
-    """An ordinary `collective` run, with store capture on. Nothing about it is special."""
+def run_population_a(seed: int, phase_steps: int, *, verbose: bool = False,
+                     world: dict[str, Any] | None = None) -> RunResult:
+    """An ordinary `collective` run, with store capture on. Nothing about it is special.
+
+    `world` is G4's hook: a hardened world runs through exactly this path, so nothing about the
+    succession differs between a baseline and a hardened mechanic except the world itself.
+    """
     spec = build_run_spec("collective", seed=seed, phase_steps=phase_steps,
+                          world=world, hardened=world is not None,
                           overrides={"store_snaps": True})
     return run_engine(spec, verbose=verbose)
 
@@ -305,7 +311,8 @@ def assay_on_b(raw: dict[str, Any], *, steps: int = 300) -> dict[str, Any]:
 
 def run_succession(succession: Succession, *, verbose: bool = False,
                    a_result: RunResult | None = None,
-                   with_assay: bool = False, assay_steps: int = 300) -> G3Result:
+                   with_assay: bool = False, assay_steps: int = 300,
+                   world: dict[str, Any] | None = None) -> G3Result:
     """A lives and dies; B is born into what it left.
 
     `a_result` lets a caller reuse one A across alignments -- the same record, two clocks -- which
@@ -313,7 +320,8 @@ def run_succession(succession: Succession, *, verbose: bool = False,
     """
     from civitas_g.store.record import RecordProvenance
 
-    a = a_result or run_population_a(succession.seed, succession.a_phase_steps, verbose=verbose)
+    a = a_result or run_population_a(succession.seed, succession.a_phase_steps, verbose=verbose,
+                                     world=world)
     final = a.raw.get("final_store")
     if final is None:
         raise ValueError(
@@ -345,6 +353,7 @@ def run_succession(succession: Succession, *, verbose: bool = False,
         store, extra = store_for_arm(record, arm, scramble_seed=succession.scramble_seed)
         spec = build_run_spec("collective", seed=succession.seed,
                               phase_steps=succession.b_steps,
+                              world=world, hardened=world is not None,
                               overrides={"store_snaps": True, **extra})
         raw = run_engine(spec, verbose=verbose, phases=copy.deepcopy(b_phases),
                          init_store=store,

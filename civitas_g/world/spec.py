@@ -112,6 +112,63 @@ REFERENCE_PHASE_STEPS: int = 3000
 REFERENCE_SEEDS: tuple[int, ...] = (0,)
 
 
+#: The parameters a G4 mechanic is allowed to move, and nothing else. A mechanic that changed a
+#: parameter outside this set would be two mechanics, and A5 says one change per experiment.
+HARDENING_PARAMETERS: dict[str, tuple[str, ...]] = {
+    "K": ("n_preps", "prep_value"),
+}
+
+
+def world_at_k(k: int, world: dict[str, Any] | None = None) -> dict[str, Any]:
+    """G4 mechanic 1: the world of record with K raised, and the economics kept honest.
+
+    `prep_value` moves with K because the invariant is `prep_value = (K-1) * prep_fail`, which is
+    what holds the expected value of a chance preparation at exactly zero. Raising K and leaving
+    `prep_value` alone would make a chance preparation worth `prep_value/K - prep_fail*(K-1)/K`,
+    which at K = 7 with the K = 5 economics is **-0.250** -- a harder world for a reason that has
+    nothing to do with the mapping space, with every arm getting worse together while the contrast
+    between them measured something else.
+
+    Nothing else moves. `prep_fail`, the era clocks, the metabolism, the staging and the densities
+    are the world of record's.
+    """
+    base = dict(WORLD if world is None else world)
+    if int(k) <= N_TYPES:
+        raise WorldMismatch(
+            f"K = {k} with T = {N_TYPES}: a mapping sends each type to a DISTINCT preparation, so "
+            f"K must exceed T for the mapping space to be non-trivial.")
+    base["n_preps"] = int(k)
+    base["prep_value"] = (int(k) - 1) * float(base["prep_fail"])
+    return base
+
+
+def check_hardened_world(world: dict[str, Any]) -> dict[str, Any]:
+    """A G4 world is the world of record with exactly one mechanic's parameters moved.
+
+    Returns what moved, so a write-up states it rather than asserting it. Raises if anything
+    outside a declared mechanic's parameter set has changed -- because a mechanic that moved a
+    second parameter would be two mechanics, and its claim line could not say which one produced
+    the number.
+    """
+    allowed = {p for params in HARDENING_PARAMETERS.values() for p in params}
+    # n_preps is not in EXPECTED_WORLD -- it is a Config field the research WORLD never set -- so
+    # the reference for "has it moved" carries its default explicitly. Without that, raising K
+    # would not be reported as a change at all.
+    reference = {**EXPECTED_WORLD, "n_preps": N_PREPS}
+    moved = {k: (reference.get(k, "<absent>"), world.get(k))
+             for k in set(reference) | set(world)
+             if world.get(k) != reference.get(k, world.get(k))}
+    illegal = {k: v for k, v in moved.items() if k not in allowed}
+    if illegal:
+        lines = "\n".join(f"    {k}: {a!r} -> {b!r}" for k, (a, b) in sorted(illegal.items()))
+        raise WorldMismatch(
+            f"a hardened world moved parameters no mechanic declares:\n{lines}\n"
+            f"  A5: one change per experiment. A mechanic that moves a second parameter is two "
+            f"mechanics and its claim line cannot say which produced the number.")
+    check_chance_ev_is_zero(world)
+    return moved
+
+
 class WorldMismatch(AssertionError):
     """The research lineage's world is not the world this build was written against.
 

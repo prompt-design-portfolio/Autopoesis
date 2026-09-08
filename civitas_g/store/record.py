@@ -44,7 +44,7 @@ from typing import Any
 
 import numpy as np
 
-from civitas_g.world.spec import N_PREPS, N_TYPES
+from civitas_g.world.spec import N_TYPES
 
 #: Serialisation format version. Bumped when the byte layout changes, so a stored artifact can
 #: never be silently reinterpreted under a newer layout.
@@ -106,19 +106,30 @@ class Record:
         if self.marks.ndim != 4:
             raise ValueError(f"marks must be (T, K, g, g); got shape {self.marks.shape}")
         t, k, gy, gx = self.marks.shape
-        if (t, k) != (N_TYPES, N_PREPS):
-            raise ValueError(f"marks is ({t}, {k}, ...) but the world is "
-                             f"({N_TYPES}, {N_PREPS}, ...)")
+        # T is pinned: the number of food types is not something any mechanic moves. K is read
+        # off the marks, because G4's first mechanic raises it (spec.HARDENING_PARAMETERS) and a
+        # record that could only ever be K = N_PREPS would make a hardened store unrepresentable.
+        # This is the same K-blindness that `check_chance_ev_is_zero` had, in the store.
+        if t != N_TYPES:
+            raise ValueError(f"marks is ({t}, ...) but the world has {N_TYPES} food types")
+        if k <= t:
+            raise ValueError(f"marks is (..., {k}, ...) with {t} food types: K must exceed T, "
+                             f"or a mapping is not an injection and there is nothing to record")
         if gy != gx:
             raise ValueError(f"the grid is not square: {gy} x {gx}")
-        if sorted(self.pi) != list(range(N_PREPS)):
-            raise ValueError(f"pi is not a permutation of 0..{N_PREPS - 1}: {self.pi}")
+        if sorted(self.pi) != list(range(k)):
+            raise ValueError(f"pi is not a permutation of 0..{k - 1}: {self.pi}")
 
     # ---------------------------------------------------------------- shape and statistics
 
     @property
     def grid(self) -> int:
         return int(self.marks.shape[-1])
+
+    @property
+    def n_preps(self) -> int:
+        """K, read off the marks rather than the module: a hardened store carries its own K."""
+        return int(self.marks.shape[1])
 
     @property
     def live(self) -> np.ndarray:
@@ -142,7 +153,7 @@ class Record:
 
     def endorsed(self) -> tuple[int, ...]:
         """`endorsed[j]` is the preparation label j endorses, i.e. pi^-1."""
-        inv = [0] * N_PREPS
+        inv = [0] * self.n_preps
         for k, label in enumerate(self.pi):
             inv[label] = k
         return tuple(inv)
@@ -171,14 +182,14 @@ class Record:
         """
         out = np.empty_like(self.marks)
         if mode is ScrambleMode.GLOBAL:
-            perm = rng.permutation(N_PREPS)
+            perm = rng.permutation(self.n_preps)
             out[:] = self.marks[:, perm, :, :]
         else:
             g = self.grid
             for ftype in range(N_TYPES):
                 # one independent permutation per cell, drawn as a (g, g, K) argsort so the whole
                 # type is permuted in one vectorised pass rather than g*g python-level draws
-                order = np.argsort(rng.random((g, g, N_PREPS)), axis=-1)
+                order = np.argsort(rng.random((g, g, self.n_preps)), axis=-1)
                 plane = np.moveaxis(self.marks[ftype], 0, -1)          # (g, g, K)
                 out[ftype] = np.moveaxis(np.take_along_axis(plane, order, axis=-1), -1, 0)
         return Record(marks=out, pi=self.pi, provenance=self.provenance,

@@ -166,7 +166,11 @@ def _compute_fields(results: dict[str, list[dict[str, Any]]]) -> dict[str, float
         f_, _n_all = A.follow_rate(L)
         endorse_ok, _n_g, stale, n_stale = A.follow_split(L)
         hit = A.prep_hit(L, True)
-        null = (1.0 - hit) / (N_PREPS - 1) if np.isfinite(hit) else math.nan
+        # K comes off the run, not the module. At the reference K = 5 this is the same number;
+        # it stops being the same number on a G4 hardened run, and a null computed from the
+        # module's K would be silently wrong there rather than loudly wrong.
+        k = int(results[n][0].get("cfg", {}).get("n_preps", N_PREPS))
+        null = (1.0 - hit) / (k - 1) if np.isfinite(hit) else math.nan
         out[key("follow", n, "all")] = _finite(f_)
         out[key("follow", n, "endorse_ok")] = _finite(endorse_ok)
         out[key("follow", n, "stale")] = _finite(stale)

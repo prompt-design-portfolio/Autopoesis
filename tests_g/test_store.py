@@ -75,8 +75,13 @@ def test_a_record_refuses_a_pi_that_is_not_a_permutation(record):
 
 
 def test_a_record_refuses_marks_of_the_wrong_shape(record):
-    with pytest.raises(ValueError, match="but the world is"):
+    """T is pinned; K is read off the marks so a G4 hardened store can exist (see
+    tests_g/test_g4.py). The shape a record refuses is therefore the wrong number of FOOD TYPES,
+    and a pi that does not permute the K the marks actually carry."""
+    with pytest.raises(ValueError, match="food types"):
         Record(marks=np.zeros((2, 5, 4, 4)), pi=record.pi, provenance=record.provenance)
+    with pytest.raises(ValueError, match="not a permutation"):
+        Record(marks=np.zeros((3, 7, 4, 4)), pi=record.pi, provenance=record.provenance)
 
 
 # --------------------------------------------------------------------------- B§6: round-trip

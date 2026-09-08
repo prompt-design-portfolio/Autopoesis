@@ -24,7 +24,13 @@ from dataclasses import dataclass
 from typing import Any
 
 import sim_v3_13 as _sim
-from civitas_g.world.spec import STAGED, WORLD, check_chance_ev_is_zero, check_world
+from civitas_g.world.spec import (
+    STAGED,
+    WORLD,
+    check_chance_ev_is_zero,
+    check_hardened_world,
+    check_world,
+)
 
 
 class EngineRefusal(RuntimeError):
@@ -56,7 +62,8 @@ class RunSpec:
 
 def build_run_spec(arm: str, seed: int, phase_steps: int,
                    world: dict[str, Any] | None = None,
-                   overrides: dict[str, Any] | None = None) -> RunSpec:
+                   overrides: dict[str, Any] | None = None,
+                   hardened: bool = False) -> RunSpec:
     """An arm's `RunSpec`, with the world checked before anything is built.
 
     The checks run here rather than at read time on purpose. A number produced against an
@@ -66,8 +73,13 @@ def build_run_spec(arm: str, seed: int, phase_steps: int,
     from civitas_g.world.arms import get_arm
 
     world = WORLD if world is None else world
-    check_world(world)
-    check_chance_ev_is_zero(world)
+    if hardened:
+        # A G4 world: the world of record with exactly one mechanic's parameters moved, and the
+        # chance-EV invariant still holding at the new K.
+        check_hardened_world(world)
+    else:
+        check_world(world)
+        check_chance_ev_is_zero(world)
     kwargs = get_arm(arm).config_kwargs(world)
     if overrides:
         kwargs.update(overrides)          # overrides win over WORLD, as run_experiment does
