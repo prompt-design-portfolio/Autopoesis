@@ -1,5 +1,15 @@
 # G2 spec — the record as the artifact store
 
+> **Status: G2-D1 ruled, and the engine change applied.** The engine is now versioned rather than
+> pinned (`civitas_g.manifest.ENGINE_VERSIONS`): `reference` → `G0` → `G2-store`, each with its
+> hash, what changed, and how equivalence to its predecessor was checked. `engine_store_selftest`
+> keeps measuring the equivalence now that the change is in. §1 and §2 below are kept as written,
+> because they are the argument the ruling was made on, and a spec that quietly rewrote its own
+> premises after the fact would be worth nothing.
+>
+> What the ruling unblocked, and what it did not: A2.1's twelve cells now run for the first time,
+> and `assay_selftest` exists. G3's population B is no longer blocked by the engine.
+
 A3's row:
 
 | milestone | gate | number it must move |
@@ -214,8 +224,8 @@ change but `H`.
 | `store_round_trip` | **built, green** — save, load, byte-identical marks and π |
 | `scrambled_load` | **built, green** — density and signs preserved, labels destroyed, and the per-cell scramble proved distinct from a global one |
 | `assay_preconditions` | **built, green** — the two clauses of `assay_selftest` that need no injection |
-| `assay_selftest` | **blocked on G2-D1** — its third clause needs a replay that can see a store |
-| `store_patch_selftest` | **built** — the patch's bit-identity, run against both engines |
+| `assay_selftest` | **built** (D5) — a world with `record="none"` cannot be moved by what it is handed, and a reader with `sym_gain = 0` reads nothing whatever the labels say |
+| `engine_store_selftest` | **built** — the store change's trajectory-neutrality, measured against the engine as it was at `G0` |
 | `b_founders_carry_no_h` | G3 |
 
 ---
@@ -283,4 +293,12 @@ needs mark-level attribution.
 
 ---
 
-**Nothing in §2 is applied. G2 code beyond the store layer starts on your agreement to G2-D1.**
+**G2-D1 was ruled and the change applied.** The four conditions the recommendation was
+conditional on:
+
+| condition | state |
+|---|---|
+| the bit-identity proof is a permanent self-test | `engine_store_selftest`, comparing the current engine against the blob at `G0` |
+| the new hash pinned beside the old one, and every manifest names which engine produced each number | `ENGINE_VERSIONS`; `engine_identity()` carries `engine_version` into every manifest |
+| the G1 reproduction re-run against the patched engine, still 182/182 | **G2 gate clause 4 — see the write-up** |
+| `analysis_v3_13.py` untouched | pinned and checked (`test_analysis_v3_13_was_not_touched`) |

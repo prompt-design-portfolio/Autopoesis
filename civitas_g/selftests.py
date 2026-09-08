@@ -336,17 +336,93 @@ def _engine_store_selftest() -> SelfTestResult:
         f"a fresh world density {got:.6f} against {none:.6f} without.", milestone="G2")
 
 
-def _assay_selftest_unavailable() -> SelfTestResult:
+def _assay_selftest() -> SelfTestResult:
+    """D5, built at G2 as specified: the frozen assay's own two invariants.
+
+    Both are of the same shape -- a condition under which the three store arms *cannot* differ, so
+    that if they do, the assay is measuring something other than the store.
+
+      1. **`record = "none"`.** The read channels are zero whatever the world holds, so injecting
+         three different stores must give three identical results. Run against a REAL record, not
+         an empty one: injecting three copies of an empty array would pass trivially and check
+         nothing.
+      2. **`sym_gain = 0`.** The read is `sym_gain * marks`, so it is zero whatever the labels
+         say, and the label-permuted arm must equal the visible arm.
+
+    A2.1 cites `assay_selftest` as an existing reference. It was not one -- it was absent from the
+    repository, and before the G2 engine change the instrument it names could not be run at all.
+    """
+    from civitas_g.assay import STORE_CONDITIONS, run_assay
+
+    run_dict, record = _a_run_with_a_record()
+    if run_dict is None:
+        return SelfTestResult("assay_selftest", "fail", str(record), milestone="G2")
+
+    # 1. a world that does not read cannot be moved by what it is handed
+    blind = dict(run_dict)
+    blind["cfg"] = dict(run_dict["cfg"], record="none")
+    deaf = run_assay(blind, record, steps=60)
+    hits = {c.store: c.hit for c in deaf.cells if c.mapping == "shuffled" and c.eta_scale == 1.0}
+    spread = max(hits.values()) - min(hits.values())
+    if spread != 0.0:
+        return SelfTestResult(
+            "assay_selftest", "fail",
+            f"with record='none' the three store arms differ by {spread:.6f} ({hits}). The read "
+            f"channels are zero in that world, so the assay is responding to something other "
+            f"than the store.", milestone="G2")
+
+    # 2. a reader with zero gain reads nothing, whatever the labels say
+    muted = run_assay(run_dict, record, steps=60, sym_gain_zero=True)
+    visible = muted.cell("visible", "shuffled", 1.0).hit
+    permuted = muted.cell("label_permuted", "shuffled", 1.0).hit
+    if visible != permuted:
+        return SelfTestResult(
+            "assay_selftest", "fail",
+            f"with sym_gain = 0 the permuted arm ({permuted:.6f}) does not equal the visible arm "
+            f"({visible:.6f}). Note that cfg.sym_gain_lock cannot do this in a replay -- restore() "
+            f"writes every genome field back over the top, sym_gain included.", milestone="G2")
+
     return SelfTestResult(
-        "assay_selftest", "unavailable",
-        "NOT AVAILABLE, and the reason moved at G2. It is not merely absent from the repository "
-        "(F6): the instrument it would test cannot be run at all. A2.1's assay needs the frozen "
-        "replay to see a store, and `analysis_v3_13.frozen_replay` calls `sim_v3_13.run`, which "
-        "builds a fresh World whose marks are zeroed and whose pi is redrawn. There is no "
-        "parameter that carries a record in. So the store-visible / hidden / label-permuted arms "
-        "have never been runnable. `assay_preconditions` below checks the two clauses that ARE "
-        "checkable without injection; the third waits on DECISION G2-D1.",
+        "assay_selftest", "pass",
+        f"with record='none' all {len(STORE_CONDITIONS)} store arms are identical against a real "
+        f"record (hit {next(iter(hits.values())):.3f}); with sym_gain = 0 the permuted arm equals "
+        f"the visible arm ({visible:.3f}). The assay responds to the store and to nothing else.",
         milestone="G2")
+
+
+def _a_run_with_a_record(phase_steps: int = 800):
+    """One real run long enough to cross an era boundary, and the record it left.
+
+    Short by the standards of a result and not by the standards of the mechanism: an era boundary
+    is what produces both a genome snapshot and a store snapshot, and the assay needs both.
+    """
+    import numpy as np
+
+    from civitas_g.store.record import Record, RecordProvenance
+    from civitas_g.world.engine import build_run_spec
+    from civitas_g.world.engine import run as run_engine
+
+    spec = build_run_spec("collective", seed=0, phase_steps=phase_steps,
+                          overrides={"store_snaps": True})
+    result = run_engine(spec)
+    raw = result.raw
+    if not raw.get("era_snaps") or not raw.get("store_snaps"):
+        return None, ("the run produced no era-boundary snapshots, so there is nothing to "
+                      "freeze; phase 2 must be at least one era long")
+    snap = raw["store_snaps"][-1]
+    record = Record(
+        marks=np.asarray(snap["marks"], dtype="<f8"),
+        pi=tuple(int(x) for x in snap["pi"]),
+        provenance=RecordProvenance(
+            run_seed=0, arm="collective", t=int(snap["t"]), era_index=0,
+            engine_sha256=result.engine_sha256, cfg_digest="selftest",
+            mapping=tuple(int(x) for x in raw["final_mapping"]),
+            prev_mapping=tuple(int(x) for x in snap["mapping"])),
+    )
+    run_dict = {"log": raw["log"], "cfg": raw["cfg"], "phase_bounds": raw["phase_bounds"],
+                "n_steps": raw["n_steps"], "chain_start": raw["chain_start"],
+                "era_snaps": raw["era_snaps"], "arm": "collective", "seed": 0}
+    return run_dict, record
 
 
 def _a_record_from_a_real_world(n_writes: int = 4000, seed: int = 0):
@@ -496,7 +572,8 @@ def _registry() -> list[SelfTest]:
         SelfTest("learning_rule",
                  _research("learning_rule", S.learning_rule_selftest), source="sim_v3_13"),
         SelfTest("frozen", _research("frozen", A.frozen_selftest), source="analysis_v3_13"),
-        SelfTest("assay_selftest", _assay_selftest_unavailable, milestone="G2"),
+        SelfTest("assay_selftest", _assay_selftest, milestone="G2",
+                 source="civitas_g.assay"),
         SelfTest("no_self_echo", _no_self_echo_selftest, source="civitas_g.world.adapter"),
         SelfTest("modulator", _modulator_selftest, source="civitas_g.world.adapter"),
         SelfTest("engine_drift", _engine_drift_selftest, source="civitas_g.manifest"),

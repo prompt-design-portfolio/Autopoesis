@@ -25,11 +25,13 @@ change with its own gate, which is exactly how the directive says an instrument 
 from __future__ import annotations
 
 import hashlib
+import json
 import pickle
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -52,9 +54,14 @@ class CampaignPlan:
     label: str = ""
     overrides: dict[str, Any] = None  # type: ignore[assignment]
     notes: list[str] = None  # type: ignore[assignment]
+    #: G2. Off leaves the run byte-identical to a G1 run; on adds an era-boundary copy of the
+    #: record, which `engine_store_selftest` measures as trajectory-neutral.
+    capture_store: bool = True
 
     def __post_init__(self) -> None:
         self.overrides = dict(self.overrides or {})
+        if self.capture_store:
+            self.overrides.setdefault("store_snaps", True)
         self.notes = list(self.notes or [])
         # normalise to the manifest vocabulary once, here, so nothing downstream has to guess
         self.arms = [get_arm(a).name for a in self.arms]
@@ -131,6 +138,28 @@ def store_run(session: Session, campaign: Campaign, result: RunResult) -> Run:
                pop=int(row.get("pop", 0)), payload=encode(row))
         for i, row in enumerate(raw["log"])
     ])
+
+    for i, snap in enumerate(raw.get("store_snaps") or []):
+        # The record at an era boundary, stored as an artifact beside the genomes taken at the
+        # same moment. Two different things: the genomes are what the population IS, the record is
+        # what it LEFT, and G3 turns on being able to hand the second to a population that never
+        # had the first.
+        from civitas_g.store.persistence import save_record
+        from civitas_g.store.record import Record, RecordProvenance
+
+        record = Record(
+            marks=np.asarray(snap["marks"], dtype="<f8"),
+            pi=tuple(int(x) for x in snap["pi"]),
+            provenance=RecordProvenance(
+                run_seed=result.seed, arm=result.arm, t=int(snap["t"]), era_index=i,
+                engine_sha256=result.engine_sha256,
+                cfg_digest=hashlib.sha256(
+                    json.dumps(encode(raw["cfg"]), sort_keys=True).encode()).hexdigest(),
+                mapping=tuple(int(x) for x in raw["final_mapping"]),
+                prev_mapping=tuple(int(x) for x in snap["mapping"]),
+                note="captured at an era boundary by cfg.store_snaps"),
+        )
+        save_record(session, run, record, variant="real")
 
     for i, snap in enumerate(raw.get("era_snaps") or []):
         data, digest = _blob(snap)
@@ -223,8 +252,15 @@ def load_run(session: Session, run: Run | Any) -> dict[str, Any]:
         raise LookupError(f"no run {run!r}")
     rows = session.execute(
         select(EraRow).where(EraRow.run_id == run_obj.id).order_by(EraRow.ordinal)).scalars().all()
+    snaps = session.execute(
+        select(EraSnapshot).where(EraSnapshot.run_id == run_obj.id)
+        .order_by(EraSnapshot.ordinal)).scalars().all()
     return {
         "log": [decode(r.payload) for r in rows],
+        # the genome snapshots, unpickled. A2.1's frozen replay starts from one of these, so a
+        # run dict that carried the log and not the snapshots would be readable but not
+        # replayable -- and the assay is the line every claim is stated on.
+        "era_snaps": [pickle.loads(bytes(sn.blob)) for sn in snaps],
         "cfg": decode(run_obj.cfg),
         "phase_bounds": [tuple(b) for b in decode(run_obj.phase_bounds)],
         "n_steps": int(run_obj.n_steps),
