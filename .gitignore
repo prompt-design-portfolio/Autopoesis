@@ -2,3 +2,12 @@ __pycache__/
 *.pyc
 *.pkl
 *.log
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+*.db-wal
+*.db-shm
+civitas_data/
