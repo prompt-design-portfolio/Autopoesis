@@ -277,7 +277,7 @@ than comparing the intersection. A gate that compared the intersection would hav
 
 | A4 clause | state |
 |---|---|
-| full suite green on both backends | **144 G tests green on SQLite and PostgreSQL**; ruff clean |
+| full suite green on both backends | **144 G tests green on SQLite and PostgreSQL**; ruff clean. The M1–M13 suite is **778 passed, 4 skipped** on both backends — unchanged, so nothing the rebuild added disturbed the history it supersedes |
 | `nbcheck` green on every notebook | **green, 8/8** |
 | the arm regression green | **green** — `tests_g/test_arms_regression.py`, 18 tests, including an empirical check that the noise arm preserves mark count and signs while destroying the labels |
 | every self-test in B§6 green | **11 available, all green.** `assay_selftest` is a named gap (F6, D5); three more are G2/G3 mechanisms that do not exist yet |

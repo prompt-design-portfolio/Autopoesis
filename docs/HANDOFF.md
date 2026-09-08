@@ -100,7 +100,9 @@ periodically, which kills the server mid-run.
 | G5 | frozen-LLM reference arm | not started |
 
 144 G tests green on both backends; ruff clean; `nbcheck` green on all eight notebooks; eleven
-available self-tests green.
+available self-tests green. The M1–M13 suite still passes untouched (778 passed, 4 skipped, both
+backends), so the two lineages coexist without either disturbing the other — `civitas_g` imports
+nothing from `civitas/` except the kept dialect seam in `persistence/types.py`.
 
 Three measurements the build produced, beyond the reproduction:
 
@@ -114,7 +116,7 @@ Three measurements the build produced, beyond the reproduction:
 
 ### Civitas M1–M13 (history)
 
-M1–M13 complete, 778 tests green on both backends, `results/m4…m13`. B§1 moves those results to
+M1–M13 complete, **778 passed / 4 skipped** on both backends as of this commit, `results/m4…m13`. B§1 moves those results to
 `results/legacy/` as history and takes `acceptance.py`'s six levels off the acceptance path. The
 milestone notes are in `docs/milestones/`. Two limitations recorded at the time and now superseded
 by A1.1: the agents were deterministic policies, not learners, and two domains is two.
