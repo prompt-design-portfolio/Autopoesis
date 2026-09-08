@@ -1,0 +1,307 @@
+{
+ "accepted": true,
+ "criterion": "Every level passes its own gates and beats its own negative control. One failing level fails the run: the levels are separate claims and an average over them would be a number no claim supports.",
+ "failing_levels": [],
+ "generated_at": "2026-09-08T15:02:37.246680+00:00",
+ "levels": [
+  {
+   "claim": "an agent that can read the collective outperforms one that cannot, in the *same* environment",
+   "control": "an agent blinded to the same matured environment (`solo`)",
+   "control_value": 0.4666666666666667,
+   "detail": {
+    "collective": 0.7666666666666667,
+    "note": "both arms face the same matured workspace; only sight differs",
+    "solo_in_mature": 0.4666666666666667
+   },
+   "gates": {
+    "accumulation_occurred": {
+     "detail": "392 artifacts accumulated across arms and seeds",
+     "passed": true,
+     "value": 392
+    },
+    "baseline_has_headroom": {
+     "detail": "baseline success rate 0.467 leaves headroom",
+     "passed": true,
+     "value": 0.4666666666666667
+    },
+    "frozen_model": {
+     "detail": "all arms ran under one configuration hash",
+     "passed": true,
+     "value": [
+      "eac9c3cfd5884276549a404b1de2f7e2f92e8d4891278cae98b9412c1666a21c"
+     ]
+    },
+    "sufficient_n": {
+     "detail": "smallest arm has n=30 readable episodes",
+     "passed": true,
+     "value": 30
+    }
+   },
+   "level": 1,
+   "name": "external knowledge usefulness",
+   "passed": true,
+   "unit": "success rate difference",
+   "value": 0.3,
+   "withheld_reason": null
+  },
+  {
+   "claim": "a fresh agent performs better in an environment others have worked in",
+   "control": "the same agent in an empty environment (`baseline_empty`)",
+   "control_value": 0.4666666666666667,
+   "detail": {
+    "baseline_empty": 0.4666666666666667,
+    "chance_level": 0.1,
+    "collective": 0.7666666666666667,
+    "naive_probe_ceiling": 0.5
+   },
+   "gates": {
+    "accumulation_occurred": {
+     "detail": "392 artifacts accumulated across arms and seeds",
+     "passed": true,
+     "value": 392
+    },
+    "baseline_has_headroom": {
+     "detail": "baseline success rate 0.467 leaves headroom",
+     "passed": true,
+     "value": 0.4666666666666667
+    },
+    "frozen_model": {
+     "detail": "all arms ran under one configuration hash",
+     "passed": true,
+     "value": [
+      "eac9c3cfd5884276549a404b1de2f7e2f92e8d4891278cae98b9412c1666a21c"
+     ]
+    },
+    "sufficient_n": {
+     "detail": "smallest arm has n=30 readable episodes",
+     "passed": true,
+     "value": 30
+    }
+   },
+   "level": 2,
+   "name": "newcomer advantage",
+   "passed": true,
+   "unit": "success rate difference",
+   "value": 0.3,
+   "withheld_reason": null
+  },
+  {
+   "claim": "the advantage is caused by what accumulated, not by the fact that something did",
+   "control": "`memory_reset` removes the store; `collective_scrambled` keeps its size and destroys relevance",
+   "control_value": 1.0,
+   "detail": {
+    "criterion": "each ablation removes at least half of the advantage",
+    "memory_reset_removes": 1.0,
+    "scramble_removes": 1.0
+   },
+   "gates": {
+    "accumulation_occurred": {
+     "detail": "392 artifacts accumulated across arms and seeds",
+     "passed": true,
+     "value": 392
+    },
+    "baseline_has_headroom": {
+     "detail": "baseline success rate 0.467 leaves headroom",
+     "passed": true,
+     "value": 0.4666666666666667
+    },
+    "frozen_model": {
+     "detail": "all arms ran under one configuration hash",
+     "passed": true,
+     "value": [
+      "eac9c3cfd5884276549a404b1de2f7e2f92e8d4891278cae98b9412c1666a21c"
+     ]
+    },
+    "sufficient_n": {
+     "detail": "smallest arm has n=30 readable episodes",
+     "passed": true,
+     "value": 30
+    }
+   },
+   "level": 3,
+   "name": "ablation causality",
+   "passed": true,
+   "unit": "fraction of the advantage removed",
+   "value": 1.0,
+   "withheld_reason": null
+  },
+  {
+   "claim": "the collective solves what no single episode could, because the knowledge is split across populations",
+   "control": "each partition alone, proved insufficient by enumeration before the run",
+   "control_value": 0.25,
+   "detail": {
+    "arms": {
+     "both_partitions": 0.6,
+     "no_partitions": 0.25,
+     "partition_a_only": 0.0,
+     "partition_b_only": 0.25,
+     "scrambled": 0.15
+    },
+    "distributed_advantage": 0.35,
+    "gain_over_best_single_partition": 0.35,
+    "gain_over_scrambled": 0.45
+   },
+   "gates": {
+    "both_controls_ran": {
+     "detail": "each partition was run alone; without both, 'no single partition suffices' is an assertion rather than a measurement",
+     "passed": true,
+     "value": null
+    },
+    "sufficient_n": {
+     "detail": "smallest arm has n=20 readable episodes",
+     "passed": true,
+     "value": 20
+    },
+    "task_is_provably_unsolvable_alone": {
+     "detail": "enumeration found 0 partition(s) that could determine an answer alone",
+     "passed": true,
+     "value": []
+    }
+   },
+   "level": 4,
+   "name": "distributed cognition",
+   "passed": true,
+   "unit": "success rate over the best single partition",
+   "value": 0.35,
+   "withheld_reason": null
+  },
+  {
+   "claim": "each generation builds on the last, reaching what no single generation could",
+   "control": "the same chain with inheritance broken",
+   "control_value": 1,
+   "detail": {
+    "depth_gain": 3,
+    "success_rate_gain": 0.75,
+    "summary": {
+     "broken_chain": {
+      "by_generation": {
+       "1": 1.0,
+       "2": 0.0,
+       "3": 0.0,
+       "4": 0.0
+      },
+      "deepest_generation_reached": 1,
+      "n": 20,
+      "success_rate": 0.25
+     },
+     "chained": {
+      "by_generation": {
+       "1": 1.0,
+       "2": 1.0,
+       "3": 1.0,
+       "4": 1.0
+      },
+      "deepest_generation_reached": 4,
+      "n": 20,
+      "success_rate": 1.0
+     }
+    }
+   },
+   "gates": {
+    "chain_started": {
+     "detail": "generation 1 must be solvable, or the chain measures nothing",
+     "passed": true,
+     "value": 4
+    },
+    "control_ran": {
+     "detail": "the broken-chain control is what distinguishes accumulation from four independent attempts at the same question",
+     "passed": true,
+     "value": null
+    }
+   },
+   "level": 5,
+   "name": "cumulative culture",
+   "passed": true,
+   "unit": "generations reached",
+   "value": 4,
+   "withheld_reason": null
+  },
+  {
+   "claim": "the collective's capability frontier advances while the model is held constant",
+   "control": "`solo` and `independent` at the same difficulty ladder",
+   "control_value": 8,
+   "detail": {
+    "frontier": {
+     "collective": 14,
+     "independent": 8,
+     "shared_memory": null,
+     "solo": 8
+    },
+    "threshold": 0.75
+   },
+   "gates": {
+    "controls_ran": {
+     "detail": "`solo` and `independent` are both required: `independent` is the internal validity check that repeated sampling without transmission buys nothing",
+     "passed": true,
+     "value": [
+      "independent",
+      "solo"
+     ]
+    },
+    "ladder_discriminates": {
+     "detail": "every arm reaching the same frontier means the difficulty ladder is not discriminating, whatever the numbers say",
+     "passed": true,
+     "value": {
+      "collective": 14,
+      "independent": 8,
+      "shared_memory": null,
+      "solo": 8
+     }
+    }
+   },
+   "level": 6,
+   "name": "collective capability growth",
+   "passed": true,
+   "unit": "hardest difficulty solved",
+   "value": 14,
+   "withheld_reason": null
+  }
+ ],
+ "manifest": {
+  "accumulation_passes": 3,
+  "code_version": "94d75fe822c5aa87953fb3e750d25e3531dad52e-dirty",
+  "dependencies": {
+   "alembic": "1.19.2",
+   "fastapi": "0.141.1",
+   "httpx": "0.28.1",
+   "numpy": "2.4.6",
+   "pydantic": "2.13.5",
+   "python": "3.11.15",
+   "sqlalchemy": "2.0.52"
+  },
+  "environment": {
+   "device": {
+    "cuda": false,
+    "device": "cpu",
+    "device_name": null,
+    "dtype": "float32",
+    "torch": false,
+    "vram_free_gb": null,
+    "vram_total_gb": null
+   },
+   "machine": "x86_64",
+   "platform": "Linux-6.18.44-fc-v24-x86_64-with-glibc2.39",
+   "processor": "x86_64",
+   "python_implementation": "CPython"
+  },
+  "sandbox": {
+   "available": true,
+   "backend": "subprocess",
+   "isolation_level": "process",
+   "unenforced_limits": [
+    "max_processes"
+   ]
+  },
+  "sandbox_unenforced_limits": [
+   "max_processes"
+  ],
+  "schema_version": "9bec660e0ec5",
+  "seeds": [
+   0,
+   1,
+   2,
+   3,
+   4
+  ]
+ }
+}

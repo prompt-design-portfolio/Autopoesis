@@ -41,6 +41,27 @@ Full data, including the difficulty sweep that justifies the budget, is in
 `results/m4_newcomer_benchmark.json`. Read the gates first: a failed gate withholds the numbers
 rather than annotating them.
 
+### Acceptance: all six levels, one campaign, one manifest
+
+```bash
+civitas acceptance          # §65's six levels with their negative controls; non-zero if any fail
+civitas preflight           # §64's production checklist, executable
+```
+
+| §65 level | value | negative control |
+|---|---|---|
+| 1 external knowledge usefulness | **+0.300** | a blinded agent in the *same* matured workspace |
+| 2 newcomer advantage | **+0.300** | the same agent in an empty workspace |
+| 3 ablation causality | **100%** removed | `memory_reset` and `collective_scrambled` |
+| 4 distributed cognition | **+0.350** | each partition alone, proved insufficient beforehand |
+| 5 cumulative culture | **4** generations | the same chain with inheritance broken |
+| 6 capability growth | **14** | `solo` and `independent` at 8 |
+
+Levels 1 and 2 report the same number from *different* comparisons, and the agreement is the
+point: a blinded agent in a rich workspace scores exactly what an agent in an empty one scores
+(0.467 both), which is what arm enforcement working looks like. Data in
+`results/m13_acceptance.json`.
+
 ### The other three scientific criteria
 
 | §65 level | measurement | result |
@@ -155,7 +176,9 @@ allocator that SQLite structurally cannot expose (`docs/milestones/M02.md`).
 ```
 civitas/
   cli.py            the `civitas` command line
+  acceptance.py     §65's six levels in one campaign, each with its control (§65)
   observability.py  structured logs, Prometheus metrics, optional tracing (§53)
+  preflight.py      the production checklist, executable (§64)
   quotas.py         organization resource limits over a rolling window (§58)
   web/              the UI (§49) — one HTML file, one script, one stylesheet, no build step
   config.py         settings and secrets (§40)
@@ -205,7 +228,7 @@ These are load-bearing, and each has a test that drives the real mechanism:
 | milestone | state |
 |---|---|
 | M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions · M9 advanced benchmarks · M10 projects, domains, API, CLI · M11 web UI · M12 hardening | complete |
-| M13 acceptance | see `docs/ARCHITECTURE.md` §5 |
+| M13 acceptance: §65's six levels under one manifest, §64 preflight, §63 survival | complete |
 
 Each milestone reports its effect on the M4 benchmark. A feature that moves no number is reported
 as such rather than hidden (Part A §A1.5) — M5's hybrid retrieval moved it by exactly 0.000, and

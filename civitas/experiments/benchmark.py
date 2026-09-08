@@ -413,6 +413,10 @@ def run_newcomer_procedure(
                 "collective": ExperimentArm.COLLECTIVE,
                 "memory_reset": ExperimentArm.MEMORY_RESET,
                 "collective_scrambled": ExperimentArm.COLLECTIVE_SCRAMBLED,
+                # §65 Level 1's control: a genuinely blinded agent facing a workspace others
+                # matured. `memory_reset` empties the store; this one leaves it full and closes
+                # the agent's eyes, which is the comparison Level 1 actually asks for.
+                "solo_in_mature": ExperimentArm.SOLO,
             }[arm_label]
 
             # Probe *every* task, not one. Each probe is an independent fresh agent facing a

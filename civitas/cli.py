@@ -247,6 +247,67 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
     return 0 if payload["metrics"] is not None else 1
 
 
+def cmd_acceptance(args: argparse.Namespace) -> int:
+    """Run §65's six levels in one campaign and report whether the system is accepted.
+
+    Exits non-zero when any level fails, so this is usable as a release gate rather than as a
+    report someone has to read carefully.
+    """
+    from civitas.acceptance import acceptance_report
+    from civitas.persistence.engine import session_scope
+
+    settings = _settings(args)
+    include = (
+        {int(x) for x in args.levels.split(",")} if args.levels else None
+    )
+    with session_scope(settings) as session:
+        organization = session  # kept explicit: the report creates its own orgs per level
+        del organization
+        report = acceptance_report(
+            session, seeds=[int(s) for s in args.seeds.split(",")],
+            accumulation_passes=args.passes, settings=settings, include=include,
+        )
+        session.commit()
+
+    if args.out:
+        with open(args.out, "w") as fh:
+            json.dump(report, fh, indent=1, sort_keys=True, default=str)
+
+    for level in report["levels"]:
+        mark = "PASS" if level["passed"] else "FAIL"
+        value = level["value"]
+        rendered = "withheld" if value is None else f"{value}"
+        print(f"  {mark}  L{level['level']} {level['name']:34s} {rendered:>10s} "
+              f"({level['unit']})")
+        if level["withheld_reason"]:
+            print(f"        withheld: {level['withheld_reason']}")
+    print(f"\naccepted: {report['accepted']}")
+    if report["failing_levels"]:
+        print(f"failing levels: {report['failing_levels']}")
+    return 0 if report["accepted"] else 1
+
+
+def cmd_preflight(args: argparse.Namespace) -> int:
+    """Check §64's production criteria against this deployment.
+
+    Reports what is *actually* in force, not what is configured — the two differ exactly where it
+    matters, and each check names the consequence rather than a rule number.
+    """
+    from civitas.preflight import run_preflight
+
+    report = run_preflight(_settings(args))
+    for check in report["checks"]:
+        mark = {"pass": "PASS", "warn": "WARN", "fail": "FAIL"}[check["status"]]
+        print(f"  {mark}  {check['name']:36s} {check['detail']}")
+    print(f"\nready for production: {report['ready']}")
+    if report["blocking"]:
+        print(f"blocking: {report['blocking']}")
+    if args.out:
+        with open(args.out, "w") as fh:
+            json.dump(report, fh, indent=1, sort_keys=True, default=str)
+    return 0 if report["ready"] else 1
+
+
 def cmd_manifest(args: argparse.Namespace) -> int:
     """Print the run manifest: what would have to be reproduced to reproduce a result (§46)."""
     from civitas.experiments.manifest import (
@@ -356,6 +417,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--passes", type=int, default=2)
     p.add_argument("--out", default=None, help="also write the result to this path")
     p.set_defaults(func=cmd_benchmark)
+
+    p = sub.add_parser("acceptance", help="run §65's six scientific levels (§63, §65)")
+    p.add_argument("--seeds", default="0,1,2,3,4")
+    p.add_argument("--passes", type=int, default=3)
+    p.add_argument("--levels", default=None, help="comma-separated subset, e.g. 1,2,3")
+    p.add_argument("--out", default=None)
+    p.set_defaults(func=cmd_acceptance)
+
+    p = sub.add_parser("preflight", help="check the production criteria (§64)")
+    p.add_argument("--out", default=None)
+    p.set_defaults(func=cmd_preflight)
 
     p = sub.add_parser("manifest", help="print the run manifest (§46)")
     p.set_defaults(func=cmd_manifest)

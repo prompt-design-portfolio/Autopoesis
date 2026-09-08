@@ -4,7 +4,7 @@ Read this first if you are resuming work (Part A §A5).
 
 ## State
 
-Branch `claude/master-prompt-init-ehmsbe`, pushed. **M1–M12 complete**, 757 tests green on both
+Branch `claude/master-prompt-init-ehmsbe`, pushed. **M1–M13 complete**, 778 tests green on both
 SQLite and PostgreSQL, ruff clean.
 
 ```bash
@@ -34,11 +34,16 @@ are reset periodically, which kills the server mid-run.
 | M10 | long-horizon projects, request decomposition, domain adapters, versioned API, CLI | `results/m10_domain_transfer.json` |
 | M11 | the web UI: fourteen screens, live updates over the event log, browser-driven tests | — (a null on the newcomer benchmark, expected and explained in `docs/milestones/M11.md`) |
 | M12 | hardening: CSP, rate limiting, redaction, metrics, tracing, quotas, CI, Docker, Kubernetes | `results/m12_hardening.json` |
+| M13 | acceptance: §65's six levels in one campaign, §64 preflight, §63 survival | `results/m13_acceptance.json` |
 
 ## What remains
 
-- **M13** — acceptance: the Colab workflow (§63), the production checklist (§64), and §65's six
-  levels with negative controls committed under `results/`.
+All thirteen milestones are complete. `civitas acceptance` re-runs §65's six levels and exits
+non-zero if any fails; `civitas preflight` checks §64's production criteria against a deployment.
+
+Two limitations to carry forward rather than rediscover: the agents are deterministic policies,
+not language models — the strongest instrument for measuring the *platform's* contribution (§20),
+and not a measurement of what a model would do; and two domains is two.
 
 ## Things a resumed session should know
 

@@ -451,6 +451,37 @@ print()
 print("ACCEPTANCE PASSED — the civilization survived the loss of every runtime object.")
 '''))
 
+CELLS.append(md(r'''## 11b. The six scientific levels (§65)
+
+Everything above measures one mechanism. This runs all six of §65's criteria **in one campaign
+under one manifest**, each beside its own negative control, and gates each separately — six
+results produced by six runs are six claims, and the thing being accepted is one platform.
+
+A level whose gate fails withholds its number rather than annotating it, and one failing level
+fails the run: the levels are separate claims and an average over them would be a number no claim
+supports.
+
+Small by default so the cell finishes on a free runtime. `results/m13_acceptance.json` in the
+repository holds the full five-seed run.'''))
+
+CELLS.append(code(r'''from civitas.acceptance import acceptance_report
+
+with SessionFactory() as db:
+    report = acceptance_report(db, seeds=[0, 1], accumulation_passes=2, include={1, 2, 3})
+
+for level in report["levels"]:
+    mark = "PASS" if level["passed"] else "FAIL"
+    value = "withheld" if level["value"] is None else level["value"]
+    print(f"  {mark}  L{level['level']} {level['name']:32s} {value}  ({level['unit']})")
+    print(f"        control: {level['control']}")
+    if level["withheld_reason"]:
+        print(f"        withheld: {level['withheld_reason']}")
+
+print()
+print("accepted:", report["accepted"])
+print("sandbox limits NOT enforced here:",
+      report["manifest"]["sandbox_unenforced_limits"] or "none")'''))
+
 CELLS.append(md('''## 12. Stopping and resuming
 
 Nothing needs to be done to stop safely: every write is committed to the database on Drive as it
