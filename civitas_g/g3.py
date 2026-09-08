@@ -237,7 +237,10 @@ def _b_statistics(arm: str, seed: int, aligned: bool, raw: dict[str, Any],
         log = raw["log"]
     _endorse_ok, _n_ok, stale, stale_n = A.follow_split_newborn(log)
     hit = A.prep_hit(log, True)
-    null = (1.0 - hit) / (N_PREPS - 1) if np.isfinite(hit) else np.nan
+    # K comes from the RUN, not from the module: G4 raises it, and a K=5 null in a K=7 world would
+    # look like a matched null and not be one.
+    k = int(raw["cfg"].get("n_preps", N_PREPS))
+    null = (1.0 - hit) / (k - 1) if np.isfinite(hit) else np.nan
     nfc_mean, nfc_censored, nfc_n = A.nfc(log, True)
     density = None
     if store is not None:

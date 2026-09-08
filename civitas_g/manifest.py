@@ -229,6 +229,19 @@ ENGINE_VERSIONS: tuple[EngineVersion, ...] = (
         "measured, a run with init_mapping set to the mapping the world would have drawn anyway "
         "is identical across all 133 shared log fields. That matching is what makes B's arms "
         "differ in the store and in nothing else."),
+    EngineVersion(
+        "G4-k", "4026c62483f7707344905e269eba442577bf1aea39a193d8262034bb78ae0cbd",
+        "added for G4 mechanic 1",
+        "K becomes a Config FIELD (n_preps, default 5) rather than a module constant, with "
+        "n_actions and n_in derived from it. Every array the world and the agents allocate now "
+        "sizes on cfg.n_preps. One engine therefore serves both the K=5 world the G1/G2 "
+        "reproductions are gated on and the harder worlds G4 adds -- the alternative was a fork, "
+        "and two engines both claiming to be the world would have left the reproduction unable to "
+        "say which one it reproduced.",
+        "at the default the draw SIZES are unchanged and no draw is added or removed, so the RNG "
+        "stream is untouched: measured, 32 log rows and all 133 shared fields identical to "
+        "G3-mapping across a mapping remap, same final_mapping, with the five research self-tests "
+        "green. A K=7 world runs and produces mappings drawing on all seven preparations."),
 )
 
 CURRENT_ENGINE = ENGINE_VERSIONS[-1]

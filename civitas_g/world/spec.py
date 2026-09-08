@@ -155,13 +155,17 @@ def check_chance_ev_is_zero(world: dict[str, Any] | None = None) -> float:
     """
     world = WORLD if world is None else world
     value, fail = float(world["prep_value"]), float(world["prep_fail"])
-    if value != (N_PREPS - 1) * fail:
+    # K from the WORLD, not from the module. G4 raises it, and a guard that read the module
+    # constant would pass a K=7 world carrying K=5 economics -- which is exactly the mistake this
+    # guard exists to catch, committed by the guard itself.
+    k = int(world.get("n_preps", N_PREPS))
+    if value != (k - 1) * fail:
         raise WorldMismatch(
-            f"prep_value {value} != (K-1) * prep_fail = {(N_PREPS - 1) * fail}. A chance "
-            f"preparation is worth {value / N_PREPS - fail * (N_PREPS - 1) / N_PREPS:+.4f}, not "
-            f"zero, so a positive return is no longer evidence of knowledge."
+            f"at K = {k}, prep_value {value} != (K-1) * prep_fail = {(k - 1) * fail}. A chance "
+            f"preparation is worth {value / k - fail * (k - 1) / k:+.4f}, not zero, so a positive "
+            f"return is no longer evidence of knowledge."
         )
-    return value / N_PREPS - fail * (N_PREPS - 1) / N_PREPS
+    return value / k - fail * (k - 1) / k
 
 
 # ---------------------------------------------------------------------------------------------
@@ -181,7 +185,7 @@ TYPE_BLIND: float = 1.0 / N_TYPES
 FULL: float = 1.0
 
 
-def matched_stale_null(hit_rate: float) -> float:
+def matched_stale_null(hit_rate: float, n_preps: int = N_PREPS) -> float:
     """A2.2: the null for following a STALE mark, derived from the arm's own structure.
 
     A mark that endorses a preparation which is wrong for this type now is the unconfounded cell,
@@ -192,9 +196,12 @@ def matched_stale_null(hit_rate: float) -> float:
 
         (1 - hit) / (K - 1)
 
-    `hit_rate` is the arm's own founder-free preparation hit rate, not a constant.
+    `hit_rate` is the arm's own founder-free preparation hit rate, not a constant -- and `K` is
+    not one either now that G4 raises it. A null left at the module default would silently be a
+    K=5 null in a K=7 world, which is the same class of mistake as a hard-coded 1/K: a number that
+    looks like a matched null and is not one.
     """
-    return (1.0 - float(hit_rate)) / (N_PREPS - 1)
+    return (1.0 - float(hit_rate)) / (int(n_preps) - 1)
 
 
 # ---------------------------------------------------------------------------------------------

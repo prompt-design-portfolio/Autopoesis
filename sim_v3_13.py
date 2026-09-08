@@ -138,6 +138,12 @@ class Config:
                                   # the NEWBORN CONTROL: the store stays live -- same mark density,
                                   # same cell state, same decay -- and only the READING is
                                   # disabled.  Removing the store instead would change the world.
+    n_preps: int = 5              # K.  A FIELD, not a constant, so ONE engine serves both the
+                                  # K=5 world the reproduction is gated on and the harder worlds
+                                  # G4 adds.  The module constants below are this default; every
+                                  # array the world and the agents allocate sizes on cfg.n_preps,
+                                  # so a run at the default draws exactly what it always drew and
+                                  # is bit-identical to the engine before K was a parameter.
     nfc_max: int = 5              # newborn preparations-to-first-correct: the window, in an
                                   # agent's own first preparations.
     label_every: int = 0          # 0 = pi is redrawn with the mapping.  A MULTIPLE of prep_every
@@ -234,6 +240,16 @@ class Config:
     log_every: int = 50
     seed: int = 0
 
+    @property
+    def n_actions(self) -> int:
+        """4 moves + eat + K preparations."""
+        return PREP0 + self.n_preps
+
+    @property
+    def n_in(self) -> int:
+        """Observation width: the fixed spatial block, energy, and K read channels."""
+        return READ + self.n_preps
+
 
 SR_W = 8            # survivor-conditioned since-remap: preparations required EACH SIDE of a remap.
                     # 8, not 4.  The v3.11 grid showed the 4-window is structurally unable to see
@@ -314,13 +330,13 @@ class World:
         # THE STORE.  One age-decayed sign per (food type, label) per cell.  Per TYPE, because a
         # cell's food type changes over time and a mark left about type A must never be read as
         # evidence about type B.  T*K per cell: 60x60x3x5 = 54,000 floats, negligible.
-        self.marks = np.zeros((N_TYPES, N_PREPS, g, g))
-        self.pi = tuple(range(N_PREPS))       # label of preparation k is pi[k]; set below
+        self.marks = np.zeros((N_TYPES, cfg.n_preps, g, g))
+        self.pi = tuple(range(cfg.n_preps))   # label of preparation k is pi[k]; set below
         # GATE R's joint sample: counts over (label, sign) x correct-preparation, taken at every
         # WRITE.  Within an era this is deterministic by construction -- that IS the design -- so
         # the gate is read POOLED ACROSS ERAS, where pi has rotated and the association must have
         # collapsed to the noise arm's level.
-        self.mi = np.zeros((N_PREPS, 2, N_PREPS))
+        self.mi = np.zeros((cfg.n_preps, 2, cfg.n_preps))
         self.n_remaps = 0            # remaps since the chain came on; pi rotation counts THESE
         self.food = np.zeros((N_TYPES, g, g), dtype=bool)
         self.safe = 0                  # which of types 0,1 is safe to eat RAW.  Type 2 has no raw
@@ -373,7 +389,8 @@ class World:
         P(K, T) = K!/(K-T)!.  A redraw differs from the previous mapping in at least one type; it
         is drawn uniformly over the whole space, so it may agree with `old` on some types."""
         while True:
-            m = tuple(int(x) for x in self.rng.choice(N_PREPS, N_TYPES, replace=False))
+            m = tuple(int(x) for x in self.rng.choice(self.cfg.n_preps, N_TYPES,
+                                                     replace=False))
             if old is None or m != tuple(old):
                 return m
 
@@ -382,13 +399,13 @@ class World:
         k is used.  Redrawn at every remap, so what a label denotes changes every era and the
         label->preparation binding is unavailable to selection: a genome that fixed on it would be
         right only until the next redraw."""
-        return tuple(int(x) for x in self.rng.permutation(N_PREPS))
+        return tuple(int(x) for x in self.rng.permutation(self.cfg.n_preps))
 
     def write_mark(self, ftype, k, ok, y, x, cfg):
         """Automatic, costless, universal.  Every preparation writes."""
         if cfg.record == "none":
             return
-        label = self.pi[k] if cfg.record == "real" else int(self.rng.integers(N_PREPS))
+        label = self.pi[k] if cfg.record == "real" else int(self.rng.integers(cfg.n_preps))
         self.marks[ftype, label, y, x] = 1.0 if ok else -1.0
         self.mi[label, 1 if ok else 0, self.mapping[ftype]] += 1.0
 
@@ -475,10 +492,10 @@ class Agent:
 
     def __init__(self, cfg, rng, lineage, y, x, injected=False):
         h = cfg.hidden
-        self.W1 = rng.normal(0, 0.3, (N_IN, h))
+        self.W1 = rng.normal(0, 0.3, (cfg.n_in, h))
         self.b1 = np.zeros(h)
-        self.W2 = rng.normal(0, 0.3, (h, N_ACTIONS))
-        self.b2 = np.zeros(N_ACTIONS)
+        self.W2 = rng.normal(0, 0.3, (h, cfg.n_actions))
+        self.b2 = np.zeros(cfg.n_actions)
         scaffold_scale(self.W1, self.W2, cfg.innate_scale, cfg.n_scaffold)
         if cfg.free_scale != 1.0:
             self.W1[:, cfg.n_scaffold:] *= cfg.free_scale
@@ -498,7 +515,7 @@ class Agent:
         self.energy = cfg.founder_energy
         self.y, self.x = y, x
         self.item, self.tool = -1, False
-        self.B = np.zeros(N_PAIRS)          # hand-wired private memory; stays zero unless cfg.private_mem
+        self.B = np.zeros(N_TYPES * cfg.n_preps)          # hand-wired private memory; stays zero unless cfg.private_mem
         self.lineage, self.gen, self.born, self.injected = lineage, 0, 0, injected
         self.attempts = self.successes = 0
         self.eats = self.safe_eats = self.cracks = 0
@@ -536,7 +553,7 @@ class Agent:
         c.energy = cfg.start_energy
         c.y, c.x = self.y, self.x
         c.item, c.tool = -1, False           # nothing carried is inherited
-        c.B = np.zeros(N_PAIRS)              # no memory is inherited either
+        c.B = np.zeros(N_TYPES * cfg.n_preps)              # no memory is inherited either
         # NOT c.injected: an injected agent is a fresh random genome dropped in to hold the
         # population off the floor, and its OWN events dilute every population metric.  Its
         # children are ordinary selected descendants, so the tag stops at the founder.
@@ -558,7 +575,7 @@ class Agent:
         # the third food type appears then too, but it is a channel that is simply empty in phase
         # 1, not a new input.  The null is masked too, so its per-action share is 1/5 in phase 1
         # and 1/10 in phase 2, and 5/10 = 0.500 for "any preparation".
-        n_av = N_ACTIONS if chain_on else PREP0        # 10 in phase 2, 5 in phase 1
+        n_av = cfg.n_actions if chain_on else PREP0        # 10 in phase 2, 5 in phase 1
         if cfg.mode == "random":
             return int(rng.integers(0, n_av))          # the behavioural null: no policy, no learning
         alive = self.integrity >= cfg.integrity_threshold
@@ -566,12 +583,12 @@ class Agent:
         W1 = self.W1 + self.H1 if plastic and cfg.plastic_layers in ("both", "W1") else self.W1
         W2 = self.W2 + self.H2 if plastic and cfg.plastic_layers in ("both", "W2") else self.W2
         h = np.tanh(obs @ W1 + self.b1) * alive
-        logits = h @ W2 + self.b2 + rng.normal(0, cfg.action_noise, N_ACTIONS)
+        logits = h @ W2 + self.b2 + rng.normal(0, cfg.action_noise, cfg.n_actions)
         if not chain_on:
             logits[PREP0:] = -np.inf                   # phase 1 is exactly v3.1's five actions
         a = int(np.argmax(logits))
         if plastic:
-            out = np.zeros(N_ACTIONS); out[a] = 1.0
+            out = np.zeros(cfg.n_actions); out[a] = 1.0
             if cfg.plastic_layers in ("both", "W1"):
                 self.e1 = self.lam1 * self.e1 + np.outer(obs, h)
             if cfg.plastic_layers in ("both", "W2"):
@@ -687,7 +704,7 @@ def _forward(a, cfg, obs, learned):
 def prep_pref(a, cfg, ftype, k, learned=True):
     """'Food of type f is under me.'  Returns the logit of preparation k minus the best of the
     other actions -- how much this agent wants to apply preparation k to this food type."""
-    obs = np.zeros(N_IN)
+    obs = np.zeros(cfg.n_in)
     obs[HERE + ftype] = 1.0
     obs[ENERGY] = 0.5
     logits = _forward(a, cfg, obs, learned)
@@ -706,7 +723,7 @@ def prep_gain(agents, cfg, mapping, learned=True, n_sample=40):
     for i in idx:
         a = agents[i]
         for ft in range(N_TYPES):
-            p = np.array([prep_pref(a, cfg, ft, k, learned) for k in range(N_PREPS)])
+            p = np.array([prep_pref(a, cfg, ft, k, learned) for k in range(cfg.n_preps)])
             vals.append(p[mapping[ft]] - np.delete(p, mapping[ft]).mean())
     return float(np.mean(vals))
 
@@ -714,7 +731,7 @@ def prep_gain(agents, cfg, mapping, learned=True, n_sample=40):
 def innate_mapping(a, cfg):
     """The mapping this agent's GENOME would apply: argmax preparation per food type, from the
     innate probe (learned=False), so nothing the agent has learned enters it."""
-    return tuple(int(np.argmax([prep_pref(a, cfg, ft, k, False) for k in range(N_PREPS)]))
+    return tuple(int(np.argmax([prep_pref(a, cfg, ft, k, False) for k in range(cfg.n_preps)]))
                  for ft in range(N_TYPES))
 
 
@@ -757,10 +774,10 @@ def standing_variation(agents, cfg, n_sample=400, thresholds=(1, 5, 20)):
     return dict(n_triples=len(c), n_valid=len(valid), held=held, n_above=above, n=n)
 
 
-def _obs_with_mark(ftype, label, sign):
+def _obs_with_mark(cfg, ftype, label, sign):
     """A synthetic observation: food type `ftype` underfoot, one mark present at `label` with
     `sign`, nothing else.  No behaviour, no history."""
-    obs = np.zeros(N_IN)
+    obs = np.zeros(cfg.n_in)
     obs[HERE + ftype] = 1.0
     obs[ENERGY] = 0.5
     if label is not None:
@@ -771,7 +788,7 @@ def _obs_with_mark(ftype, label, sign):
 def read_pref(a, cfg, ftype, label, sign, k, learned=True):
     """Food type `ftype` underfoot and a mark of `sign` at `label`: how much does this agent want
     preparation `k`?  The READING side of the binding, within-agent."""
-    obs = _obs_with_mark(ftype, label, sign)
+    obs = _obs_with_mark(cfg, ftype, label, sign)
     logits = _forward(a, cfg, obs, learned)
     j = PREP0 + k
     return float(logits[j] - np.delete(logits, j).max())
@@ -794,7 +811,7 @@ def store_gain(agents, cfg, pi, learned=True, n_sample=40, sign=1.0):
     for i in idx:
         a = agents[int(i)]
         for ft in range(N_TYPES):
-            for k in range(N_PREPS):
+            for k in range(cfg.n_preps):
                 lab = pi[k]
                 with_mark = read_pref(a, cfg, ft, lab, sign, k, learned)
                 without = read_pref(a, cfg, ft, None, 0.0, k, learned)
@@ -820,7 +837,7 @@ def gate_r_counts(world, cfg):
     # label j endorses preparation pi^-1(j); the correct preparation for type t is mapping[t]
     inv = {lab: k for k, lab in enumerate(world.pi)}
     return dict(pi=tuple(world.pi), mapping=tuple(world.mapping),
-                endorsed=tuple(inv[j] for j in range(N_PREPS)))
+                endorsed=tuple(inv[j] for j in range(cfg.n_preps)))
 
 
 def probe_advantage(agents, cfg, mapping, n_sample=40):
@@ -833,7 +850,7 @@ def probe_advantage(agents, cfg, mapping, n_sample=40):
 
 
 def food_pref(a, cfg, ftype, learned=True):
-    obs = np.zeros(N_IN)
+    obs = np.zeros(cfg.n_in)
     obs[HERE + ftype] = 1.0
     obs[HERE + APPETITE_CH] = 1.0
     obs[ENERGY] = 0.5
@@ -1087,7 +1104,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None,
             if cfg.record != "none" and ft_here_pre >= 0:
                 read = a.sym_gain * world.marks[ft_here_pre, :, y, x]
             else:
-                read = np.zeros(N_PREPS)
+                read = np.zeros(cfg.n_preps)
             obs = np.concatenate([dirsum(c, v) for c in chans]
                                  + [[c[v, v] for c in chans], [a.energy / cfg.max_energy], read])
             action = a.act(obs, cfg, rng, world.chain_on)
@@ -1106,7 +1123,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None,
             # There is no navigation to steer here, so a hand-wired POLICY OVERRIDE is the honest
             # analogue of v2's veto.  A reference level, not a matched comparison.
             if cfg.private_mem and on_food and world.chain_on:
-                row = a.B[ft_here * N_PREPS:(ft_here + 1) * N_PREPS]
+                row = a.B[ft_here * cfg.n_preps:(ft_here + 1) * cfg.n_preps]
                 if float(np.max(np.abs(row))) > 0.2:
                     action = PREP0 + int(np.argmax(row))
 
@@ -1203,7 +1220,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None,
                         if fnd:
                             WF["nfc_cens"] += 1
                 if cfg.private_mem:
-                    j = ft * N_PREPS + info["prep"]
+                    j = ft * cfg.n_preps + info["prep"]
                     a.B[j] = 0.7 * a.B[j] + 0.3 * (1.0 if ok else -1.0)   # exact credit, hand-wired
                 old = 0 if (t - a.born) < 150 else 1
                 a.age_bins[old, 0] += 1; a.age_bins[old, 1] += ok
@@ -1535,8 +1552,8 @@ def record_semantics_selftest(verbose=True):
     cfgr = Config(mode="fixed", record="real", scaffold_food=False)
     ar = Agent(cfgr, np.random.default_rng(1), 0, 0, 0)
     n += 3
-    o_none = _obs_with_mark(0, None, 0.0)
-    o_pos = _obs_with_mark(0, 2, +1.0)
+    o_none = _obs_with_mark(cfgr, 0, None, 0.0)
+    o_pos = _obs_with_mark(cfgr, 0, 2, +1.0)
     if np.abs(o_none[READ:READ + N_PREPS]).sum() > 1e-9:
         fails.append("no mark: the read channels are not zero")
     if o_pos[READ + 2] != 1.0 or np.abs(o_pos[READ:READ + N_PREPS]).sum() != 1.0:
@@ -1659,7 +1676,7 @@ def learning_rule_selftest(seed=0, verbose=True):
     action whose logit is checked is the action the agent actually took and laid a trace on."""
     cfg = Config(mode="plastic", plastic_layers="W2", action_noise=0.0,
                  scaffold_food=False, scaffold_chain=False, trace_recency=False)
-    obs = np.zeros(N_IN)
+    obs = np.zeros(cfg.n_in)
     obs[HERE + 0] = 1.0          # food type A underfoot
     obs[ENERGY] = 0.5
     out = []
@@ -1721,7 +1738,7 @@ def world_semantics_selftest(verbose=True):
     fails, n = [], 0
     for mapping in MAPPINGS:
         for food in [None] + list(range(N_TYPES)):
-            for action in [EAT] + [PREP0 + k for k in range(N_PREPS)]:
+            for action in [EAT] + [PREP0 + k for k in range(cfg.n_preps)]:
                 a, w = fresh(food=food, mapping=mapping, safe=0)
                 e0 = a.energy
                 m, ev, _ = resolve_action(a, action, w, cfg, rng)
@@ -1781,7 +1798,7 @@ def world_semantics_selftest(verbose=True):
     # all K preparations are masked while phase 2 is off
     cfgm = Config(mode="fixed", action_noise=0.0, scaffold_food=False, scaffold_chain=False)
     am = Agent(cfgm, np.random.default_rng(3), 0, 0, 0)
-    obs = np.zeros(N_IN); obs[ENERGY] = 0.5
+    obs = np.zeros(cfg.n_in); obs[ENERGY] = 0.5
     chosen = {am.act(obs, cfgm, np.random.default_rng(k), chain_on=False) for k in range(60)}
     n += 1
     if not all(c < PREP0 for c in chosen):

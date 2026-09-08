@@ -495,3 +495,46 @@ def test_the_aligned_seed_zero_numbers_agree_on_both():
 
     d = acceptance([_seed(SEED0_NFC, SEED0_RATIO)])["per_seed"][0]
     assert d["controls_agree_nfc"] and d["controls_agree_stale"]
+
+
+# --------------------------------------------------------------------------- K as a parameter
+
+def test_k_is_a_config_field_so_one_engine_serves_both_worlds():
+    """G4-D1. The alternative was a fork, and two engines both claiming to be the world would have
+    left the reproduction unable to say which one it reproduced."""
+    c5, c7 = sim_v3_13.Config(), sim_v3_13.Config(n_preps=7)
+    assert (c5.n_preps, c5.n_actions, c5.n_in) == (5, 10, 31)
+    assert (c7.n_preps, c7.n_actions, c7.n_in) == (7, 12, 33)
+
+
+def test_a_harder_world_actually_uses_its_extra_preparations():
+    """A K that changed the constants but not the mapping draw would be a K=5 world with two dead
+    actions."""
+    world = sim_v3_13.World(sim_v3_13.Config(seed=3, n_preps=7), np.random.default_rng(3))
+    assert len(world.pi) == 7
+    assert world.marks.shape[1] == 7
+    drawn = {world._draw_mapping(None) for _ in range(200)}
+    assert max(max(m) for m in drawn) >= 5, "no mapping ever uses a preparation beyond K=5"
+
+
+def test_the_matched_null_reads_k_from_the_run_not_from_the_module():
+    """A K=5 null in a K=7 world looks like a matched null and is not one -- the same class of
+    mistake as hard-coding 1/K, which A2.2 exists to forbid."""
+    from civitas_g.world.spec import matched_stale_null
+
+    assert matched_stale_null(0.6) == pytest.approx(0.1)            # K=5 default
+    assert matched_stale_null(0.6, n_preps=7) == pytest.approx(0.4 / 6)
+    assert matched_stale_null(0.6, n_preps=7) != matched_stale_null(0.6)
+
+
+def test_raising_k_keeps_the_chance_ev_at_zero_only_if_prep_value_moves():
+    """The one place K can be raised wrongly and produce a plausible number: leaving prep_value at
+    1.0 makes a chance preparation worth -0.25, a harder world for a reason that has nothing to do
+    with the mapping space."""
+    from civitas_g.world.spec import WorldMismatch, check_chance_ev_is_zero
+
+    # K=5 economics carried into a K=7 world
+    with pytest.raises(WorldMismatch, match="at K = 7"):
+        check_chance_ev_is_zero(dict(prep_value=1.0, prep_fail=0.25, n_preps=7))
+    # and the arithmetic that makes it right
+    assert check_chance_ev_is_zero(dict(prep_value=1.5, prep_fail=0.25, n_preps=7)) == 0.0
