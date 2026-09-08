@@ -378,3 +378,117 @@ def b_founders_carry_no_h(seed: int = 0, steps: int = 200) -> tuple[bool, str]:
 
     return True, (f"snapshot() saves {len(saved)} genome fields and no learned state; the engine "
                   f"wrapper refuses init_genomes; a fresh agent's H is exactly zero")
+
+
+# ---------------------------------------------------------------------------------------------
+# persistence (A1.4: everything external is auditable)
+# ---------------------------------------------------------------------------------------------
+
+def save_succession(session: Any, campaign_id: Any, result: G3Result, *,
+                    a_run_id: Any = None, engine_sha256: str = "") -> Any:
+    """Persist one succession and its four arms.
+
+    Everything a reader needs in order to decide whether a number means anything goes in: which
+    record B inherited by content hash, whether the clocks were aligned, the window the claim was
+    read on, and how much of A's record was still standing at the end of it. A claim read where
+    that last figure is near zero is a claim about `mark_decay`.
+    """
+    from civitas_g.persistence.models import SuccessionArm, SuccessionRun
+
+    lines = result.claim_lines()
+    first = result.arms[0] if result.arms else None
+    row = SuccessionRun(
+        campaign_id=campaign_id, seed=result.succession.seed,
+        alignment=result.succession.alignment, a_run_id=a_run_id,
+        a_store_sha256=result.a_store_sha256,
+        a_store_density=float(next((a.store_density for a in result.arms
+                                    if a.store_density), 0.0) or 0.0),
+        a_mapping=list(result.a_mapping), a_pi=list(result.a_pi),
+        b_mapping=list(result.b_mapping),
+        b_steps=int(result.succession.b_steps),
+        claim_window=int(first.claim_window or 0) if first else 0,
+        marks_surviving=float(first.marks_surviving_at_window_end) if first else 1.0,
+        scramble_seed=int(result.succession.scramble_seed),
+        gate_r_verdict=str(result.gate_r.get("verdict", "")),
+        gate_r={k: v for k, v in result.gate_r.items() if k != "verdict"},
+        engine_sha256=engine_sha256, notes=list(result.notes),
+    )
+    session.add(row)
+    session.flush()
+
+    def _f(x: float) -> float | None:
+        return None if x is None or (isinstance(x, float) and np.isnan(x)) else float(x)
+
+    for a in result.arms:
+        session.add(SuccessionArm(
+            succession_id=row.id, arm=a.arm,
+            stale=_f(a.stale), stale_n=int(a.stale_n), null=_f(a.null), ratio=_f(a.ratio),
+            nfc_mean=_f(a.nfc_mean), nfc_censored=_f(a.nfc_censored), nfc_n=int(a.nfc_n),
+            prep_hit=_f(a.prep_hit), pop=_f(a.pop), sym_gain=_f(a.sym_gain),
+            store_density=_f(a.store_density),
+            claim_lines={k: _f(v) for k, v in lines.get(a.arm, {}).items()},
+        ))
+    session.flush()
+    return row
+
+
+def acceptance(results: list[G3Result], *, alignment: str = "aligned") -> dict[str, Any]:
+    """B§5.2's acceptance, stated over seeds. **This is the G3 claim line.**
+
+    > the stale-mark ratio with the matched null, and preparations-to-first-correct, both against
+    > `fresh store`, 3/3 seeds, with the scrambled and gain-zero arms flat
+
+    Two departures from that sentence, both forced and both recorded on the result:
+
+    * the stale-mark ratio is against `inherited gain-zero`, not `fresh store` -- `fresh store` has
+      no marks and therefore no stale-mark events, and the ratio's own null does not model the
+      population's shared action bias (see `claim_lines`);
+    * "flat" is stated as a threshold rather than as zero. A control that lands at exactly zero is
+      not what a finite sample produces; what matters is that the treatment moves and the controls
+      do not move comparably. `flat_within` is that threshold and it is reported beside the verdict,
+      not hidden inside it.
+    """
+    seeds = sorted({r.succession.seed for r in results
+                    if r.succession.alignment == alignment})
+    picked = [r for r in results if r.succession.alignment == alignment]
+    flat_within = 0.5          # a control counts as flat if it moves less than half the treatment
+
+    per_seed: dict[int, dict[str, Any]] = {}
+    for r in picked:
+        lines = r.claim_lines()
+        treat = lines.get("inherited store", {})
+        nfc = treat.get("nfc_vs_fresh", float("nan"))
+        stale = treat.get("stale_ratio_vs_unreading", float("nan"))
+        controls = {
+            name: lines.get(name, {}).get("nfc_vs_fresh", float("nan"))
+            for name in ("inherited scrambled", "inherited gain-zero")
+        }
+        controls_flat = all(
+            (not np.isfinite(v)) or (not np.isfinite(nfc)) or abs(v) <= flat_within * abs(nfc)
+            for v in controls.values()) and np.isfinite(nfc)
+        per_seed[r.succession.seed] = {
+            "nfc_vs_fresh": nfc,
+            "stale_ratio_vs_unreading": stale,
+            "controls_nfc": controls,
+            "nfc_moves_the_right_way": bool(np.isfinite(nfc) and nfc < 0),
+            "stale_moves_the_right_way": bool(np.isfinite(stale) and stale > 0),
+            "controls_flat": bool(controls_flat),
+            "gate_r": r.gate_r.get("verdict", ""),
+            "marks_surviving": (r.arms[0].marks_surviving_at_window_end if r.arms else None),
+        }
+
+    n = len(per_seed)
+    passing = [s for s, d in per_seed.items()
+               if d["nfc_moves_the_right_way"] and d["stale_moves_the_right_way"]
+               and d["controls_flat"]]
+    return {
+        "alignment": alignment,
+        "seeds": seeds,
+        "n_seeds": n,
+        "passing_seeds": passing,
+        "accepted": bool(n >= 3 and len(passing) == n),
+        "flat_within": flat_within,
+        "per_seed": per_seed,
+        "why_not": ("" if n >= 3 else
+                    f"{n} seed(s): B§5.2 asks for 3/3, and fewer is a pre-check."),
+    }

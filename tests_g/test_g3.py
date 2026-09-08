@@ -252,3 +252,136 @@ def test_the_claim_window_and_the_surviving_fraction_travel_with_the_result():
                      claim_window=700, marks_surviving_at_window_end=0.996 ** 700)
     assert row.claim_window == 700
     assert row.marks_surviving_at_window_end == pytest.approx(0.0605, abs=1e-3)
+
+
+# --------------------------------------------------------------------------- acceptance
+
+def _result_with(nfc, stale, controls, seed=0, alignment=True, gate="PASS"):
+    from civitas_g.g3 import BArmResult, G3Result
+
+    def arm(name, ratio, nfc_mean):
+        return BArmResult(arm=name, seed=seed, aligned=alignment, stale=0.2, stale_n=100,
+                          null=0.1, ratio=ratio, nfc_mean=nfc_mean, nfc_censored=0.0, nfc_n=50,
+                          prep_hit=0.4, pop=300.0, store_sha256=None, store_density=0.3,
+                          sym_gain=0.0, claim_window=700,
+                          marks_surviving_at_window_end=0.06)
+
+    base = 2.0
+    r = G3Result(succession=Succession(seed, 100, 2100, alignment, claim_window=700),
+                 a_store_sha256="x", a_mapping=(0, 1, 2), a_pi=(0, 1, 2, 3, 4),
+                 b_mapping=(0, 1, 2),
+                 arms=[arm("fresh store", float("nan"), base),
+                       arm("inherited store", 1.5 + stale, base + nfc),
+                       arm("inherited scrambled", 1.5, base + controls[0]),
+                       arm("inherited gain-zero", 1.5, base + controls[1])])
+    r.gate_r = {"verdict": gate}
+    return r
+
+
+def test_one_seed_is_a_pre_check_not_an_acceptance():
+    """B§5.2 asks for 3/3. Fewer is a pre-check and says so."""
+    from civitas_g.g3 import acceptance
+
+    a = acceptance([_result_with(-0.2, 0.3, (-0.02, -0.02))])
+    assert not a["accepted"]
+    assert "pre-check" in a["why_not"]
+
+
+def test_three_seeds_moving_the_right_way_with_flat_controls_is_accepted():
+    from civitas_g.g3 import acceptance
+
+    rs = [_result_with(-0.2, 0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)]
+    a = acceptance(rs)
+    assert a["accepted"] and a["passing_seeds"] == [0, 1, 2]
+
+
+def test_a_control_that_moves_as_much_as_the_treatment_is_not_flat():
+    """If the scrambled arm helps as much as the real one, the labels carried nothing."""
+    from civitas_g.g3 import acceptance
+
+    rs = [_result_with(-0.2, 0.3, (-0.19, -0.02), seed=s) for s in (0, 1, 2)]
+    a = acceptance(rs)
+    assert not a["accepted"]
+    assert a["per_seed"][0]["controls_flat"] is False
+
+
+def test_a_treatment_moving_the_wrong_way_is_not_accepted():
+    """Fewer preparations to first correct is the claim; more is the opposite of it."""
+    from civitas_g.g3 import acceptance
+
+    rs = [_result_with(+0.2, 0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)]
+    assert not acceptance(rs)["accepted"]
+    rs = [_result_with(-0.2, -0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)]
+    assert not acceptance(rs)["accepted"]
+
+
+def test_the_flatness_threshold_is_reported_beside_the_verdict_not_hidden_in_it():
+    from civitas_g.g3 import acceptance
+
+    a = acceptance([_result_with(-0.2, 0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)])
+    assert a["flat_within"] == 0.5
+
+
+def test_the_surviving_fraction_travels_into_the_acceptance():
+    """So a claim read where almost none of A's record still stood cannot be read as a claim
+    about transmission without the reader seeing that."""
+    from civitas_g.g3 import acceptance
+
+    a = acceptance([_result_with(-0.2, 0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)])
+    assert a["per_seed"][0]["marks_surviving"] == pytest.approx(0.06)
+
+
+def test_a_succession_and_its_arms_persist(sessions):
+    from civitas_g.g3 import save_succession
+    from civitas_g.persistence.models import SuccessionArm, SuccessionRun
+    from civitas_g.provider.population import CampaignPlan, open_campaign
+
+    plan = CampaignPlan(kind="g3", arms=["collective"], seeds=[0], phase_steps=100)
+    r = _result_with(-0.2, 0.3, (-0.02, -0.02))
+    with sessions() as session:
+        campaign = open_campaign(session, plan)
+        row = save_succession(session, campaign.id, r, engine_sha256="a" * 64)
+        session.commit()
+        row_id = row.id
+    with sessions() as session:
+        stored = session.get(SuccessionRun, row_id)
+        assert stored.alignment == "aligned"
+        assert stored.a_store_sha256 == "x"
+        assert stored.claim_window == 700
+        assert stored.marks_surviving == pytest.approx(0.06)
+        arms = session.query(SuccessionArm).filter_by(succession_id=row_id).all()
+        assert {a.arm for a in arms} == set(B_ARMS)
+        treat = next(a for a in arms if a.arm == "inherited store")
+        assert treat.claim_lines["nfc_vs_fresh"] == pytest.approx(-0.2)
+
+
+def test_a_nan_statistic_is_stored_as_null_not_as_a_number(sessions):
+    """`fresh store`'s ratio is nan -- an absent measurement. A float column would have turned it
+    into whatever nan round-trips to."""
+    from civitas_g.g3 import save_succession
+    from civitas_g.persistence.models import SuccessionArm
+    from civitas_g.provider.population import CampaignPlan, open_campaign
+
+    plan = CampaignPlan(kind="g3", arms=["collective"], seeds=[0], phase_steps=100)
+    with sessions() as session:
+        campaign = open_campaign(session, plan)
+        row = save_succession(session, campaign.id, _result_with(-0.2, 0.3, (-0.02, -0.02)))
+        session.commit()
+        fresh = session.query(SuccessionArm).filter_by(
+            succession_id=row.id, arm="fresh store").one()
+        assert fresh.ratio is None
+
+
+def test_the_gate_r_verdict_is_text_so_not_available_survives(sessions):
+    """A boolean column would have forced NOT AVAILABLE into a pass or a fail."""
+    from civitas_g.g3 import save_succession
+    from civitas_g.persistence.models import SuccessionRun
+    from civitas_g.provider.population import CampaignPlan, open_campaign
+
+    plan = CampaignPlan(kind="g3", arms=["collective"], seeds=[0], phase_steps=100)
+    r = _result_with(-0.2, 0.3, (-0.02, -0.02), gate="NOT AVAILABLE: 1 pi-epoch(s).")
+    with sessions() as session:
+        campaign = open_campaign(session, plan)
+        row = save_succession(session, campaign.id, r)
+        session.commit()
+        assert "NOT AVAILABLE" in session.get(SuccessionRun, row.id).gate_r_verdict

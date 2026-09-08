@@ -227,6 +227,87 @@ class StoreArtifact(Base, UUIDPrimaryKey, Timestamped):
     run: Mapped[Run] = relationship(back_populates="stores")
 
 
+class SuccessionRun(Base, UUIDPrimaryKey, Timestamped):
+    """One A -> B lineage (G3), and the claim lines read off it.
+
+    Stored so the claim is auditable rather than merely reported (A1.4). Everything a reader needs
+    to decide whether a number means anything is a column here: which record B inherited, by hash;
+    whether the clocks were aligned; the window the claim was read on; and how much of A's record
+    was still standing at the end of that window.
+
+    `gate_r_verdict` is text rather than a boolean on purpose. It carries NOT AVAILABLE with a
+    reason when the permutation null is degenerate, and a boolean column would have forced that
+    into a pass or a fail.
+    """
+
+    __tablename__ = "g_successions"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "seed", "alignment", name="uq_g_succession_seed_align"),
+        Index("ix_g_successions_store", "a_store_sha256"),
+    )
+
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("g_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    seed: Mapped[int] = mapped_column(Integer(), nullable=False)
+    #: "aligned" | "misaligned" -- a recorded parameter, never an assumption (G3-D2).
+    alignment: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    a_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("g_runs.id", ondelete="SET NULL"), nullable=True)
+    #: The record B inherited, by content hash. Not a pointer: the claim is about THIS record.
+    a_store_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    a_store_density: Mapped[float] = mapped_column(Float(), nullable=False, default=0.0)
+    a_mapping: Mapped[list[int]] = mapped_column(JSONVariant(), nullable=False)
+    a_pi: Mapped[list[int]] = mapped_column(JSONVariant(), nullable=False)
+    b_mapping: Mapped[list[int]] = mapped_column(JSONVariant(), nullable=False)
+
+    b_steps: Mapped[int] = mapped_column(Integer(), nullable=False)
+    claim_window: Mapped[int] = mapped_column(Integer(), nullable=False)
+    #: The fraction of A's marks still standing at the end of the claim window. A claim read where
+    #: this is near zero is a claim about decay.
+    marks_surviving: Mapped[float] = mapped_column(Float(), nullable=False, default=1.0)
+    scramble_seed: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
+
+    gate_r_verdict: Mapped[str] = mapped_column(Text(), nullable=False, default="")
+    gate_r: Mapped[dict[str, Any]] = mapped_column(JSONVariant(), nullable=False, default=dict)
+    engine_sha256: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    notes: Mapped[list[str]] = mapped_column(JSONVariant(), nullable=False, default=list)
+
+    arms: Mapped[list[SuccessionArm]] = relationship(
+        back_populates="succession", cascade="all, delete-orphan", order_by="SuccessionArm.arm")
+
+
+class SuccessionArm(Base, UUIDPrimaryKey):
+    """One of B's four arms. The store is the only thing that varies between them."""
+
+    __tablename__ = "g_succession_arms"
+    __table_args__ = (
+        UniqueConstraint("succession_id", "arm", name="uq_g_succession_arm"),
+    )
+
+    succession_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("g_successions.id", ondelete="CASCADE"), nullable=False, index=True)
+    arm: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    stale: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    stale_n: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
+    #: A2.2's matched null, from this arm's own hit rate. Never 1/K.
+    null: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    ratio: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    nfc_mean: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    nfc_censored: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    nfc_n: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
+    prep_hit: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    pop: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    sym_gain: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    store_density: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    #: The claim lines for this arm, each against the baseline that line uses.
+    claim_lines: Mapped[dict[str, Any]] = mapped_column(JSONVariant(), nullable=False,
+                                                        default=dict)
+
+    succession: Mapped[SuccessionRun] = relationship(back_populates="arms")
+
+
 class Reproduction(Base, UUIDPrimaryKey, Timestamped):
     """One G1 gate result: a reading recomputed from the rows, against a reference summary.
 
@@ -262,4 +343,4 @@ class Reproduction(Base, UUIDPrimaryKey, Timestamped):
 
 
 __all__ = ["Base", "Campaign", "Run", "EraRow", "EraSnapshot", "StoreArtifact",
-           "Reproduction"]
+           "SuccessionRun", "SuccessionArm", "Reproduction"]
