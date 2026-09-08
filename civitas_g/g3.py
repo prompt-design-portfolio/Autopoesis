@@ -114,6 +114,8 @@ class G3Result:
     b_mapping: tuple[int, ...]
     arms: list[BArmResult] = field(default_factory=list)
     gate_r: dict[str, Any] = field(default_factory=dict)
+    #: A2.1's twelve cells on B at its FIRST era boundary (B§5.2), when it was run.
+    assay: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
     def arm(self, name: str) -> BArmResult:
@@ -255,8 +257,52 @@ def _b_statistics(arm: str, seed: int, aligned: bool, raw: dict[str, Any],
     )
 
 
+def assay_on_b(raw: dict[str, Any], *, steps: int = 300) -> dict[str, Any]:
+    """A2.1's twelve cells on B at its FIRST era boundary (B§5.2's fourth claim line).
+
+    The first boundary and not a later one: B inherits A's record and its own pi, and both are
+    replaced at that first remap. After it, the population being frozen is one that has lived an
+    era under a mapping A never saw, with a record A never wrote. The first boundary is the only
+    moment at which the assay is asking about the inheritance at all.
+
+    Returns `{}` rather than raising when B produced no boundary -- a B shorter than one era has
+    no snapshot to freeze, which is a fact about the run rather than a failure of the assay.
+    """
+    from civitas_g.assay import run_assay
+    from civitas_g.store.record import Record, RecordProvenance
+
+    snaps, stores = raw.get("era_snaps") or [], raw.get("store_snaps") or []
+    if not snaps or not stores:
+        return {"available": False,
+                "why": (f"B produced {len(snaps)} genome and {len(stores)} store snapshot(s); "
+                        f"the assay needs one of each at the same boundary, and a B shorter than "
+                        f"one era has neither.")}
+    first = stores[0]
+    record = Record(
+        marks=np.asarray(first["marks"], dtype="<f8"),
+        pi=tuple(int(x) for x in first["pi"]),
+        provenance=RecordProvenance(
+            run_seed=int(raw["cfg"]["seed"]), arm="B", t=int(first["t"]), era_index=0,
+            engine_sha256="", cfg_digest="",
+            mapping=tuple(int(x) for x in first["mapping"]),
+            note="B's store at its first era boundary"),
+    )
+    # snap=0: the FIRST boundary, not run_assay's default of the last one.
+    result = run_assay(dict(raw, era_snaps=snaps), record, snap=0, steps=steps)
+    return {
+        "available": True,
+        "t": result.t,
+        "matched_mapping": list(result.matched_mapping),
+        "shuffled_mapping": list(result.shuffled_mapping),
+        "claim_line_visible": result.claim_line("visible"),
+        "store_effect_shuffled_eta1": result.store_effect(),
+        "cells": [c.as_dict() for c in result.cells],
+    }
+
+
 def run_succession(succession: Succession, *, verbose: bool = False,
-                   a_result: RunResult | None = None) -> G3Result:
+                   a_result: RunResult | None = None,
+                   with_assay: bool = False, assay_steps: int = 300) -> G3Result:
     """A lives and dies; B is born into what it left.
 
     `a_result` lets a caller reuse one A across alignments -- the same record, two clocks -- which
@@ -318,6 +364,8 @@ def run_succession(succession: Succession, *, verbose: bool = False,
             result.gate_r = {k: (float(v) if isinstance(v, (int, float, np.floating)) else v)
                              for k, v in gp.items()}
             result.gate_r["verdict"] = _gate_r_verdict(gp)
+            if with_assay:
+                result.assay = assay_on_b(raw, steps=assay_steps)
     return result
 
 

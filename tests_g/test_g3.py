@@ -385,3 +385,29 @@ def test_the_gate_r_verdict_is_text_so_not_available_survives(sessions):
         row = save_succession(session, campaign.id, r)
         session.commit()
         assert "NOT AVAILABLE" in session.get(SuccessionRun, row.id).gate_r_verdict
+
+
+# --------------------------------------------------------------------------- the assay on B
+
+def test_the_assay_on_b_reports_unavailable_rather_than_raising_when_b_is_too_short():
+    """A B shorter than one era has no boundary to freeze. That is a fact about the run, not a
+    failure of the assay, and it is reported as one."""
+    from civitas_g.g3 import assay_on_b
+
+    out = assay_on_b({"era_snaps": [], "store_snaps": [], "cfg": {"seed": 0}})
+    assert out["available"] is False
+    assert "shorter than one era" in out["why"]
+
+
+def test_the_assay_on_b_uses_the_FIRST_boundary():
+    """B inherits A's record and its own pi, and both are replaced at that first remap. After it,
+    the population being frozen has lived an era under a mapping A never saw, with a record A
+    never wrote -- so the first boundary is the only moment the assay asks about the inheritance
+    at all."""
+    import inspect
+
+    from civitas_g import g3
+
+    source = inspect.getsource(g3.assay_on_b)
+    assert "stores[0]" in source
+    assert "snap=0" in source
