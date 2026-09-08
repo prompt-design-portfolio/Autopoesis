@@ -287,39 +287,61 @@ def test_one_seed_is_a_pre_check_not_an_acceptance():
     assert "pre-check" in a["why_not"]
 
 
-def test_three_seeds_moving_the_right_way_with_flat_controls_is_accepted():
+def test_the_claim_line_is_content_with_presence_held():
+    """A store changes the world by existing. `inherited scrambled` has the marks, the channels
+    and the decay with the labels destroyed, so the difference against IT is content alone."""
     from civitas_g.g3 import acceptance
 
-    rs = [_result_with(-0.2, 0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)]
-    a = acceptance(rs)
+    # treatment nfc 1.80, scrambled 1.94, fresh 2.00 -> content -0.14, presence -0.06
+    a = acceptance([_result_with(-0.20, 0.3, (-0.06, -0.02), seed=s) for s in (0, 1, 2)])
+    d = a["per_seed"][0]
+    assert d["content_vs_scrambled"] == pytest.approx(-0.14)
+    assert d["presence_vs_fresh"] == pytest.approx(-0.06)
+    assert d["total_vs_fresh"] == pytest.approx(-0.20)
+    assert "content" in a["claim_line"]
+
+
+def test_three_seeds_moving_the_right_way_with_a_flat_gain_zero_is_accepted():
+    from civitas_g.g3 import acceptance
+
+    a = acceptance([_result_with(-0.20, 0.3, (-0.06, -0.02), seed=s) for s in (0, 1, 2)])
     assert a["accepted"] and a["passing_seeds"] == [0, 1, 2]
 
 
-def test_a_control_that_moves_as_much_as_the_treatment_is_not_flat():
-    """If the scrambled arm helps as much as the real one, the labels carried nothing."""
+def test_a_gain_zero_arm_that_drifts_is_not_flat():
+    """It cannot read the store -- its channels are sym_gain * marks with sym_gain exactly zero --
+    so a drift as large as the content effect means the effect is not about reading."""
     from civitas_g.g3 import acceptance
 
-    rs = [_result_with(-0.2, 0.3, (-0.19, -0.02), seed=s) for s in (0, 1, 2)]
-    a = acceptance(rs)
+    a = acceptance([_result_with(-0.20, 0.3, (-0.06, -0.13), seed=s) for s in (0, 1, 2)])
     assert not a["accepted"]
-    assert a["per_seed"][0]["controls_flat"] is False
+    assert a["per_seed"][0]["gain_zero_flat"] is False
+
+
+def test_a_scrambled_arm_that_explains_the_whole_effect_leaves_no_content():
+    """If the labels carried nothing, scrambled helps as much as the real store and the content
+    line goes to zero -- which is not "moving the right way"."""
+    from civitas_g.g3 import acceptance
+
+    a = acceptance([_result_with(-0.20, 0.3, (-0.20, -0.02), seed=s) for s in (0, 1, 2)])
+    assert not a["accepted"]
+    assert a["per_seed"][0]["content_vs_scrambled"] == pytest.approx(0.0)
 
 
 def test_a_treatment_moving_the_wrong_way_is_not_accepted():
-    """Fewer preparations to first correct is the claim; more is the opposite of it."""
     from civitas_g.g3 import acceptance
 
-    rs = [_result_with(+0.2, 0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)]
-    assert not acceptance(rs)["accepted"]
-    rs = [_result_with(-0.2, -0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)]
-    assert not acceptance(rs)["accepted"]
+    assert not acceptance([_result_with(+0.20, 0.3, (-0.06, -0.02), seed=s)
+                           for s in (0, 1, 2)])["accepted"]
+    assert not acceptance([_result_with(-0.20, -0.3, (-0.06, -0.02), seed=s)
+                           for s in (0, 1, 2)])["accepted"]
 
 
 def test_the_flatness_threshold_is_reported_beside_the_verdict_not_hidden_in_it():
     from civitas_g.g3 import acceptance
 
-    a = acceptance([_result_with(-0.2, 0.3, (-0.02, -0.02), seed=s) for s in (0, 1, 2)])
-    assert a["flat_within"] == 0.5
+    a = acceptance([_result_with(-0.20, 0.3, (-0.06, -0.02), seed=s) for s in (0, 1, 2)])
+    assert a["flat_within"] == 0.35
 
 
 def test_the_surviving_fraction_travels_into_the_acceptance():
