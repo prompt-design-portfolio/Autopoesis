@@ -141,9 +141,34 @@ of its two instruments was not measuring label information at all. The check now
 
 ---
 
+## 4.4 The acceptance basis
+
+**G3 is accepted at one seed, by the project owner's decision, against B§5.2's stated bar of 3/3.**
+
+That is recorded here rather than folded into a verdict because it is the single most important
+caveat on everything downstream. A5 assigns acceptance to the project owner, so the decision is
+theirs to make and is not a defect. But a reader comparing this to B§5.2 will find a different
+number, and the difference should not have to be reconstructed.
+
+`acceptance()` takes `min_seeds` and `min_seeds_basis` as parameters and reports both, so any
+result carries the bar it was judged against.
+
+What one seed does and does not buy:
+
+* it buys the **direction** of two independent one-factor contrasts, agreeing with each other;
+* it buys the **alignment contrast** (§4.2), which is a within-seed comparison and therefore the
+  strongest thing here;
+* it does **not** buy an error bar, a variance estimate, or evidence that the effect survives a
+  different world draw. 3/3 would have been a sign check; 1/1 is not even that.
+
+A three-seed run is in flight as corroboration. If it disagrees with seed 0, that will be reported
+as a disagreement, not averaged away.
+
+---
+
 ## 5. What this does not show
 
-* **Not three seeds yet.** One seed is a pre-check by A5's own definition; B§5.2 asks for 3/3.
+* **One seed, not three** (§4.4).
 * **Nothing about compounding.** That is G4, and it is a *difference from* this number.
 * **Nothing about B's absolute competence.** G3-D1 forfeited that deliberately.
 * **Nothing from the misaligned arm about transmission.** A null there is stale culture, not absent

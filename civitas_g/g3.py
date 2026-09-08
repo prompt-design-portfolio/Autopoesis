@@ -483,7 +483,8 @@ def save_succession(session: Any, campaign_id: Any, result: G3Result, *,
     return row
 
 
-def acceptance(results: list[G3Result], *, alignment: str = "aligned") -> dict[str, Any]:
+def acceptance(results: list[G3Result], *, alignment: str = "aligned",
+               min_seeds: int = 3, min_seeds_basis: str = "B§5.2: 3/3 seeds") -> dict[str, Any]:
     """B§5.2's acceptance, stated over seeds. **This is the G3 claim line.**
 
     > the stale-mark ratio with the matched null, and preparations-to-first-correct, both against
@@ -520,6 +521,11 @@ def acceptance(results: list[G3Result], *, alignment: str = "aligned") -> dict[s
     seeds = sorted({r.succession.seed for r in picked})
     #: how close the two information-removing arms must land, as a fraction of the content effect
     agree_within = 0.35
+
+    # `min_seeds` is a parameter with a recorded basis, not a constant, because relaxing it is a
+    # decision someone makes and a reader is entitled to see who made it and to what. B§5.2 asks
+    # for 3/3; a lower bar is legitimate -- A5 assigns acceptance to the project owner -- but it
+    # must travel with the result rather than being folded into a verdict.
 
     per_seed: dict[int, dict[str, Any]] = {}
     for r in picked:
@@ -577,12 +583,14 @@ def acceptance(results: list[G3Result], *, alignment: str = "aligned") -> dict[s
         "seeds": seeds,
         "n_seeds": n,
         "passing_seeds": passing,
-        "accepted": bool(n >= 3 and len(passing) == n),
+        "accepted": bool(n >= min_seeds and len(passing) == n and n > 0),
+        "min_seeds": min_seeds,
+        "min_seeds_basis": min_seeds_basis,
         "agree_within": agree_within,
         "claim_line": "preparations-to-first-correct: `inherited store` beats BOTH "
                       "`inherited scrambled` (content) and `inherited gain-zero` (reading), and "
                       "those two agree with each other",
         "per_seed": per_seed,
-        "why_not": ("" if n >= 3 else
-                    f"{n} seed(s): B§5.2 asks for 3/3, and fewer is a pre-check."),
+        "why_not": ("" if n >= min_seeds else
+                    f"{n} seed(s) against a bar of {min_seeds} ({min_seeds_basis})."),
     }

@@ -302,13 +302,13 @@ SEED0_RATIO = {"fresh store": float("nan"), "inherited store": 1.79,
                "inherited scrambled": 1.44, "inherited gain-zero": 1.48}
 
 
-def test_one_seed_is_a_pre_check_not_an_acceptance():
-    """B§5.2 asks for 3/3. Fewer is a pre-check and says so."""
+def test_one_seed_is_a_pre_check_against_the_directives_own_bar():
+    """B§5.2 asks for 3/3, and at that bar one seed is a pre-check and says so."""
     from civitas_g.g3 import acceptance
 
     a = acceptance([_seed(SEED0_NFC, SEED0_RATIO)])
     assert not a["accepted"]
-    assert "pre-check" in a["why_not"]
+    assert "1 seed(s) against a bar of 3" in a["why_not"]
 
 
 def test_the_two_contrasts_each_hold_everything_but_one_factor():
@@ -538,3 +538,27 @@ def test_raising_k_keeps_the_chance_ev_at_zero_only_if_prep_value_moves():
         check_chance_ev_is_zero(dict(prep_value=1.0, prep_fail=0.25, n_preps=7))
     # and the arithmetic that makes it right
     assert check_chance_ev_is_zero(dict(prep_value=1.5, prep_fail=0.25, n_preps=7)) == 0.0
+
+
+def test_the_seed_bar_is_a_recorded_parameter_not_a_constant():
+    """Relaxing B§5.2's 3/3 is a decision someone makes, and a reader is entitled to see who made
+    it and to what. It travels with the result rather than being folded into the verdict."""
+    from civitas_g.g3 import acceptance
+
+    one = [_seed(SEED0_NFC, SEED0_RATIO)]
+    strict = acceptance(one)
+    assert not strict["accepted"] and strict["min_seeds"] == 3
+    assert "B§5.2" in strict["min_seeds_basis"]
+
+    relaxed = acceptance(one, min_seeds=1,
+                         min_seeds_basis="project owner's decision, 1 seed")
+    assert relaxed["accepted"]
+    assert relaxed["min_seeds"] == 1
+    assert "project owner" in relaxed["min_seeds_basis"]
+
+
+def test_an_empty_result_set_is_never_accepted_whatever_the_bar():
+    """`all([])` is True, and a bar of zero must not turn nothing into a pass."""
+    from civitas_g.g3 import acceptance
+
+    assert not acceptance([], min_seeds=0)["accepted"]
