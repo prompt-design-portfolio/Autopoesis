@@ -133,6 +133,22 @@ does. Two rules are enforced on screen and tested in a real browser: a metric th
 as `null` renders as "not available" with its reason, never as `0`, and a benchmark whose gates
 failed shows the gates and withholds the numbers.
 
+### Running it in GitHub
+
+Three ways, and the first is why GitHub is a **stronger** runtime for this than Colab: an Actions
+runner has Docker and PostgreSQL, so the sandbox gets container isolation and the two-backend
+parametrisation actually runs.
+
+| where | what it gives you |
+|---|---|
+| **Codespaces** (`.devcontainer/`) | a terminal in the browser with Docker-in-Docker, PostgreSQL, and a **non-root** user — the strongest configuration in this project. Port 8000 is forwarded, so `civitas serve` gives you the UI. |
+| **CI** (`.github/workflows/ci.yml`) | on every push: lint, the suite on **both** backends, a migrations check, the browser tests, and an image build that asserts the container is not uid 0 |
+| **Acceptance** (`.github/workflows/acceptance.yml`) | run §65's six levels from the Actions tab or weekly on a schedule; the result table lands in the job summary and `acceptance.json` is uploaded as an artifact |
+
+Non-root matters in all three: `RLIMIT_NPROC` is **silently unenforced for uid 0** — measured in
+M4, where a test spawned 5000 processes against a limit of 8 — so a run as root advertises a
+sandbox limit it does not hold. Colab runs as root and cannot fix this; a Codespace can.
+
 ### Deployment
 
 ```bash

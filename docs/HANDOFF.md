@@ -38,6 +38,11 @@ are reset periodically, which kills the server mid-run.
 
 ## What remains
 
+**Where to run it.** A Codespace (`.devcontainer/`) is the strongest configuration available:
+Docker-in-Docker for container isolation, PostgreSQL for the two-backend run, and a non-root user
+so `RLIMIT_NPROC` is enforced. Colab gives none of those three and says so in every manifest it
+produces. `.github/workflows/acceptance.yml` runs §65's six levels on demand from the Actions tab.
+
 All thirteen milestones are complete. `civitas acceptance` re-runs §65's six levels and exits
 non-zero if any fails; `civitas preflight` checks §64's production criteria against a deployment.
 

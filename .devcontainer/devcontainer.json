@@ -1,0 +1,48 @@
+{
+  "name": "Civitas",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+
+  // Docker-in-Docker is not a convenience here. Without it the sandbox falls back to the
+  // subprocess backend, and `Sandbox.unenforced_limits()` reports a bound it cannot hold. With
+  // it, agent-written code runs under container isolation — the configuration the manifest is
+  // allowed to claim.
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  // The image's non-root user, and that is load-bearing rather than hygiene: `RLIMIT_NPROC` is
+  // silently unenforced for uid 0 — measured in M4, where a test spawned 5000 processes against
+  // a limit of 8. As root the sandbox advertises a limit it does not have.
+  "remoteUser": "vscode",
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "containerEnv": {
+    "CIVITAS_DATABASE_URL": "sqlite:////workspaces/civitas-data/civitas.db",
+    "CIVITAS_TEST_POSTGRES_URL": "postgresql+psycopg://civitas:civitas@127.0.0.1:5432/civitas_test",
+    "CIVITAS_JWT_SECRET": "codespace-development-secret-not-for-production-use",
+    "CIVITAS_SANDBOX_BACKEND": "auto",
+    "CIVITAS_LOG_JSON": "false",
+    "PLAYWRIGHT_BROWSERS_PATH": "/home/vscode/.cache/ms-playwright"
+  },
+
+  // 8000 is the API and the UI; Codespaces forwards it to a URL you can open in the browser.
+  "forwardPorts": [8000, 5432],
+  "portsAttributes": {
+    "8000": {"label": "Civitas API and UI", "onAutoForward": "notify"},
+    "5432": {"label": "PostgreSQL (tests)", "onAutoForward": "silent"}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": true
+      }
+    }
+  },
+
+  "hostRequirements": {"cpus": 4, "memory": "8gb"}
+}
