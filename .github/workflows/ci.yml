@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.11", cache: pip}
       - run: pip install ruff
-      - run: ruff check civitas tests scripts
+      - run: ruff check civitas civitas_g tests tests_g scripts make_notebook_civitas_g.py
 
   test:
     runs-on: ubuntu-latest
@@ -47,7 +47,16 @@ jobs:
       - name: Test on both backends
         env:
           CIVITAS_TEST_POSTGRES_URL: postgresql+psycopg://civitas:civitas@127.0.0.1:5432/civitas_test
-        run: pytest -q
+          # The G suite has its own URL: `civitas_g` keeps its own metadata, so it drops and
+          # recreates its tables, and pointing both lineages at one database would let each
+          # lineage's teardown delete the other's rows mid-run.
+          CIVITAS_G_TEST_POSTGRES_URL: postgresql+psycopg://civitas:civitas@127.0.0.1:5432/civitas_g_test
+        run: |
+          PGPASSWORD=civitas psql -h 127.0.0.1 -U civitas -d civitas_test \
+            -c "SELECT 1 FROM pg_database WHERE datname='civitas_g_test'" | grep -q 1 \
+            || PGPASSWORD=civitas psql -h 127.0.0.1 -U civitas -d civitas_test \
+                 -c "CREATE DATABASE civitas_g_test"
+          pytest -q
 
   migrations:
     # A schema built by `metadata.create_all` and one built by migrations must be the same schema.
