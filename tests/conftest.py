@@ -19,7 +19,6 @@ from civitas.persistence.engine import create_db_engine
 from civitas.persistence.models import Base, Organization, Workspace
 from civitas.persistence.session import install_guards
 
-
 #: Set to a PostgreSQL URL to run the whole suite against the production backend as well.
 #: Part B §6 forbids separate application logic for Colab, and the only way to know that holds is
 #: to run the same tests on both dialects. When unset the suite runs on SQLite alone and says so,

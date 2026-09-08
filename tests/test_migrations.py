@@ -13,10 +13,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect
 
+from alembic import command
 from civitas.persistence.engine import create_db_engine
 from civitas.persistence.models import Base
 

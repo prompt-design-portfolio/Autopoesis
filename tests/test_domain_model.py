@@ -5,7 +5,8 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import inspect, select, text
+from sqlalchemy import inspect
+from sqlalchemy.exc import IntegrityError
 
 from civitas.domain.enums import (
     ArtifactType,
@@ -20,7 +21,6 @@ from civitas.persistence.models import (
     ArtifactRelation,
     Base,
     Episode,
-    Task,
 )
 
 #: Part B §7, verbatim. A missing entity is a dropped requirement, and Part A §A1 forbids
@@ -94,7 +94,7 @@ def test_relations_are_unique_per_triple(db, workspace):
     db.add(ArtifactRelation(source_id=a.id, target_id=b.id, type=RelationType.CONTRADICTS))
     db.commit()
     db.add(ArtifactRelation(source_id=a.id, target_id=b.id, type=RelationType.SUPPORTS))
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
 
@@ -105,7 +105,7 @@ def test_foreign_keys_are_enforced(db, workspace):
     assertion on both is how the two backends are shown to behave identically."""
     orphan = Artifact(workspace_id=uuid.uuid4(), type=ArtifactType.RESULT, title="Orphan")
     db.add(orphan)
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
 

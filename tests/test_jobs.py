@@ -5,8 +5,6 @@ from __future__ import annotations
 import threading
 from datetime import timedelta
 
-import pytest
-
 from civitas.domain.enums import JobStatus
 from civitas.persistence import jobs
 from civitas.persistence.models import Job, JobLease

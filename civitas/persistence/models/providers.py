@@ -24,7 +24,9 @@ class ModelProvider(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable
     is_local: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
     supports_tools: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
     supports_streaming: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
-    supports_structured_output: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
+    supports_structured_output: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=True
+    )
     is_deterministic: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
 

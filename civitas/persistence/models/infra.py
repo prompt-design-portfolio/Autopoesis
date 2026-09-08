@@ -20,7 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from civitas.domain.enums import EventType, JobStatus
 from civitas.persistence.base import Base, Immutable, Metadataed, Timestamped, UUIDPrimaryKey
-from civitas.persistence.types import EnumType, GUID, JSONVariant, UTCDateTime
+from civitas.persistence.types import GUID, EnumType, JSONVariant, UTCDateTime
 
 
 class Event(Base, UUIDPrimaryKey, Timestamped, Immutable):
@@ -108,7 +108,9 @@ class Job(Base, UUIDPrimaryKey, Timestamped, Metadataed):
     run_after: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
 
     lease_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), default=None)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), default=None, index=True
+    )
     leased_by: Mapped[str | None] = mapped_column(String(200), default=None)
 
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)

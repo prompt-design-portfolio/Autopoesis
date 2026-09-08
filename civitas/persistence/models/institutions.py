@@ -51,7 +51,9 @@ class VersionedArtifactMixin:
         )
 
 
-class Procedure(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable, VersionedArtifactMixin):
+class Procedure(
+    Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable, VersionedArtifactMixin
+):
     """Institutional practice (Part B §30).
 
     "Always reproduce this type of result before accepting it." A procedure is a rule the runtime

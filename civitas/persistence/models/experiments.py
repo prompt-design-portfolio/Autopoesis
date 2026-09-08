@@ -17,7 +17,7 @@ from civitas.persistence.base import (
     Timestamped,
     UUIDPrimaryKey,
 )
-from civitas.persistence.types import EnumType, GUID, JSONVariant, UTCDateTime
+from civitas.persistence.types import GUID, EnumType, JSONVariant, UTCDateTime
 
 
 class Experiment(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable):

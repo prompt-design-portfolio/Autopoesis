@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from civitas.domain.enums import ActorKind, Role
 from civitas.persistence.base import Base, Metadataed, SoftDeletable, Timestamped, UUIDPrimaryKey
-from civitas.persistence.types import EnumType, GUID, JSONVariant, UTCDateTime
+from civitas.persistence.types import GUID, EnumType, JSONVariant, UTCDateTime
 
 
 class Organization(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable):
@@ -54,7 +54,9 @@ class ServiceIdentity(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletab
         GUID(), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    kind: Mapped[ActorKind] = mapped_column(EnumType(ActorKind, 32), nullable=False, default=ActorKind.SERVICE)
+    kind: Mapped[ActorKind] = mapped_column(
+        EnumType(ActorKind, 32), nullable=False, default=ActorKind.SERVICE
+    )
     role: Mapped[Role] = mapped_column(EnumType(Role, 32), nullable=False, default=Role.AGENT)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
 

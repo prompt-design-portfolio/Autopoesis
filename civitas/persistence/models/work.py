@@ -16,7 +16,7 @@ from civitas.domain.enums import (
     TerminationReason,
 )
 from civitas.persistence.base import Base, Metadataed, SoftDeletable, Timestamped, UUIDPrimaryKey
-from civitas.persistence.types import EnumType, GUID, JSONVariant, UTCDateTime
+from civitas.persistence.types import GUID, EnumType, JSONVariant, UTCDateTime
 
 
 class Task(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable):
@@ -106,7 +106,9 @@ class AgentProfile(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable)
         GUID(), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    role: Mapped[AgentRole] = mapped_column(EnumType(AgentRole, 32), nullable=False, default=AgentRole.EXPLORER)
+    role: Mapped[AgentRole] = mapped_column(
+        EnumType(AgentRole, 32), nullable=False, default=AgentRole.EXPLORER
+    )
     description: Mapped[str] = mapped_column(Text(), nullable=False, default="")
     system_prompt_version_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), default=None)
     tool_policy: Mapped[dict] = mapped_column(JSONVariant(), default=dict, nullable=False)

@@ -7,8 +7,6 @@ backend the process is configured for and Colab needs no separate configuration 
 from __future__ import annotations
 
 from alembic import context
-from sqlalchemy import pool
-
 from civitas.config import get_settings
 from civitas.persistence.engine import create_db_engine
 from civitas.persistence.models import Base

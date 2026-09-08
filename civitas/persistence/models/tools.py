@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from civitas.domain.enums import ToolValidationState
 from civitas.persistence.base import Base, Metadataed, SoftDeletable, Timestamped, UUIDPrimaryKey
-from civitas.persistence.types import EnumType, GUID, JSONVariant, UTCDateTime
+from civitas.persistence.types import GUID, EnumType, JSONVariant, UTCDateTime
 
 
 class ToolDefinition(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable):
@@ -86,7 +86,10 @@ class ToolVersion(Base, UUIDPrimaryKey, Timestamped, Metadataed):
     permissions: Mapped[dict] = mapped_column(JSONVariant(), default=dict, nullable=False)
     compatibility: Mapped[dict] = mapped_column(JSONVariant(), default=dict, nullable=False)
     validation_state: Mapped[ToolValidationState] = mapped_column(
-        EnumType(ToolValidationState, 32), nullable=False, default=ToolValidationState.UNTESTED, index=True
+        EnumType(ToolValidationState, 32),
+        nullable=False,
+        default=ToolValidationState.UNTESTED,
+        index=True,
     )
     test_source: Mapped[str] = mapped_column(Text(), nullable=False, default="")
     test_report: Mapped[dict] = mapped_column(JSONVariant(), default=dict, nullable=False)

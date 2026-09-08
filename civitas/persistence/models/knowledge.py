@@ -34,7 +34,7 @@ from civitas.persistence.base import (
     Timestamped,
     UUIDPrimaryKey,
 )
-from civitas.persistence.types import EnumType, GUID, JSONVariant, UTCDateTime, Vector
+from civitas.persistence.types import GUID, EnumType, JSONVariant, UTCDateTime, Vector
 
 
 class Artifact(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable):
@@ -61,7 +61,9 @@ class Artifact(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable):
         GUID(), ForeignKey("tasks.id", ondelete="SET NULL"), default=None, index=True
     )
 
-    type: Mapped[ArtifactType] = mapped_column(EnumType(ArtifactType, 40), nullable=False, index=True)
+    type: Mapped[ArtifactType] = mapped_column(
+        EnumType(ArtifactType, 40), nullable=False, index=True
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[str] = mapped_column(Text(), nullable=False, default="")
 
@@ -80,7 +82,10 @@ class Artifact(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable):
     #: self-reported number is the one signal an agent can inflate for free.
     confidence: Mapped[float] = mapped_column(Float(), nullable=False, default=0.5)
     validation_state: Mapped[ValidationState] = mapped_column(
-        EnumType(ValidationState, 40), nullable=False, default=ValidationState.UNVALIDATED, index=True
+        EnumType(ValidationState, 40),
+        nullable=False,
+        default=ValidationState.UNVALIDATED,
+        index=True,
     )
     status: Mapped[ArtifactStatus] = mapped_column(
         EnumType(ArtifactStatus, 32), nullable=False, default=ArtifactStatus.ACTIVE, index=True
@@ -172,7 +177,9 @@ class ArtifactRelation(Base, UUIDPrimaryKey, Timestamped, Metadataed):
     target_id: Mapped[uuid.UUID] = mapped_column(
         GUID(), ForeignKey("artifacts.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    type: Mapped[RelationType] = mapped_column(EnumType(RelationType, 40), nullable=False, index=True)
+    type: Mapped[RelationType] = mapped_column(
+        EnumType(RelationType, 40), nullable=False, index=True
+    )
     confidence: Mapped[float] = mapped_column(Float(), nullable=False, default=1.0)
     creator_episode_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), default=None, index=True)
     creator_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="agent")
