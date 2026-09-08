@@ -120,7 +120,7 @@ periodically, which kills the server mid-run.
 | G5 | frozen-LLM reference arm | not started |
 
 191 G tests green on both backends (176 in one 8m18s run plus the 15 notebook tests added
-after it started); ruff clean; `nbcheck` green on all eight notebooks; fifteen
+after it started); ruff clean; `nbcheck` green on all nine notebooks; fifteen
 available self-tests green — the four added at G2 are `store_round_trip`, `scrambled_load`,
 `assay_preconditions` and `store_patch`. The M1–M13 suite still passes untouched (778 passed, 4 skipped, both
 backends), so the two lineages coexist without either disturbing the other — `civitas_g` imports
