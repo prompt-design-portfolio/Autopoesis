@@ -126,6 +126,7 @@ def run_benchmark_episode(
     record_findings: bool = True,
     is_probe: bool = False,
     probe_order_seed: int = 0,
+    retrieval_options: dict[str, Any] | None = None,
     experiment_run_id: uuid.UUID | None = None,
     frozen_as_of: Any = None,
     config_hash: str = "",
@@ -160,7 +161,10 @@ def run_benchmark_episode(
         system_prompt_version=SYSTEM_PROMPT_VERSION,
         budgets=budgets or DEFAULT_BUDGETS,
         experiment_arm=arm,
-        retrieval_policy_version="retrieval/1.0-lexical",
+        retrieval_policy_version=(retrieval_options or {}).get(
+            "version", "retrieval/2.0-hybrid"
+        ),
+        retrieval_options=dict(retrieval_options or {}),
         task_id=task.id,
         project_id=task.project_id,
         experiment_run_id=experiment_run_id,

@@ -11,6 +11,7 @@ measured rather than assumed (ARCHITECTURE §5).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -27,6 +28,8 @@ from civitas.domain.enums import (
 from civitas.persistence.events import emit
 from civitas.persistence.models import Artifact, ArtifactRelation
 from civitas.runtime.tools.base import Tool, ToolContext, ToolResult
+
+log = logging.getLogger(__name__)
 
 #: Types an agent may assert directly. `evidence`, `experiment_result` and the validated types are
 #: excluded: they are produced by tool runs and evaluations, and letting an agent write one by
@@ -90,6 +93,7 @@ class CreateArtifactTool(Tool):
         )
         ctx.session.add(artifact)
         ctx.session.flush()
+        _index(ctx, artifact)
 
         linked = 0
         for raw in kw.get("derived_from") or []:
@@ -182,6 +186,7 @@ class SearchKnowledgeTool(Tool):
                 except ValueError:
                     return ToolResult(ok=False, error=f"unknown artifact type {raw!r}")
 
+        options = ctx.retrieval_options or {}
         results = retrieve(
             ctx.session,
             workspace_id=ctx.workspace_id,
@@ -190,6 +195,10 @@ class SearchKnowledgeTool(Tool):
             episode_id=ctx.episode_id,
             types=types,
             limit=limit,
+            task_id=ctx.task_id,
+            use_vector=options.get("use_vector", True),
+            expose_contradictions=options.get("expose_contradictions", True),
+            weights=options.get("weights"),
             config_hash=ctx.config_hash,
         )
         if not results.artifacts:
@@ -313,6 +322,7 @@ class RecordFailureTool(Tool):
         )
         ctx.session.add(artifact)
         ctx.session.flush()
+        _index(ctx, artifact)
 
         record_failure(
             ctx.session,
@@ -372,6 +382,7 @@ class SubmitResultTool(Tool):
         )
         ctx.session.add(artifact)
         ctx.session.flush()
+        _index(ctx, artifact)
         ctx.scratch["submitted_artifact_id"] = artifact.id
         ctx.scratch["submitted_answer"] = kw["answer"]
         ctx.made_progress = True
@@ -388,6 +399,26 @@ class SubmitResultTool(Tool):
 # --------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------
+def _index(ctx: ToolContext, artifact: Artifact) -> None:
+    """Add the artifact to the semantic index (Part B §14).
+
+    At creation rather than lazily at retrieval: retrieval is a read path, and indexing there
+    would make every search a write and every ablation arm capable of mutating the workspace it is
+    supposed to be observing.
+
+    A failure to index is logged, not raised. Semantic similarity is one component of a hybrid
+    ranker (§14 forbids relying on embeddings alone), so a missing vector degrades ranking rather
+    than losing the artifact — and losing the artifact because an optional index was unavailable
+    would be the worse failure by far.
+    """
+    try:
+        from civitas.knowledge.embeddings import index_artifact
+
+        index_artifact(ctx.session, artifact)
+    except Exception:  # pragma: no cover - an optional index must never lose a write
+        log.warning("could not index artifact %s for semantic search", artifact.id)
+
+
 def _resolve(ctx: ToolContext, raw: str) -> Artifact | None:
     """Look up an artifact by id, scoped to the episode's workspace.
 

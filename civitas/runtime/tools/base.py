@@ -45,6 +45,11 @@ class ToolContext:
     #: Set when the episode produced something the collective keeps. Drives the no-progress
     #: termination reason, which is diagnostic where `budget_exhausted` is not.
     made_progress: bool = False
+    #: Parameters of the active retrieval policy, from the episode spec. Threaded through rather
+    #: than read from a module global so that a matched A/B (Part A §A2.2) can vary the policy
+    #: between arms while everything else stays identical — and so the parameters a run actually
+    #: used are recoverable from the episode.
+    retrieval_options: dict[str, Any] = field(default_factory=dict)
     scratch: dict[str, Any] = field(default_factory=dict)
 
     def note_read(self, artifact_id: uuid.UUID) -> None:

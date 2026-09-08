@@ -166,7 +166,9 @@ class BenchmarkResult:
 
 
 # --------------------------------------------------------------------------
-def frozen_config(budgets: Budgets | None = None) -> dict[str, Any]:
+def frozen_config(
+    budgets: Budgets | None = None, retrieval_options: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """The one configuration every arm runs under (Part B §20).
 
     Returned as data so it can be hashed and asserted identical across arms. Frozen-model mode is
@@ -179,7 +181,10 @@ def frozen_config(budgets: Budgets | None = None) -> dict[str, Any]:
         "model": "policy-v1",
         "model_version": "policy-v1",
         "system_prompt_version": "hidden-rule/1.0",
-        "retrieval_policy_version": "retrieval/1.0-lexical",
+        "retrieval_policy_version": (retrieval_options or {}).get(
+            "version", "retrieval/2.0-hybrid"
+        ),
+        "retrieval_options": dict(retrieval_options or {}),
         "temperature": 0.0,
         "budgets": {
             "tokens": budgets.tokens, "context": budgets.context,
@@ -259,6 +264,7 @@ def run_newcomer_benchmark(
     budgets: Budgets | None = None,
     settings: Settings | None = None,
     include_arms: list[str] | None = None,
+    retrieval_options: dict[str, Any] | None = None,
 ) -> BenchmarkResult:
     """Run §22's procedure and return a gated result.
 
@@ -269,7 +275,7 @@ def run_newcomer_benchmark(
     settings = settings or get_settings()
     seeds = seeds or [0, 1, 2]
     budgets = budgets or DEFAULT_BUDGETS
-    config = frozen_config(budgets)
+    config = frozen_config(budgets, retrieval_options=retrieval_options)
     cfg_hash = config_hash_of(config)
 
     arms_to_run = include_arms or [
@@ -299,6 +305,7 @@ def run_newcomer_benchmark(
                     budgets=budgets,
                     config_hash=cfg_hash,
                     seed=seed,
+                    retrieval_options=retrieval_options,
                 )
                 accumulation_stats.append({"arm": arm_label, "seed": seed, **stats})
 
@@ -327,6 +334,7 @@ def run_newcomer_benchmark(
                     # The probe agent's order is fixed across arms, so the four arms are measured
                     # on literally the same newcomer.
                     probe_order_seed=_order_seed(seed, instance.index, -1),
+                    retrieval_options=retrieval_options,
                     # A probe must not contribute to the accumulation it is measured against —
                     # the founder-free discipline of ARCHITECTURE §3.5.
                     record_findings=False,
@@ -371,6 +379,7 @@ def _accumulate(
     budgets: Budgets,
     config_hash: str,
     seed: int,
+    retrieval_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Let N agents work, so the environment matures (§22 step 8)."""
     episodes = 0

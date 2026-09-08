@@ -117,8 +117,10 @@ These are load-bearing, and each has a test that drives the real mechanism:
 
 | milestone | state |
 |---|---|
-| M1 audit · M2 persistence · M3 runtime · M4 experimental infrastructure | complete |
-| M5–M13 | see `docs/ARCHITECTURE.md` §5 |
+| M1 audit · M2 persistence · M3 runtime · M4 experimental infrastructure · M5 knowledge system | complete |
+| M6–M13 | see `docs/ARCHITECTURE.md` §5 |
 
 Each milestone reports its effect on the M4 benchmark. A feature that moves no number is reported
-as such rather than hidden (Part A §A1.5).
+as such rather than hidden (Part A §A1.5) — M5's hybrid retrieval moved it by exactly 0.000, and
+`docs/milestones/M05.md` explains why the benchmark cannot see it and builds the instrument that
+can.

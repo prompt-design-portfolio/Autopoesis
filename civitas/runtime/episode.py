@@ -69,6 +69,10 @@ class EpisodeSpec:
     budgets: Budgets = field(default_factory=Budgets)
     experiment_arm: ExperimentArm = ExperimentArm.SOLO
     retrieval_policy_version: str = ""
+    #: Parameters of the retrieval policy — which hybrid components are active, and their
+    #: weights. A versioned `Policy` body under the A2.2 gate; here so a benchmark can run a
+    #: matched A/B over it.
+    retrieval_options: dict[str, Any] = field(default_factory=dict)
     tool_policy: dict[str, Any] = field(default_factory=dict)
     project_id: uuid.UUID | None = None
     task_id: uuid.UUID | None = None
@@ -151,6 +155,7 @@ class EpisodeRunner:
             config_hash=spec.config_hash,
             project_id=spec.project_id,
             task_id=spec.task_id,
+            retrieval_options=dict(spec.retrieval_options),
         )
         tools = self._tools.filtered(spec.tool_policy.get("allowed"))
 

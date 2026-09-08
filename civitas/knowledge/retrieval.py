@@ -1,10 +1,18 @@
 """Retrieval (Part B §14) — arm-enforced, and logged with the features that produced the ranking.
 
-M3/M4 ship the lexical, recency, confidence, validation, provenance-strength, utility and
-diversity components. M5 adds vector similarity, graph proximity and contradiction exposure, and
-re-reports the identical newcomer benchmark so the knowledge system's contribution is *measured*
-(ARCHITECTURE §5). The scoring is a weighted sum over named features precisely so a component can
-be added, and its effect isolated, without rewriting the ranker.
+All of §14's components are present: vector similarity, full-text and BM25-shaped lexical
+ranking, graph proximity, task relevance, recency, confidence, validation, provenance strength,
+environment applicability, negative-knowledge relevance, historical utility, diversity and
+contradiction exposure.
+
+The scoring is a weighted sum over *named* features so a component can be added and its effect
+isolated without rewriting the ranker — which is what let M5 add three components and re-report
+the identical M4 benchmark to measure what they were worth.
+
+Two of §14's requirements are easy to state and easy to leave as prose, so they are mechanisms
+here: a result set must not be ten near-identical artifacts (`_diversify`), and an agent must
+sometimes be shown relevant *disagreement* (`_expose_contradictions`) — a pure relevance ranking
+systematically removes the thing most likely to correct it.
 
 Every retrieval writes a `RetrievalDecision` with the query, policy version, candidate count,
 per-result feature vector and — importantly — what the arm *suppressed*. An ablation whose effect
@@ -21,7 +29,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from civitas.domain.enums import (
@@ -37,13 +45,22 @@ from civitas.persistence.events import emit
 from civitas.persistence.models import Artifact, RetrievalDecision
 from civitas.persistence.types import utcnow
 
-POLICY_VERSION = "retrieval/1.0-lexical"
+POLICY_VERSION = "retrieval/2.0-hybrid"
 
 #: Weights over the named features. Not tuned by hand later in an ad-hoc way: this dictionary is
 #: the body of a `Policy` row under the A2.2 gate, so a change to it must win a matched experiment
 #: before the runtime will load it.
 DEFAULT_WEIGHTS: dict[str, float] = {
     "lexical": 1.00,
+    #: Semantic similarity. Weighted *below* lexical on purpose: for agent-written artifacts an
+    #: exact term match is the stronger signal, and §14 forbids relying on embeddings alone.
+    "vector": 0.70,
+    #: Proximity in the artifact graph to something already relevant. This is what lets a chain
+    #: of evidence be retrieved together rather than only its best-matching link.
+    "graph": 0.30,
+    #: The task the episode is on. Cheap, and it separates two artifacts that match a query
+    #: equally well but belong to different work.
+    "task_relevance": 0.25,
     "recency": 0.15,
     "validation": 0.45,
     "provenance": 0.35,
@@ -51,6 +68,10 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     # Self-reported confidence ranks *last* (Part A §A2.1): it is the one signal an agent can
     # inflate for free, so it breaks ties and never drives a ranking.
     "confidence": 0.05,
+    #: §14 requires prior failures to gain relevance when an agent is about to repeat a known
+    #: failed method. Positive, and applied only when the query overlaps the failure — a blanket
+    #: boost would flood every result with unrelated failures.
+    "negative_relevance": 0.55,
     "stale_penalty": -0.50,
     "superseded_penalty": -0.35,
     "refuted_penalty": -0.60,
@@ -93,6 +114,10 @@ def retrieve(
     seed: int | None = None,
     config_hash: str = "",
     log_decision: bool = True,
+    task_id: uuid.UUID | None = None,
+    use_vector: bool = True,
+    expose_contradictions: bool = True,
+    embedder=None,
 ) -> RetrievalResult:
     """Rank the workspace's artifacts for this query under this arm's policy."""
     started = time.perf_counter()
@@ -139,9 +164,33 @@ def retrieve(
 
     query_tokens = tokenize(query)
     now = utcnow()
+
+    # Semantic similarity, restricted to the candidates the arm already allowed. The vector index
+    # must never be a way around an ablation (§21).
+    vector_scores: dict[uuid.UUID, float] = {}
+    if use_vector and kept:
+        from civitas.knowledge.embeddings import search as vector_search
+
+        try:
+            hits = vector_search(
+                session, workspace_id=workspace_id, query=query, embedder=embedder,
+                limit=len(kept), candidate_ids={a.id for a in kept},
+            )
+            vector_scores = {h.artifact_id: h.score for h in hits}
+        except Exception:  # pragma: no cover - a missing index must not fail retrieval
+            vector_scores = {}
+
+    graph_scores = _graph_proximity(session, kept, query_tokens, vector_scores)
+
     scored: list[tuple[float, dict[str, float], Artifact]] = []
     for artifact in kept:
         feats = _features(artifact, query_tokens, now, policy)
+        feats["vector"] = vector_scores.get(artifact.id, 0.0)
+        feats["graph"] = graph_scores.get(artifact.id, 0.0)
+        feats["task_relevance"] = (
+            1.0 if task_id is not None and artifact.task_id == task_id else 0.0
+        )
+        feats["negative_relevance"] = _negative_relevance(artifact, query_tokens, feats)
         score = sum(weights.get(k, 0.0) * v for k, v in feats.items())
         scored.append((score, feats, artifact))
 
@@ -157,7 +206,12 @@ def retrieve(
     else:
         scored.sort(key=lambda row: row[0], reverse=True)
 
-    selected = _diversify(scored, limit) if not policy.scramble else scored[:limit]
+    if policy.scramble:
+        selected = scored[:limit]
+    else:
+        selected = _diversify(scored, limit)
+        if expose_contradictions:
+            selected = _expose_contradictions(session, selected, scored, limit)
 
     artifacts = [row[2] for row in selected]
     now_ts = utcnow()
@@ -312,38 +366,73 @@ def _bm25ish(query_tokens: list[str], text_tokens: list[str]) -> float:
     return score / max(1, len(set(query_tokens)))
 
 
+#: Above this overlap two candidates are treated as the same result, and the second is skipped
+#: rather than merely penalised. A penalty alone cannot work for exact duplicates: it is
+#: subtracted equally from every one of them, so their relative order is unchanged and all of them
+#: are still selected — measured on a corpus of twelve identical artifacts, which came back as
+#: five identical results (§14 forbids exactly that).
+NEAR_IDENTICAL = 0.85
+
+
+def _signature(artifact: Artifact) -> set[str]:
+    """Tokens used to judge whether two results say the same thing.
+
+    Title *and* the opening of the body. Titles alone are not enough: agents write templated
+    titles, so two artifacts recording different findings can share one verbatim.
+    """
+    return set(tokenize(f"{artifact.title} {artifact.body[:240]}"))
+
+
+def _overlap(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 def _diversify(
     scored: list[tuple[float, dict[str, float], Artifact]], limit: int
 ) -> list[tuple[float, dict[str, float], Artifact]]:
     """Avoid returning ten near-identical artifacts (Part B §14).
 
-    Greedy selection with a similarity penalty against what is already chosen, plus a guarantee
-    that a contradicting or failure artifact is not crowded out by a block of agreeing ones — §14
-    asks that agents sometimes be shown relevant disagreement, and a pure relevance ranking
-    systematically removes it.
+    Two mechanisms, because one is not enough:
+
+    * a **hard skip** for anything near-identical to something already chosen — this is what
+      actually removes duplicates, since a soft penalty applies equally to all of them;
+    * a **soft penalty** on partial overlap, which trades a little relevance for coverage among
+      results that are related but not the same.
+
+    Near-identical candidates are held back rather than discarded: if the limit cannot be filled
+    from distinct results, they are appended. Returning fewer results than asked for would be a
+    worse failure than returning a near-duplicate, because the caller cannot tell the difference
+    between "nothing else matched" and "the ranker suppressed it".
     """
-    if len(scored) <= limit:
+    if len(scored) <= 1:
         return scored
 
     selected: list[tuple[float, dict[str, float], Artifact]] = []
+    held_back: list[tuple[float, dict[str, float], Artifact]] = []
     remaining = list(scored)
-    chosen_tokens: list[set[str]] = []
+    chosen: list[set[str]] = []
 
     while remaining and len(selected) < limit:
-        best_i, best_val = 0, -1e9
+        best_i, best_val = -1, -1e9
         for i, (score, _feats, artifact) in enumerate(remaining):
-            tokens = set(tokenize(artifact.title))
-            overlap = max(
-                (len(tokens & prev) / max(1, len(tokens | prev)) for prev in chosen_tokens),
-                default=0.0,
-            )
+            signature = _signature(artifact)
+            overlap = max((_overlap(signature, prev) for prev in chosen), default=0.0)
+            if overlap >= NEAR_IDENTICAL:
+                continue
             value = score - 0.6 * overlap
             if value > best_val:
                 best_i, best_val = i, value
+        if best_i < 0:
+            break  # everything left duplicates something already chosen
         pick = remaining.pop(best_i)
         selected.append(pick)
-        chosen_tokens.append(set(tokenize(pick[2].title)))
+        chosen.append(_signature(pick[2]))
 
+    if len(selected) < limit:
+        held_back = [row for row in remaining if row not in selected]
+        selected.extend(held_back[: limit - len(selected)])
     return selected
 
 
@@ -390,3 +479,134 @@ def _log(
         config_hash=config_hash,
     )
     return decision.id
+
+
+def _graph_proximity(
+    session: Session,
+    candidates: list[Artifact],
+    query_tokens: list[str],
+    vector_scores: dict[uuid.UUID, float],
+) -> dict[uuid.UUID, float]:
+    """How close each candidate is to the ones the query already matches strongly (§14).
+
+    Seeded from the best directly-matching artifacts, then one hop out. An artifact adjacent to
+    strong evidence is more likely to be part of the same chain — which is how a *chain* gets
+    retrieved rather than only its best-matching link.
+
+    One hop, not many: proximity decays fast in a dense graph, and a multi-hop walk over every
+    candidate on every retrieval is the kind of cost that makes a ranker unusable at §59's scale.
+    """
+    if not candidates:
+        return {}
+
+    seeds: list[tuple[float, uuid.UUID]] = []
+    for artifact in candidates:
+        lexical = _bm25ish(query_tokens, tokenize(f"{artifact.title} {artifact.body}"))
+        strength = max(lexical, vector_scores.get(artifact.id, 0.0))
+        if strength > 0.15:
+            seeds.append((strength, artifact.id))
+    if not seeds:
+        return {}
+    seeds.sort(reverse=True)
+    seed_ids = {aid for _s, aid in seeds[:8]}
+    candidate_ids = {a.id for a in candidates}
+
+    from civitas.persistence.models import ArtifactRelation
+
+    scores: dict[uuid.UUID, float] = {}
+    relations = session.execute(
+        select(ArtifactRelation).where(
+            or_(
+                ArtifactRelation.source_id.in_(seed_ids),
+                ArtifactRelation.target_id.in_(seed_ids),
+            )
+        )
+    ).scalars()
+    for relation in relations:
+        for near, far in ((relation.source_id, relation.target_id),
+                          (relation.target_id, relation.source_id)):
+            if near in seed_ids and far in candidate_ids and far not in seed_ids:
+                scores[far] = max(scores.get(far, 0.0), 0.6)
+    return scores
+
+
+def _negative_relevance(
+    artifact: Artifact, query_tokens: list[str], feats: dict[str, float]
+) -> float:
+    """Boost a prior failure that is actually about what is being asked (§14).
+
+    > If an agent is about to repeat a known failed method, prior failure artifacts should receive
+    > increased relevance.
+
+    Gated on the artifact already matching the query. A blanket boost for negative types would
+    flood every result with unrelated failures, which is a good way to make agents ignore them.
+    """
+    from civitas.domain.enums import NEGATIVE_TYPES
+
+    if artifact.type not in NEGATIVE_TYPES:
+        return 0.0
+
+    # Lexical evidence is what "about the same method" means here: a shared term. Semantic
+    # similarity gets a much higher bar because a hashing embedder assigns moderate similarity to
+    # any two pieces of English prose — measured, a failure about cache eviction scored 0.3
+    # against a query about lock retries, which is noise, not aboutness.
+    lexical = feats.get("lexical", 0.0)
+    vector = feats.get("vector", 0.0)
+    if lexical > 0.05:
+        return max(lexical, vector)
+    return vector if vector >= 0.55 else 0.0
+
+
+def _expose_contradictions(
+    session: Session,
+    selected: list[tuple[float, dict[str, float], Artifact]],
+    scored: list[tuple[float, dict[str, float], Artifact]],
+    limit: int,
+) -> list[tuple[float, dict[str, float], Artifact]]:
+    """Ensure relevant disagreement survives the ranking (§14).
+
+    > Agents should sometimes be deliberately shown relevant disagreement.
+
+    A pure relevance ranking systematically removes the artifact most likely to correct the top
+    result, because a contradiction of a strong match is usually a weaker match itself. Where the
+    top result is contradicted by something in the candidate set, the contradiction displaces the
+    *lowest-ranked* selection — the set size is preserved, so this changes what an agent sees
+    without changing how much it sees.
+    """
+    if not selected:
+        return selected
+
+    from civitas.domain.enums import RelationType
+    from civitas.persistence.models import ArtifactRelation
+
+    chosen = {row[2].id for row in selected}
+    top_ids = [row[2].id for row in selected[: min(3, len(selected))]]
+
+    opposing = session.execute(
+        select(ArtifactRelation).where(
+            or_(
+                ArtifactRelation.source_id.in_(top_ids),
+                ArtifactRelation.target_id.in_(top_ids),
+            ),
+            ArtifactRelation.type.in_([
+                RelationType.CONTRADICTS.value, RelationType.FALSIFIES.value,
+                RelationType.INVALIDATES.value,
+            ]),
+        )
+    ).scalars()
+
+    wanted: set[uuid.UUID] = set()
+    for relation in opposing:
+        for other in (relation.source_id, relation.target_id):
+            if other not in chosen and other not in top_ids:
+                wanted.add(other)
+    if not wanted:
+        return selected
+
+    available = {row[2].id: row for row in scored}
+    additions = [available[aid] for aid in wanted if aid in available][:2]
+    if not additions:
+        return selected
+
+    keep = selected[: max(1, limit - len(additions))]
+    return keep + additions
