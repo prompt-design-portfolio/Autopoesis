@@ -21,7 +21,9 @@ for one, and nothing reads the store on a learner's behalf. The learner is the g
 deterministic policy agents, the two agent-facing domains, `acceptance.py`'s six levels and the
 `m4`–`m13` results as acceptance artifacts; makes §9–§18 and §26–§32 and §49 dormant; and keeps
 §33–§46, §47 and §50–§58. The audit that enumerates all of that against the tree is
-`docs/G0_G1.md` §1. **The removal itself has not been carried out** — see "What remains".
+`docs/G0_G1.md` §1, and **the removal is carried out** — moved to `civitas/legacy/`,
+`scripts/legacy/` and `results/legacy/` rather than deleted, because these modules produced the
+results B§1 keeps as history.
 
 ## Running it
 
@@ -127,9 +129,9 @@ periodically, which kills the server mid-run.
 | **G0** | audit and removal (B§1) | **MET.** The audit is `docs/G0_G1.md`; the removal is carried out — the removed surface is in `civitas/legacy/`, its scripts in `scripts/legacy/`, `m4`–`m13` in `results/legacy/`, its tests deleted, and `civitas acceptance` and `civitas benchmark` retired. Moved rather than deleted because these modules produced the results B§1 keeps as history, and a result whose producing code is gone is the very gap this audit found for `precheck_v3_12.txt`. |
 | **G1** | reproduction diff = 0 | **MET.** `precheck_v3_13.txt` reproduced **182/182 fields on SQLite and on PostgreSQL**, backends agreeing, from rows recomputed out of the database. `docs/G1_WRITEUP.md` |
 | **G2** | the record as the artifact store; Gate R, stale-mark lines, frozen assay reproduce through the store | **MET.** G2-D1 ruled and the engine change applied; the reproduction re-run against it gives **182/182 on both backends**, and the same arm's rows are **byte-identical** to the G1 run at full reference length. A2.1's twelve cells run for the first time; `assay_selftest` is built. `docs/G2_WRITEUP.md` |
-| **G3** | the store outlives the run; population B born into population A's record | **spec delivered** (`docs/G3_SPEC.md`, two rulings made); the mechanism is **built** (`civitas_g/g3.py`) and `b_founders_carry_no_H` is **green**; pre-check running |
-| G4 | a world that hardens, one mechanic per milestone | **spec delivered** (`docs/G4_SPEC.md`): what compounding means, three ways to falsify it, mechanic 1 (K raised) designed. Held until G3's gate is met — G4's number is a *difference from* G3's. |
-| G5 | reference arm: one frozen LLM against the same store | **spec delivered** (`docs/G5_SPEC.md`): the presentation, the prompt, three variants, cost, provider freezing. Reported, never claimed. |
+| **G3** | the store outlives the run; population B born into population A's record | **MET at one seed**, on the project owner's explicit decision to relax B§5.2's 3/3 bar; `min_seeds` is a recorded parameter of `acceptance`, not a hard-coded constant, and `docs/G3_WRITEUP.md` §4.4 records the basis. Seed 0 aligned: content **−0.131**, reading **−0.119**, the two information-removing controls agreeing to 0.012 nfc and 0.04 on the stale ratio, Gate R PASS (z −0.68, 3 epochs). Seed 0 **misaligned: +0.018** — the record helps only when it is true of B's world, which is the sharpest internal check in the milestone and one no control arm can supply. |
+| G4 | a world that hardens, one mechanic per milestone | **mechanic 1 built and running.** `world_at_k` + `check_hardened_world` (a hardened world may move only what a mechanic declares, and the chance EV of a preparation must still be zero); the engine is K-parameterised as version `G4-k` and is **bit-identical at K = 5** — 32 rows × 133 fields with zero differing, and a full-length succession reproducing seed 0 to the digit. Mechanics 2 and 3 are deliberately unspecified: `docs/G4_SPEC.md` §2–3 settle their design questions against mechanic 1's numbers rather than in advance of them. |
+| G5 | reference arm: one frozen LLM against the same store | **step 1 done, step 2 specified.** The presentation is built with its leak rule tested by trying to break it (`civitas_g/g5/presentation.py`); G5-D6 records that the field names are more than the learner gets and rules that they stay, so the arm is generously provisioned and a poor number from it is the informative one. G5-D7 specifies the engine hook and the equivalence check that needs no model. **The provider cannot run in this environment** — see Open issues. Reported, never claimed. |
 
 191 G tests green on both backends (176 in one 8m18s run plus the 15 notebook tests added
 after it started); ruff clean; `nbcheck` green on all nine notebooks; fifteen
@@ -138,6 +140,15 @@ one and it is now a measurement. The five added at G2 are `store_round_trip`, `s
 `assay_preconditions`, `assay_selftest` and `engine_store`. The M1–M13 suite still passes untouched (778 passed, 4 skipped, both
 backends), so the two lineages coexist without either disturbing the other — `civitas_g` imports
 nothing from `civitas/` except the kept dialect seam in `persistence/types.py`.
+
+**Three instances of one defect, worth knowing before adding a fourth.** K appears as a module
+constant, and at the reference K = 5 a K-blind computation gives the right answer — so it passes
+every test and goes wrong only on a hardened world. It was found in `check_chance_ev_is_zero`
+(the guard meant to catch a badly-raised K computed the economics from the module's K),
+`matched_stale_null`, `Record.__post_init__` (which made a hardened store unrepresentable — the
+K = 7 smoke test could not build its own record), and A2.2's matched null in
+`civitas_g.reading.compute`. Each now reads K off the run or the artifact. Anything new that
+touches K should take it as a parameter, and `civitas_g/g5/policy.py`'s `check_action` does.
 
 Three measurements the build produced, beyond the reproduction:
 
@@ -158,21 +169,24 @@ by A1.1: the agents were deterministic policies, not learners, and two domains i
 
 ## What remains
 
-1. **Read the G3 pre-check and decide whether to go to three seeds.** One seed is a pre-check;
-   B§5.2 asks for 3/3 with the scrambled and gain-zero arms flat. `docs/G3_SPEC.md` §6 is the
-   order of work and §5 is the list of seven ways the claim could produce a positive number that
-   means nothing, with what catches each.
-2. **Agree the G3 spec.** A3: no milestone starts until the previous gate is met and the next spec
-   is agreed. G2's gate is met, and the engine can now hand a record to a population that did not
-   write it — which is exactly what B§5.2 needs. Two things G3 will need that do not exist:
-   `b_founders_carry_no_H` (the engine refuses `init_genomes` at G1 and must allow it for
-   population B while proving nothing learned crossed), and a ruling on era-clock alignment
-   between A and B, which B§5.2 flags as a DECISION with a pre-registered reading attached.
-3. **Carry out G0's removal.** `docs/G0_G1.md` §1 lists every path and line. One judgement call is
-   already made and should be honoured: the four leak-check tests in `tests/test_domains.py` are
-   the only executable statement of the §47 rule B§1 *keeps*, so they are re-homed to the vector
-   adapter rather than deleted with the file.
-4. **Three seeds for G3**, once the pre-check reads clean.
+1. **G4 mechanic 1's number**, then its write-up. The run is against the *stored* G3 seed-0
+   baseline (`var/g3/seed0_aligned.json`, reloaded by `G3Result.from_dict`) rather than a fresh
+   draw: re-running the baseline per mechanic would compare each mechanic against a different draw
+   of the same world, which is the one thing a difference of differences cannot survive.
+2. **Mechanics 2 and 3**, each its own spec with its own claim line (B§5.3), designed against
+   mechanic 1's numbers. `docs/G4_SPEC.md` §3 names mechanic 3's central design problem — how much
+   of a compositional preparation's difficulty is the composition and how much is the longer
+   horizon — and says it has to be settled from the measured distribution, not guessed.
+3. **G5 step 2**: apply the `G5-policy` engine hook and run §7.1's equivalence check, which needs
+   no provider. A `MirrorPolicy` run must be bit-identical to a run with no policy; if it is not,
+   the hook is wrong and finding that out costs nothing.
+4. **Three seeds for G3 as corroboration.** The resumable campaign writes per `(seed, alignment)`
+   to `var/g3/`; seed 0 aligned has already reproduced to the digit. Report disagreement with
+   seed 0 *as disagreement* — the one-seed acceptance is on record and averaging a second seed
+   into it would quietly replace the number the gate was read on.
+5. **Confirm the M-suite with a quiet full run.** The 6 failures and 30 errors seen after G0's
+   removal were all PostgreSQL and all disappeared when the four affected files ran alone (164
+   passed clean). CPU contention is the *attribution*, not yet a finding.
 
 ## Open issues
 
@@ -186,4 +200,10 @@ by A1.1: the agents were deterministic policies, not learners, and two domains i
 - **Five of the 31 observation inputs are dead** and `type_spawn_w` is `None`, so type C
   accumulates to roughly half of standing food. Both are recorded facts and G4 candidates; neither
   can be changed without voiding the reproduction or changing the world.
-- **The G1 result is one seed.** Nothing in it is a claim.
+- **The G1 result is one seed.** Nothing in it is a claim. Nor is G3's, which is accepted at one
+  seed by decision rather than by evidence — the write-up says so where the number is stated.
+- **G5's provider cannot run here.** No model API key is set in this environment, only a base URL.
+  G5-D5 makes that a refusal at the start of the run rather than a silent fallback, so the arm
+  stops at the equivalence check: the loop can be proven correct, and the table cannot be
+  produced. That is a fact about the environment, not about the design, and it is recorded here
+  rather than worked around.
