@@ -85,7 +85,9 @@ def hash_api_key(plaintext: str) -> str:
     return hashlib.sha256(plaintext.encode()).hexdigest()
 
 
-def verify_api_key(session: Session, plaintext: str) -> ApiKey | None:
+def verify_api_key(
+    session: Session, plaintext: str, *, record_usage: bool = False
+) -> ApiKey | None:
     """Look a key up by prefix and compare in constant time.
 
     Constant-time comparison because a byte-by-byte compare over a stored hash leaks how much of a
@@ -104,9 +106,42 @@ def verify_api_key(session: Session, plaintext: str) -> ApiKey | None:
             continue
         if candidate.expires_at is not None and candidate.expires_at < utcnow():
             return None
-        candidate.last_used_at = utcnow()
+        if record_usage:
+            _touch(candidate)
         return candidate
     return None
+
+
+#: How coarsely key usage is recorded. Nobody reviews key usage at millisecond resolution, and
+#: stamping every request made `last_used_at` the most-written row in the database.
+USAGE_GRANULARITY = timedelta(seconds=60)
+
+
+def _touch(key: ApiKey) -> None:
+    """Stamp a key as used, on the caller's session, coalesced.
+
+    **This runs on writing requests only, and that is a deliberate, visible limitation.**
+
+    Stamping on every request made *reading* the API a write. The engine opens transactions with
+    `BEGIN IMMEDIATE` so the job lease serialises on SQLite the way `SELECT FOR UPDATE` does on
+    PostgreSQL (§42), which means an authenticated GET took the database's write lock to answer a
+    question that changes nothing. Two panels of the UI opening at once were enough to produce
+    "database is locked"; a live event stream held open made it certain.
+
+    Three fixes were tried before this one. Writing it in a second session moved the contention
+    without removing it. Bounding that session's lock wait does not work either: `BEGIN IMMEDIATE`
+    fires before any statement in the session, so the connection is already blocked before a
+    `busy_timeout` pragma can be issued — a 27-test module went from 8 seconds to 9 minutes.
+
+    So reads no longer stamp usage at all. The consequence, stated plainly rather than buried: for
+    a key used only for reads, `last_used_at` reflects its last *writing* use, and a rotation
+    review that needs read activity must read the access log. That is a real loss, and it is
+    smaller than an API whose every read serialises behind one row.
+    """
+    now = utcnow()
+    previous = key.last_used_at
+    if previous is None or now - previous >= USAGE_GRANULARITY:
+        key.last_used_at = now
 
 
 def create_api_key(

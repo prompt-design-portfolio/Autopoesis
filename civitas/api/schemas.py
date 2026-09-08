@@ -99,6 +99,115 @@ class ProjectStatusOut(BaseModel):
     progress: float | None
 
 
+class OverviewOut(BaseModel):
+    """The collective at a glance (§49 screen 1).
+
+    Every count is of *live* rows. Archived artifacts are reported separately rather than folded
+    in: `memory_reset` archives rather than deletes (Part A §A1.2), and a total that hid the
+    distinction would make an arm that lost its memory look like one that never had any.
+    """
+
+    workspace_id: uuid.UUID
+    name: str
+    environment_version: str
+    projects: int
+    tasks: int
+    tasks_ready: int
+    tasks_blocked: int
+    episodes: int
+    episodes_succeeded: int
+    agents: int
+    artifacts: int
+    artifacts_archived: int
+    artifacts_stale: int
+    tools: int
+    events: int
+    latest_sequence: int
+    tokens_used: int
+    cost_usd: float
+
+
+class CostBucketOut(BaseModel):
+    key: str
+    episodes: int
+    tokens: int
+    cost_usd: float
+    #: `None` where no episode in the bucket recorded a cost, rather than 0.0 — a provider with no
+    #: priced calls has an unknown cost per episode, not a free one (ARCHITECTURE §3.9).
+    mean_cost_usd: float | None
+
+
+class CostOut(BaseModel):
+    """§49's cost dashboard, and §39's budget accounting."""
+
+    workspace_id: uuid.UUID
+    total_tokens: int
+    total_cost_usd: float
+    episodes: int
+    by_day: list[CostBucketOut]
+    by_model: list[CostBucketOut]
+    by_arm: list[CostBucketOut]
+    #: Episodes whose provider reported no cost at all. Named so a dashboard can say how much of
+    #: the total is unpriced rather than presenting a partial sum as the whole.
+    unpriced_episodes: int
+
+
+class EpisodeDetailOut(ORMModel):
+    """One episode, as the API discloses it.
+
+    There is no reasoning field, and there is none to add: §4 forbids an episode's private
+    reasoning from being persisted at all, so the inspector shows what the episode *did* — its
+    configuration, its budget, its tool runs, and what it wrote — never what it thought.
+    """
+
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    task_id: uuid.UUID | None
+    project_id: uuid.UUID | None
+    agent_profile_id: uuid.UUID
+    model_provider: str
+    model_name: str
+    model_version: str
+    system_prompt_version: str
+    retrieval_policy_version: str
+    experiment_arm: str
+    environment_version: str
+    config_hash: str
+    is_benchmark_probe: bool
+    termination_reason: str | None
+    tokens_used: int
+    tool_calls_used: int
+    cost_usd: float
+    duration_s: float | None
+    artifacts_created: int
+    artifacts_read: int
+    duplicate_failures: int
+    created_at: datetime
+    tool_runs: list[dict] = Field(default_factory=list)
+    artifacts: list[dict] = Field(default_factory=list)
+    evaluations: list[dict] = Field(default_factory=list)
+
+
+class SpecializationOut(BaseModel):
+    """§49's specialization dashboard. `specialization_index` is `None` with a stated reason when
+    there is not enough evidence to compute it — never 0.0, which would read as "no
+    specialization" rather than "not measurable"."""
+
+    workspace_id: uuid.UUID
+    specialization_index: float | None
+    index_unavailable_reason: str | None
+    entries: list[dict]
+
+
+class InstitutionsOut(BaseModel):
+    """§29–§31: what the A2.2 gate has approved, and what each agent is trusted for."""
+
+    workspace_id: uuid.UUID
+    gate: dict
+    reputations: list[dict]
+    policies: list[dict]
+
+
 class DomainOut(BaseModel):
     """A registered domain (§5). What this process can actually run, not a catalogue."""
 

@@ -25,6 +25,10 @@ _ENGINES: dict[str, Engine] = {}
 _SESSION_FACTORIES: dict[str, sessionmaker[Session]] = {}
 
 
+#: Execution-option key marking a transaction as a reader. See `_on_begin` for why it matters.
+READ_ONLY_OPTION = "civitas_read_only"
+
+
 def _configure_sqlite(engine: Engine) -> None:
     @event.listens_for(engine, "connect")
     def _on_connect(dbapi_conn, _record):  # pragma: no cover - driver callback
@@ -46,6 +50,14 @@ def _configure_sqlite(engine: Engine) -> None:
         # turns the job-lease read-then-update into a race that SQLite resolves by raising
         # SQLITE_BUSY on the *second* writer mid-transaction. An immediate BEGIN takes the lock up
         # front, so leasing serialises the same way SELECT FOR UPDATE does on PostgreSQL (§42).
+        #
+        # A transaction marked read-only is exempt, and that exemption is load-bearing rather than
+        # an optimisation: an immediate BEGIN on a *reader* takes the write lock too, so a long
+        # read — the §49 event stream polling for new rows, a dashboard aggregating episodes —
+        # would block every agent in the workspace from writing for as long as it ran. WAL exists
+        # so that readers do not block the writer; taking the write lock to read throws that away.
+        if conn.get_execution_options().get(READ_ONLY_OPTION):
+            return
         conn.exec_driver_sql("BEGIN IMMEDIATE")
 
 
@@ -109,6 +121,20 @@ def session_scope(settings: Settings | None = None) -> Iterator[Session]:
         raise
     finally:
         session.close()
+
+
+def read_only_session_factory(settings: Settings | None = None) -> sessionmaker[Session]:
+    """A session factory whose transactions never take SQLite's write lock.
+
+    For reads that are long, repeated, or concurrent with agent work: the §49 event stream, the
+    dashboards, an export. On PostgreSQL this changes nothing; on SQLite it is the difference
+    between a dashboard that observes the collective and one that stops it.
+    """
+    engine = get_engine(settings)
+    return sessionmaker(
+        bind=engine.execution_options(**{READ_ONLY_OPTION: True}),
+        expire_on_commit=False, future=True,
+    )
 
 
 def dispose_engines() -> None:

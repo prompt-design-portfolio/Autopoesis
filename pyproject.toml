@@ -24,6 +24,9 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1", "pgvector>=0.2.5"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10"]
+#: The browser tests (§49) drive the real page. They skip with a stated reason when
+#: Chromium is unavailable, so this is optional rather than required to run the suite.
+ui-tests = ["playwright>=1.40"]
 
 [project.scripts]
 civitas = "civitas.cli:main"

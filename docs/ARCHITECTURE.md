@@ -119,7 +119,8 @@ claimed). The platform's benchmark framework must be able to fail in that same v
 
 ```
                     ┌──────────────────────────────────────────┐
-   HTTP / WS  ────► │  civitas.api          FastAPI, OpenAPI   │  §50 §51 §49
+   browser    ────► │  civitas.web    14 screens, SSE over §45  │  §49
+   HTTP / WS  ────► │  civitas.api          FastAPI, OpenAPI   │  §50 §51
                     └───────────────┬──────────────────────────┘
                                     │
    ┌────────────────────────────────┼─────────────────────────────────────┐
@@ -258,7 +259,14 @@ what it claims.
    a restricted-subprocess fallback both exist behind `SandboxBackend`. The fallback's weaker
    guarantees are stated in the manifest so a result run under it is never mistaken for one run
    under isolation.
-4. **Does the newcomer advantage generalise?** A result measured on one task family is a result
+4. **Reading must not write.** The engine opens every transaction with `BEGIN IMMEDIATE` so the
+   job lease serialises on SQLite the way `SELECT FOR UPDATE` does on PostgreSQL (§42). An
+   immediate BEGIN takes the *write* lock even to read, which made concurrent reads contend for a
+   lock neither needed. Resolved in M11: safe methods and every long read use
+   `read_only_session_factory`, and key-usage telemetry no longer writes on the read path. The
+   general rule now holds throughout — a read path gets a read-only session — and it is the kind
+   of invariant that decays silently, so it is stated here rather than only in the code.
+5. **Does the newcomer advantage generalise?** A result measured on one task family is a result
    about that task family. Addressed in M10: §22's procedure was made domain-parameterised and run
    on a second domain — code repair, judged by executing the submission in the sandbox — at a
    matched naive ceiling. Advantage +0.200 against the device's +0.300, with reset and scramble

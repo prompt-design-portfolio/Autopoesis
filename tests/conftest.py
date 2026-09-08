@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
+from fastapi import Request
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -120,3 +121,76 @@ def _no_real_credentials(monkeypatch):
                 "CIVITAS_ANTHROPIC_API_KEY", "CIVITAS_OPENAI_API_KEY", "CIVITAS_GOOGLE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     assert "ANTHROPIC_API_KEY" not in os.environ
+
+
+# --------------------------------------------------------------------------- the API
+
+# Shared by every module that drives the API. Kept here rather than in one test file because the
+# UI tests and the API tests must exercise *the same* app and the same auth path — two fixtures
+# would let one of them drift into testing an app the other does not.
+
+
+@pytest.fixture
+def read_only_factory(engine) -> sessionmaker[Session]:
+    """Sessions whose transactions do not take SQLite's write lock (see `engine._on_begin`)."""
+    from civitas.persistence.engine import READ_ONLY_OPTION
+
+    factory = sessionmaker(
+        bind=engine.execution_options(**{READ_ONLY_OPTION: True}),
+        expire_on_commit=False, future=True,
+    )
+    install_guards(factory)
+    return factory
+
+
+@pytest.fixture
+def api(settings, session_factory, read_only_factory, db):
+    from civitas.api.app import SAFE_METHODS, create_app, get_db
+
+    app = create_app(settings)
+
+    def _db_override(request: Request):
+        # Mirrors the real dependency, including the read/write split. An override that always
+        # used a writing session would hide exactly the lock contention the split exists to
+        # prevent — the tests would pass and a browser would still deadlock.
+        factory = read_only_factory if request.method in SAFE_METHODS else session_factory
+        session = factory()
+        try:
+            yield session
+            session.commit()
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = _db_override
+    return app
+
+
+@pytest.fixture
+def bootstrapped(db: Session):
+    from civitas.api.security import bootstrap_organization
+
+    org, admin, key = bootstrap_organization(
+        db, name="Test Org", slug=f"org-{uuid.uuid4().hex[:8]}", admin_email="admin@example.com"
+    )
+    db.commit()
+    return org, admin, key
+
+
+@pytest.fixture
+def client(api, bootstrapped):
+    from fastapi.testclient import TestClient
+
+    _org, _admin, key = bootstrapped
+    with TestClient(api) as c:
+        c.headers.update({"x-api-key": key})
+        yield c
+
+
+@pytest.fixture
+def api_workspace(client) -> dict:
+    response = client.post(
+        "/api/v1/workspaces",
+        json={"name": "W", "slug": f"w-{uuid.uuid4().hex[:8]}", "environment_version": "test"},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()

@@ -4,7 +4,7 @@ Read this first if you are resuming work (Part A §A5).
 
 ## State
 
-Branch `claude/master-prompt-init-ehmsbe`, pushed. **M1–M10 complete**, 634 tests green on both
+Branch `claude/master-prompt-init-ehmsbe`, pushed. **M1–M11 complete**, 696 tests green on both
 SQLite and PostgreSQL, ruff clean.
 
 ```bash
@@ -32,11 +32,10 @@ are reset periodically, which kills the server mid-run.
 | M8 | A2.2 gate, reputation, procedures, meta-learning | `results/m8_institutions.json` |
 | M9 | distributed knowledge, cumulative culture, capability frontier | `results/m9_advanced_benchmarks.json` |
 | M10 | long-horizon projects, request decomposition, domain adapters, versioned API, CLI | `results/m10_domain_transfer.json` |
+| M11 | the web UI: fourteen screens, live updates over the event log, browser-driven tests | — (a null on the newcomer benchmark, expected and explained in `docs/milestones/M11.md`) |
 
 ## What remains
 
-- **M11** — the web UI (§49): thirteen screens, live updates, provenance inspector, benchmark
-  dashboard.
 - **M12** — production hardening: auth/RBAC (§51), security (§52), observability (§53),
   reliability (§54), CI/CD (§56), deployment targets (§57), resource management (§58).
 - **M13** — acceptance: the Colab workflow (§63), the production checklist (§64), and §65's six
@@ -60,7 +59,15 @@ are reset periodically, which kills the server mid-run.
    both call `run_newcomer_procedure(domain=...)`. If you change it, verify with
    `scripts/newcomer_snapshot.py` on the tree before and after and diff — that is how the M10
    refactor was shown to leave the M4 result untouched.
-8. **A new domain cannot be added without stating its §47 argument.** `check_no_leak` runs in a
+8. **Reading must not write.** The engine's `BEGIN IMMEDIATE` takes SQLite's *write* lock even to
+   read, so every read path uses `read_only_session_factory` and API GETs get a read-only session.
+   Three separate defects in M11 were this one fact wearing different hats. If you add a read path,
+   do not give it a writing session.
+9. **The browser tests are not decoration.** `tests/test_web_ui.py` drives the real page in
+   Chromium and found four defects the API tests structurally could not — they issue one request
+   at a time, and the bugs only appear when three arrive at once. They skip with a stated reason
+   when no Chromium is available; they never silently pass.
+10. **A new domain cannot be added without stating its §47 argument.** `check_no_leak` runs in a
    test parametrized over the registry, in `create_domain_task`, and in the CLI. It has already
    caught a real leak (a description ending "the corrected function source" — "the correct" is a
    marker word).

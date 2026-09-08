@@ -8,56 +8,11 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
 from fastapi.testclient import TestClient
 
-from civitas.api.app import create_app, get_db
-from civitas.api.security import bootstrap_organization, create_api_key
+from civitas.api.security import create_api_key
 from civitas.domain.enums import ActorKind, Role
 from civitas.persistence.models import Organization, ServiceIdentity, User, Workspace
-
-
-@pytest.fixture
-def api(settings, session_factory, db):
-    app = create_app(settings)
-
-    def _db_override():
-        session = session_factory()
-        try:
-            yield session
-            session.commit()
-        finally:
-            session.close()
-
-    app.dependency_overrides[get_db] = _db_override
-    return app
-
-
-@pytest.fixture
-def bootstrapped(db):
-    org, admin, key = bootstrap_organization(
-        db, name="Test Org", slug=f"org-{uuid.uuid4().hex[:8]}", admin_email="admin@example.com"
-    )
-    db.commit()
-    return org, admin, key
-
-
-@pytest.fixture
-def client(api, bootstrapped):
-    _org, _admin, key = bootstrapped
-    with TestClient(api) as c:
-        c.headers.update({"x-api-key": key})
-        yield c
-
-
-@pytest.fixture
-def api_workspace(client) -> dict:
-    response = client.post(
-        "/api/v1/workspaces",
-        json={"name": "W", "slug": f"w-{uuid.uuid4().hex[:8]}", "environment_version": "test"},
-    )
-    assert response.status_code == 201, response.text
-    return response.json()
 
 
 # --------------------------------------------------------------------------

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Civitas</title>
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="mark">◈</span>
+    <span>Civitas</span>
+    <span class="sub" id="env">—</span>
+  </div>
+  <div class="controls">
+    <select id="workspace-select" aria-label="Workspace"></select>
+    <span id="live" class="live off" title="live event stream">live</span>
+    <button id="key-button" type="button">API key</button>
+  </div>
+</header>
+
+<div class="shell">
+  <nav id="nav" aria-label="Screens"></nav>
+  <main id="main" tabindex="-1">
+    <p class="empty">Loading…</p>
+  </main>
+</div>
+
+<dialog id="key-dialog">
+  <form method="dialog">
+    <h2>API key</h2>
+    <p class="note">
+      Kept in this tab's <code>sessionStorage</code> only. It is never written to disk by the
+      server and never leaves this browser except as the <code>x-api-key</code> header on requests
+      to this origin. Create one with <code>civitas bootstrap</code>.
+    </p>
+    <input id="key-input" type="password" autocomplete="off" spellcheck="false"
+           placeholder="civitas key">
+    <menu>
+      <button value="clear" type="submit">Forget</button>
+      <button value="save" type="submit" id="key-save">Save</button>
+    </menu>
+  </form>
+</dialog>
+
+<script src="./app.js"></script>
+</body>
+</html>

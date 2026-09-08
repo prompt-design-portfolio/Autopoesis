@@ -128,6 +128,20 @@ def measure(session: Session, workspace_id: uuid.UUID) -> list[ProfilePerformanc
     return out
 
 
+def report(session: Session, workspace_id: uuid.UUID) -> SpecializationReport:
+    """Measure without writing anything back (§26, §49).
+
+    Separate from `update_profiles` because a dashboard must not change the thing it displays. A
+    read that silently rewrote every profile's performance table would make "open the
+    specialization screen" an experimental intervention.
+    """
+    entries = measure(session, workspace_id)
+    index, reason = _index(entries)
+    return SpecializationReport(
+        entries=entries, specialization_index=index, index_unavailable_reason=reason
+    )
+
+
 def update_profiles(session: Session, workspace_id: uuid.UUID) -> SpecializationReport:
     """Write the measured performance back onto the profiles (§26)."""
     report = SpecializationReport(entries=measure(session, workspace_id))

@@ -99,6 +99,19 @@ civitas serve                        # the API, OpenAPI at /api/v1/docs
 civitas worker --count 2
 ```
 
+### The web UI
+
+`civitas serve`, then open <http://127.0.0.1:8000/ui/>. Fourteen screens over the same versioned
+API — overview, projects, tasks, episodes, artifacts, retrieval, provenance, tools, benchmarks,
+metrics, specialization, institutions, cost and events — with live updates streamed from the
+append-only event log.
+
+No build step, no framework and no CDN: the page is served by the process that serves the API, so
+a deployment is one artifact and a Colab or air-gapped runtime renders exactly what production
+does. Two rules are enforced on screen and tested in a real browser: a metric the platform reports
+as `null` renders as "not available" with its reason, never as `0`, and a benchmark whose gates
+failed shows the gates and withholds the numbers.
+
 Colab is a first-class runtime (Part B §33). `notebooks/Civitas_Colab.ipynb` runs the same package
 — detects the runtime and GPU, mounts Drive, migrates, runs the benchmark, exports the manifest,
 and reconnects to a civilization a previous runtime left behind.
@@ -125,6 +138,7 @@ allocator that SQLite structurally cannot expose (`docs/milestones/M02.md`).
 ```
 civitas/
   cli.py            the `civitas` command line
+  web/              the UI (§49) — one HTML file, one script, one stylesheet, no build step
   config.py         settings and secrets (§40)
   domain/           closed enumerations — arms, termination reasons, artifact and relation types
   domains/          domain adapters: tasks, tools, agents, evaluators, and the §47 leak rule (§5)
@@ -170,8 +184,8 @@ These are load-bearing, and each has a test that drives the real mechanism:
 
 | milestone | state |
 |---|---|
-| M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions · M9 advanced benchmarks · M10 projects, domains, API, CLI | complete |
-| M11–M13 | see `docs/ARCHITECTURE.md` §5 |
+| M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions · M9 advanced benchmarks · M10 projects, domains, API, CLI · M11 web UI | complete |
+| M12–M13 | see `docs/ARCHITECTURE.md` §5 |
 
 Each milestone reports its effect on the M4 benchmark. A feature that moves no number is reported
 as such rather than hidden (Part A §A1.5) — M5's hybrid retrieval moved it by exactly 0.000, and
