@@ -1,5 +1,9 @@
 # Civitas
 
+[![Open in Codespaces](https://img.shields.io/badge/Open-Codespaces-24292e?logo=github)](https://github.com/prompt-design-portfolio/Autopoesis/codespaces/new?ref=claude%2Fmaster-prompt-init-ehmsbe)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/prompt-design-portfolio/Autopoesis/blob/claude/master-prompt-init-ehmsbe/notebooks/Civitas_Colab.ipynb)
+[![Acceptance](https://img.shields.io/badge/Actions-run%20acceptance-2088FF?logo=githubactions&logoColor=white)](https://github.com/prompt-design-portfolio/Autopoesis/actions/workflows/acceptance.yml)
+
 A persistent artificial civilization for cumulative collective intelligence.
 
 > The collective becomes more intelligent over time even if the underlying individual foundation
