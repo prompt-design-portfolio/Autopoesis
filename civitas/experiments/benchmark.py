@@ -40,12 +40,18 @@ from civitas.experiments.runner import (
 )
 from civitas.experiments.tasks.hidden_rule import (
     DeviceSpec,
-    build_device,
-    era_instances,
-    probes_needed_by_chance,
 )
 from civitas.persistence.models import Artifact, Workspace
 from civitas.runtime.budgets import Budgets
+
+#: The code-repair domain's budget. Five, not seven: six candidate edits at five calls puts the
+#: naive ceiling at 3/6 = 0.500, which is exactly where the device domain sits at seven calls out
+#: of ten operations. Matching the *ceiling* is what makes the two results comparable — matching
+#: the raw budget would have compared two different difficulties and called it a transfer.
+REPAIR_BUDGETS = Budgets(
+    tokens=200_000, context=32_000, tool_calls=5, cost_usd=1.0, wall_clock_s=180,
+    max_turns=12, max_no_progress_turns=4,
+)
 
 
 class GateFailure(RuntimeError):
@@ -167,7 +173,9 @@ class BenchmarkResult:
 
 # --------------------------------------------------------------------------
 def frozen_config(
-    budgets: Budgets | None = None, retrieval_options: dict[str, Any] | None = None
+    budgets: Budgets | None = None,
+    retrieval_options: dict[str, Any] | None = None,
+    system_prompt_version: str = "hidden-rule/1.0",
 ) -> dict[str, Any]:
     """The one configuration every arm runs under (Part B §20).
 
@@ -180,7 +188,7 @@ def frozen_config(
         "provider": "policy",
         "model": "policy-v1",
         "model_version": "policy-v1",
-        "system_prompt_version": "hidden-rule/1.0",
+        "system_prompt_version": system_prompt_version,
         "retrieval_policy_version": (retrieval_options or {}).get(
             "version", "retrieval/2.0-hybrid"
         ),
@@ -266,51 +274,139 @@ def run_newcomer_benchmark(
     include_arms: list[str] | None = None,
     retrieval_options: dict[str, Any] | None = None,
 ) -> BenchmarkResult:
-    """Run §22's procedure and return a gated result.
+    """§22 on the hidden-rule device — M4's benchmark, unchanged in what it measures.
+
+    A thin call into `run_newcomer_procedure`. The delegation was verified by running the
+    identical configuration on the tree before and after the refactor and diffing the metrics:
+    byte-identical, arms and gates alike (`scripts/newcomer_snapshot.py`).
+    """
+    from civitas.domains import get_domain
+
+    return run_newcomer_procedure(
+        session,
+        domain=get_domain("hidden_rule"),
+        organization_id=organization_id,
+        experiment="newcomer_advantage",
+        seeds=seeds,
+        era=era,
+        count=n_classes,
+        accumulation_passes=accumulation_passes,
+        budgets=budgets,
+        settings=settings,
+        include_arms=include_arms,
+        retrieval_options=retrieval_options,
+        generate_kwargs={"n_classes": n_classes, "n_ops": n_ops},
+    )
+
+
+def run_repair_benchmark(
+    session: Session,
+    *,
+    organization_id: uuid.UUID,
+    seeds: list[int] | None = None,
+    era: int = 1,
+    count: int = 4,
+    accumulation_passes: int = 2,
+    budgets: Budgets | None = None,
+    settings: Settings | None = None,
+    include_arms: list[str] | None = None,
+    retrieval_options: dict[str, Any] | None = None,
+) -> BenchmarkResult:
+    """§22 on the code-repair domain — the transfer question.
+
+    Same procedure, same arms, same gates, same founder-free discipline; a different kind of task,
+    a different agent policy, and an evaluator that executes the submission in the sandbox rather
+    than comparing strings. If a newcomer advantage appears here too, the M4 result is a property
+    of the platform rather than of one device.
+
+    The default budget is five tool calls, not seven. Six candidate edits at five calls puts the
+    naive ceiling at 3/6 = 0.500 — the same ceiling the device domain has at seven calls out of
+    ten operations. Matching the *ceiling* rather than the raw budget is what makes the two
+    numbers comparable; matching the budget would have compared two different difficulties.
+    """
+    from civitas.domains import get_domain
+
+    return run_newcomer_procedure(
+        session,
+        domain=get_domain("code_repair"),
+        organization_id=organization_id,
+        experiment="newcomer_advantage_code_repair",
+        seeds=seeds,
+        era=era,
+        count=count,
+        accumulation_passes=accumulation_passes,
+        budgets=budgets or REPAIR_BUDGETS,
+        settings=settings,
+        include_arms=include_arms,
+        retrieval_options=retrieval_options,
+    )
+
+
+def run_newcomer_procedure(
+    session: Session,
+    *,
+    domain: Any,
+    organization_id: uuid.UUID,
+    experiment: str = "newcomer_advantage",
+    seeds: list[int] | None = None,
+    era: int = 1,
+    count: int = 6,
+    accumulation_passes: int = 2,
+    budgets: Budgets | None = None,
+    settings: Settings | None = None,
+    include_arms: list[str] | None = None,
+    retrieval_options: dict[str, Any] | None = None,
+    generate_kwargs: dict[str, Any] | None = None,
+) -> BenchmarkResult:
+    """Run §22's procedure over any domain and return a gated result.
 
     One workspace per (arm, seed): the arms must not be able to see each other's accumulation, and
     sharing a workspace would make `memory_reset` a deletion that races the other arms rather than
     a condition.
     """
+    from civitas.experiments.procedure import (
+        archive_episode_artifacts,
+        create_domain_task,
+        reset_memory,
+        run_domain_episode,
+    )
+
     settings = settings or get_settings()
     seeds = seeds or [0, 1, 2]
     budgets = budgets or DEFAULT_BUDGETS
-    config = frozen_config(budgets, retrieval_options=retrieval_options)
+    config = frozen_config(
+        budgets, retrieval_options=retrieval_options,
+        system_prompt_version=domain.system_prompt_version(),
+    )
     cfg_hash = config_hash_of(config)
+    generate_kwargs = generate_kwargs or {}
 
     arms_to_run = include_arms or [
         "baseline_empty", "collective", "memory_reset", "collective_scrambled",
     ]
     collected: dict[str, list[RunResult]] = {a: [] for a in arms_to_run}
-    #: Config hashes seen per arm. Gate `frozen_model` asserts they are all identical — that is
-    #: what makes this a matched comparison rather than four separate experiments.
     hashes: set[str] = set()
     accumulation_stats: list[dict[str, Any]] = []
+    specs_by_seed: dict[int, list[Any]] = {}
 
     for seed in seeds:
-        device = build_device(seed=seed, era=era, n_classes=n_classes, n_ops=n_ops)
-        instances = era_instances(device)
+        specs = domain.generate(seed=seed, count=count, era=era, **generate_kwargs)
+        specs_by_seed[seed] = specs
 
         for arm_label in arms_to_run:
             workspace = _fresh_workspace(session, organization_id, f"{arm_label}-s{seed}")
             hashes.add(cfg_hash)
 
             if arm_label != "baseline_empty":
-                stats = _accumulate(
-                    session,
-                    workspace_id=workspace.id,
-                    device=device,
-                    instances=instances,
-                    passes=accumulation_passes,
-                    budgets=budgets,
-                    config_hash=cfg_hash,
-                    seed=seed,
-                    retrieval_options=retrieval_options,
+                stats = _accumulate_domain(
+                    session, domain=domain, specs=specs, workspace_id=workspace.id,
+                    passes=accumulation_passes, budgets=budgets, config_hash=cfg_hash,
+                    seed=seed, retrieval_options=retrieval_options,
                 )
                 accumulation_stats.append({"arm": arm_label, "seed": seed, **stats})
 
             if arm_label == "memory_reset":
-                _reset_memory(session, workspace.id)
+                reset_memory(session, workspace.id)
 
             arm = {
                 "baseline_empty": ExperimentArm.COLLECTIVE,
@@ -319,54 +415,82 @@ def run_newcomer_benchmark(
                 "collective_scrambled": ExperimentArm.COLLECTIVE_SCRAMBLED,
             }[arm_label]
 
-            # Probe *every* class, not one. Each probe is an independent fresh agent facing a
-            # question the collective has had the chance to work on, so n is seeds x classes
-            # rather than seeds — the difference between a rate read off three episodes and one
-            # read off thirty.
-            for instance in instances:
-                result_row = run_benchmark_episode(
-                    session,
-                    workspace_id=workspace.id,
-                    device=device,
-                    instance=instance,
-                    arm=arm,
-                    budgets=budgets,
-                    # The probe agent's order is fixed across arms, so the four arms are measured
-                    # on literally the same newcomer.
-                    probe_order_seed=_order_seed(seed, instance.index, -1),
+            # Probe *every* task, not one. Each probe is an independent fresh agent facing a
+            # question the collective has had the chance to work on, so n is seeds x tasks.
+            for spec in specs:
+                task = create_domain_task(session, workspace_id=workspace.id, spec=spec)
+                result_row = run_domain_episode(
+                    session, domain=domain, spec=spec, workspace_id=workspace.id, task=task,
+                    arm=arm, budgets=budgets,
+                    # The probe agent's order is fixed across arms, so the arms are measured on
+                    # literally the same newcomer.
+                    probe_order_seed=_order_seed(seed, spec.index, -1),
                     retrieval_options=retrieval_options,
                     # A probe must not contribute to the accumulation it is measured against —
                     # the founder-free discipline of ARCHITECTURE §3.5.
-                    record_findings=False,
-                    is_probe=True,
-                    config_hash=cfg_hash,
-                    seed=seed,
+                    record_findings=False, is_probe=True, config_hash=cfg_hash, seed=seed,
                     settings=settings,
                 )
-                # ...and neither must it contribute to the environment the *next* probe sees.
-                # A probe's own submitted result is an artifact like any other; leaving it in
-                # place would let probe k inform probe k+1, which is accumulation smuggled into
-                # the measurement.
-                _archive_episode_artifacts(session, result_row.episode_id)
+                # ...and neither must it contribute to what the *next* probe sees.
+                archive_episode_artifacts(session, result_row.episode_id)
                 collected[arm_label].append(result_row)
             session.commit()
 
+    reference = specs_by_seed[seeds[0]][0]
     result = BenchmarkResult(
-        experiment="newcomer_advantage",
+        experiment=experiment,
         config_hash=cfg_hash,
-        chance_level=1.0 / n_ops,
-        naive_probe_ceiling=probes_needed_by_chance(n_ops, max(0, budgets.tool_calls - 2)),
+        chance_level=reference.chance_level,
+        naive_probe_ceiling=domain.naive_probe_ceiling(reference, budgets.tool_calls),
         seeds=seeds,
     )
     for arm_label, runs in collected.items():
         result.arms[arm_label] = _summarise(arm_label, runs)
 
-    result.gates = _gates(result, hashes, accumulation_stats, seeds, n_ops, budgets)
+    result.gates = _gates(result, hashes, accumulation_stats, seeds, 0, budgets)
     result.notes.append(
-        f"accumulation: {accumulation_passes} pass(es) over {n_classes} classes "
-        f"per arm/seed"
+        f"domain={domain.name}/{domain.version}; accumulation: {accumulation_passes} pass(es) "
+        f"over {count} task(s) per arm/seed"
     )
     return result
+
+
+def _accumulate_domain(
+    session: Session,
+    *,
+    domain: Any,
+    specs: list[Any],
+    workspace_id: uuid.UUID,
+    passes: int,
+    budgets: Budgets,
+    config_hash: str,
+    seed: int,
+    retrieval_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Let N agents work, so the environment matures (§22 step 8)."""
+    from civitas.experiments.procedure import create_domain_task, run_domain_episode
+
+    episodes = 0
+    successes = 0
+    for pass_no in range(passes):
+        for spec in specs:
+            task = create_domain_task(session, workspace_id=workspace_id, spec=spec)
+            run = run_domain_episode(
+                session, domain=domain, spec=spec, workspace_id=workspace_id, task=task,
+                arm=ExperimentArm.COLLECTIVE, budgets=budgets, record_findings=True,
+                is_probe=False, config_hash=config_hash, seed=seed,
+                retrieval_options=retrieval_options,
+                # A different agent each pass, and the same sequence of agents in every arm: the
+                # seed depends on (seed, task, pass) and never on the arm.
+                probe_order_seed=_order_seed(seed, spec.index, pass_no),
+            )
+            episodes += 1
+            successes += int(run.succeeded)
+    session.flush()
+    artifacts = session.execute(
+        select(Artifact).where(Artifact.workspace_id == workspace_id)
+    ).scalars().all()
+    return {"episodes": episodes, "successes": successes, "artifacts": len(artifacts)}
 
 
 def _accumulate(

@@ -27,6 +27,24 @@ from civitas.runtime.episode import EpisodeOutcome
 EVALUATOR_VERSION = "exact_match/1.0"
 
 
+def evaluator_for(kind: str):
+    """The evaluator registered for a task's `evaluator_spec["kind"]` (Part B §5, §47).
+
+    Evaluators arrive with domains rather than being enumerated here: a domain that could not
+    supply its own judge would either have to be judged by string comparison — which is what
+    `code_repair` must not be — or would have to reach into this module, which would make every
+    new domain a change to the evaluation path. The lookup imports the domain package so that the
+    registry reflects what this process can run.
+    """
+    from civitas.domains import all_domains
+
+    for domain in all_domains():
+        for evaluator in domain.evaluators():
+            if evaluator.kind == kind:
+                return evaluator
+    raise ValueError(f"no evaluator registered for kind {kind!r}")
+
+
 def evaluate_episode(
     session: Session,
     *,
@@ -39,20 +57,12 @@ def evaluate_episode(
     spec = task.evaluator_spec or {}
     kind = spec.get("kind", "exact_match")
 
-    if kind == "exact_match":
-        expected = str(spec.get("expected", "")).strip().lower()
-        given = (outcome.submitted_answer or "").strip().lower()
-        succeeded = bool(expected) and given == expected
-        detail: dict[str, Any] = {
-            "submitted": outcome.submitted_answer,
-            "matched": succeeded,
-            # The expected value is deliberately absent. An evaluation row is readable through the
-            # API, and putting ground truth in it would leak the benchmark to anything that can
-            # read results (§47).
-            "evaluator": kind,
-        }
-    else:  # pragma: no cover - future evaluators register here
-        raise ValueError(f"no evaluator registered for kind {kind!r}")
+    # The expected value is deliberately absent from every `detail` an evaluator returns. An
+    # evaluation row is readable through the API, and putting ground truth in it would leak the
+    # benchmark to anything that can read results (§47).
+    evaluator = evaluator_for(kind)
+    succeeded, score, detail = evaluator.judge(spec, outcome.submitted_answer)
+    detail = dict(detail)
 
     if outcome.termination_reason in (
         TerminationReason.PROVIDER_FAILURE,
@@ -70,9 +80,9 @@ def evaluate_episode(
         scope="episode",
         target_id=episode.id,
         evaluator_kind=kind,
-        evaluator_version=EVALUATOR_VERSION,
+        evaluator_version=evaluator.version,
         succeeded=succeeded,
-        score=1.0 if succeeded else 0.0,
+        score=score,
         max_score=1.0,
         detail=detail,
     )

@@ -53,6 +53,27 @@ rather than annotating them.
 transmission buys nothing, so the collective's gain is transmission. Data in
 `results/m9_advanced_benchmarks.json`.
 
+### Does it transfer?
+
+The same procedure, run on a second domain that shares nothing with the first but the core: the
+answer is a Python function the agent writes, and the evaluator **executes it in the hardened
+sandbox** against checks the agent never sees.
+
+| | hidden rule | code repair |
+|---|---|---|
+| baseline | 0.467 | 0.550 |
+| **collective** | **0.767** | **0.750** |
+| **newcomer advantage** | **+0.300** | **+0.200** |
+| reset removes | 100% | 100% |
+| scramble removes | 100% | 100% |
+| mean probes, baseline → collective | 4.60 → 0.33 | 2.75 → 0.30 |
+
+Both budgets are set so the naive probe ceiling is 0.500 — the ceilings are matched, not the raw
+budgets, so a difference between the columns is a domain effect rather than a difficulty one. Both
+domains run through one implementation of §22 (`run_newcomer_procedure`); the refactor that made
+that true was verified by diffing the device benchmark's metrics before and after, which are
+identical. Data in `results/m10_domain_transfer.json`.
+
 ---
 
 ## Quick start
@@ -62,6 +83,20 @@ python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 alembic upgrade head
 pytest -q
+```
+
+### The command line
+
+```bash
+civitas init-db
+civitas bootstrap --name "My Org" --slug my-org --email me@example.com   # prints one API key
+civitas workspace --org my-org --name Research --slug research
+civitas submit --workspace <id> "investigate the intermittent data corruption and fix it"
+civitas status <project-id>          # rebuilt from the database, identical after a restart
+civitas domains                      # what this process can actually run
+civitas benchmark --org my-org       # prints the gates; withholds metrics if one failed
+civitas serve                        # the API, OpenAPI at /api/v1/docs
+civitas worker --count 2
 ```
 
 Colab is a first-class runtime (Part B §33). `notebooks/Civitas_Colab.ipynb` runs the same package
@@ -89,12 +124,18 @@ allocator that SQLite structurally cannot expose (`docs/milestones/M02.md`).
 
 ```
 civitas/
+  cli.py            the `civitas` command line
   config.py         settings and secrets (§40)
   domain/           closed enumerations — arms, termination reasons, artifact and relation types
+  domains/          domain adapters: tasks, tools, agents, evaluators, and the §47 leak rule (§5)
   persistence/      SQLAlchemy models, portable types, events, jobs, leases (§7, §42–§45)
   runtime/          episodes, budgets, providers, tools, sandbox (§8, §18, §19)
   knowledge/        arm policies, hybrid retrieval, duplicate-failure detection (§14, §21, §12)
-  experiments/      manifests, credit assignment, benchmark, metrics (§20, §22, §46, §48)
+  experiments/      manifests, credit assignment, the §22 procedure, metrics (§20, §22, §46, §48)
+  scheduler/        task allocation, roles, specialization (§26–§28)
+  institutions/     the A2.2 gate, reputation, procedures (§29–§31)
+  services/         long-horizon projects and request decomposition (§5, §32)
+  api/              the versioned HTTP API and its security boundary (§50–§52)
   workers/          durable worker loop (§37, §42)
 alembic/            migrations
 docs/               ARCHITECTURE.md and per-milestone write-ups
@@ -129,8 +170,8 @@ These are load-bearing, and each has a test that drives the real mechanism:
 
 | milestone | state |
 |---|---|
-| M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions · M9 advanced benchmarks | complete |
-| M10–M13 | see `docs/ARCHITECTURE.md` §5 |
+| M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions · M9 advanced benchmarks · M10 projects, domains, API, CLI | complete |
+| M11–M13 | see `docs/ARCHITECTURE.md` §5 |
 
 Each milestone reports its effect on the M4 benchmark. A feature that moves no number is reported
 as such rather than hidden (Part A §A1.5) — M5's hybrid retrieval moved it by exactly 0.000, and

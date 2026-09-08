@@ -9,25 +9,18 @@ the API does, rather than a parallel implementation that could drift from it.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from civitas.config import Settings, get_settings
+from civitas.config import Settings
 from civitas.domain.enums import ExperimentArm, TaskStatus
-from civitas.experiments import credit as credit_module
-from civitas.experiments.evaluation import evaluate_episode, is_readable
-from civitas.experiments.policy_agent import PolicyAgentProvider
+from civitas.domains.base import DomainTask
+from civitas.experiments.procedure import RunResult
 from civitas.experiments.tasks.hidden_rule import DeviceSpec, TaskInstance
-from civitas.experiments.tasks.probe_tool import ProbeDeviceTool, ensure_definition
-from civitas.persistence.models import AgentProfile, Episode, Task
-from civitas.persistence.types import utcnow
+from civitas.persistence.models import AgentProfile, Task
 from civitas.runtime.budgets import Budgets
-from civitas.runtime.episode import EpisodeRunner, EpisodeSpec
 from civitas.runtime.providers.base import Provider
-from civitas.runtime.tools.base import ToolRegistry
-from civitas.runtime.tools.builtin import default_registry
 
 SYSTEM_PROMPT = (
     "You are a bounded research agent in a persistent collective. Your episode ends when your "
@@ -50,27 +43,6 @@ DEFAULT_BUDGETS = Budgets(
     tokens=200_000, context=32_000, tool_calls=7, cost_usd=1.0, wall_clock_s=120,
     max_turns=12, max_no_progress_turns=4,
 )
-
-
-@dataclass
-class RunResult:
-    episode_id: uuid.UUID
-    succeeded: bool
-    readable: bool
-    tool_calls: int
-    probes: int
-    tokens: int
-    artifacts_created: int
-    artifacts_read: int
-    duplicate_failures: int
-    termination_reason: str
-    submitted: str | None
-    #: True when the episode believed a finding that named a different environment version.
-    #: Part B §48's stale-artifact usage, and the sharpest single sign that a collective is
-    #: helping by recall rather than by knowledge.
-    used_stale: bool = False
-    wall_time_s: float = 0.0
-    cost_usd: float = 0.0
 
 
 def ensure_profile(session: Session, workspace_id: uuid.UUID, name: str = "prober") -> AgentProfile:
@@ -134,111 +106,69 @@ def run_benchmark_episode(
     settings: Settings | None = None,
     assign_credit: bool = True,
 ) -> RunResult:
-    """One episode: run it, evaluate it externally, propagate credit."""
-    settings = settings or get_settings()
-    task = task or create_task(session, workspace_id=workspace_id, instance=instance)
-    profile = ensure_profile(session, workspace_id)
-    definition = ensure_definition(session, workspace_id=workspace_id)
+    """One episode of the hidden-rule benchmark.
 
-    agent = provider or PolicyAgentProvider(
-        input_class=instance.input_class,
-        operations=list(device.operations),
-        environment_version=device.environment_version,
-        record_findings=record_findings,
-        probe_order_seed=probe_order_seed,
-    )
+    A thin adapter over `procedure.run_domain_episode`: it turns a `(device, instance)` pair into
+    the domain task the general path takes, and changes nothing else. Keeping one implementation
+    is what lets the cross-domain comparison be a comparison between domains rather than between
+    two copies of §22 that have drifted apart.
+    """
+    from civitas.domains import get_domain
+    from civitas.experiments.procedure import create_domain_task, run_domain_episode
 
-    tools: ToolRegistry = default_registry()
-    tools.add(ProbeDeviceTool(device, definition_id=definition.id))
-
-    spec = EpisodeSpec(
+    spec = _domain_task_for(instance)
+    task = task or create_domain_task(session, workspace_id=workspace_id, spec=spec)
+    return run_domain_episode(
+        session,
+        domain=get_domain("hidden_rule"),
+        spec=spec,
         workspace_id=workspace_id,
-        agent_profile_id=profile.id,
+        arm=arm,
+        task=task,
+        provider=provider,
         provider_name=provider_name,
         model_name=model_name,
-        model_version="policy-v1",
-        system_prompt=SYSTEM_PROMPT,
-        system_prompt_version=SYSTEM_PROMPT_VERSION,
         budgets=budgets or DEFAULT_BUDGETS,
-        experiment_arm=arm,
-        retrieval_policy_version=(retrieval_options or {}).get(
-            "version", "retrieval/2.0-hybrid"
-        ),
-        retrieval_options=dict(retrieval_options or {}),
-        task_id=task.id,
-        project_id=task.project_id,
+        record_findings=record_findings,
+        is_probe=is_probe,
+        probe_order_seed=probe_order_seed,
+        retrieval_options=retrieval_options,
         experiment_run_id=experiment_run_id,
-        # The device's era. An artifact written now is applicable to this device and visibly
-        # inapplicable to the next one (§15) — the mechanism `π` demands.
-        environment_version=device.environment_version,
+        frozen_as_of=frozen_as_of,
         config_hash=config_hash,
         seed=seed,
-        is_benchmark_probe=is_probe,
-        frozen_as_of=frozen_as_of,
-    )
-
-    outcome = EpisodeRunner(session, provider=agent, tools=tools).run(spec)
-    episode = session.get(Episode, outcome.episode_id)
-
-    evaluation = evaluate_episode(
-        session, episode=episode, outcome=outcome, task=task, config_hash=config_hash
-    )
-    if assign_credit:
-        credit_module.assign_credit(session, evaluation, config_hash=config_hash)
-
-    task.attempts += 1
-    if evaluation.succeeded:
-        task.status = TaskStatus.COMPLETED
-        task.completed_at = utcnow()
-
-    probes = _count_probes(session, episode.id)
-
-    return RunResult(
-        episode_id=episode.id,
-        succeeded=evaluation.succeeded,
-        readable=is_readable(evaluation),
-        tool_calls=episode.tool_calls_used,
-        probes=probes,
-        tokens=episode.tokens_used,
-        artifacts_created=episode.artifacts_created,
-        artifacts_read=episode.artifacts_read,
-        duplicate_failures=episode.duplicate_failures,
-        termination_reason=(
-            episode.termination_reason.value if episode.termination_reason else "unknown"
-        ),
-        submitted=outcome.submitted_answer,
-        used_stale=_used_stale_artifact(session, episode.id, device.environment_version),
-        wall_time_s=episode.duration_s or 0.0,
-        cost_usd=episode.cost_usd,
+        settings=settings,
+        assign_credit=assign_credit,
     )
 
 
-def _count_probes(session: Session, episode_id: uuid.UUID) -> int:
-    from sqlalchemy import func, select
+def _domain_task_for(instance: TaskInstance) -> DomainTask:
+    """The instance as the domain layer describes it.
 
-    from civitas.persistence.models import ToolRun
-
-    return int(
-        session.execute(
-            select(func.count(ToolRun.id)).where(ToolRun.episode_id == episode_id)
-        ).scalar_one()
-        or 0
-    )
-
-
-def _used_stale_artifact(session: Session, episode_id: uuid.UUID, env: str) -> bool:
-    """Did the episode read an artifact belonging to a different era? (Part B §15, §48)
-
-    Read from `ArtifactUsage`, not from retrieval: being *shown* a stale artifact is a retrieval
-    quality question, whereas having *read* one is what can produce a confident wrong answer.
+    Built from the instance rather than regenerated from `(seed, era)` so that a caller which
+    constructed an instance directly — the retrieval, scheduler and cumulative benchmarks all do —
+    gets exactly the task it built.
     """
-    from sqlalchemy import select
+    from civitas.domains.base import DomainTask
 
-    from civitas.persistence.models import Artifact, ArtifactUsage
+    device = instance.device
+    return DomainTask(
+        title=instance.title,
+        description=instance.description,
+        evaluator_spec=instance.evaluator_spec,
+        task_family="hidden_rule",
+        index=instance.index,
+        environment_version=device.environment_version,
+        chance_level=1.0 / max(1, len(device.operations)),
+        difficulty=1.0 / max(1, len(device.operations)),
+        candidate_terms=tuple(device.operations),
+        meta={
+            "device_seed": device.seed, "era": device.era,
+            "input_class": instance.input_class,
+            "n_classes": len(device.classes), "n_ops": len(device.operations),
+            "environment_version": device.environment_version,
+        },
+    )
 
-    rows = session.execute(
-        select(Artifact.environment_version)
-        .join(ArtifactUsage, ArtifactUsage.artifact_id == Artifact.id)
-        .where(ArtifactUsage.episode_id == episode_id)
-    ).scalars()
-    return any(version and version != env for version in rows)
+
+

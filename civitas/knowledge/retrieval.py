@@ -126,14 +126,19 @@ def retrieve(
     weights = {**DEFAULT_WEIGHTS, **(weights or {})}
 
     if policy.blind:
-        # Nothing is returned, and the decision is still logged. A blind arm that leaves no record
-        # is indistinguishable from a retrieval that happened to find nothing.
-        result = RetrievalResult(artifacts=[], candidate_count=0)
+        # Nothing is returned, and the suppression is both logged *and returned*. A blind arm that
+        # leaves no record is indistinguishable from a retrieval that happened to find nothing —
+        # and a caller that can only see the empty list, not the reason for it, cannot tell those
+        # apart either.
+        blind_suppression = [{"reason": "arm_blind", "count": "all"}]
+        result = RetrievalResult(
+            artifacts=[], candidate_count=0, suppressed=blind_suppression
+        )
         if log_decision:
             result.decision_id = _log(
                 session, workspace_id=workspace_id, episode_id=episode_id, query=query,
                 policy=policy, ranked=[], candidate_count=0,
-                suppressed=[{"reason": "arm_blind", "count": "all"}],
+                suppressed=blind_suppression,
                 latency_ms=(time.perf_counter() - started) * 1000, config_hash=config_hash,
             )
         return result

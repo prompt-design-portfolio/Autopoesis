@@ -275,6 +275,51 @@ CELLS.append(md('''### Reading the derived block
   gap, is what §22's criterion is about: an advantage that survives its ablations intact was never
   caused by what accumulated.'''))
 
+CELLS.append(md(r'''## 8b. Does it transfer? (§5, §22)
+
+A result measured on one task family is a result about that task family. The same procedure runs
+over a second domain — **code repair**, where the answer is a function the agent writes and the
+evaluator *executes it in the sandbox* against checks the agent never sees.
+
+Both budgets are set so the naive probe ceiling is 0.500, so the two advantages are read against
+the same reference: a difference between them is a domain effect, not a difficulty one.'''))
+
+CELLS.append(code(r'''from civitas.domains import all_domains
+
+for d in all_domains():
+    print(f"{d.name:14s} v{d.version}  stages={[s.family for s in d.stages()]}  "
+          f"evaluators={[e.kind for e in d.evaluators()]}")
+
+# Every generated task is checked for a §47 leak before it can be used.
+from civitas.domains import check_no_leak, get_domain
+
+for d in all_domains():
+    for t in d.generate(seed=0, count=4):
+        check_no_leak(t)
+print("\nall generated tasks pass the §47 leak check")'''))
+
+CELLS.append(code(r'''from civitas.experiments.benchmark import run_repair_benchmark
+
+# Small by default so the cell finishes on a free runtime. Raise seeds/passes for the real number.
+with SessionFactory() as db:
+    repair = run_repair_benchmark(
+        db, organization_id=ORG_ID, seeds=[0, 1, 2], accumulation_passes=2,
+    )
+
+print("gates:")
+for name, gate in repair.gates.items():
+    print(f"  {'PASS' if gate.passed else 'FAIL'}  {name}: {gate.detail}")
+
+try:
+    m = repair.metrics()
+except Exception as exc:
+    print("\nnot readable:", exc)
+else:
+    for arm, summary in m["arms"].items():
+        print(f"  {arm:22s} n={summary['n']:3d}  rate={summary['success_rate']:.4f}  "
+              f"probes={summary['mean_probes']:.2f}")
+    print("\nnewcomer advantage on code repair:", m["derived"]["newcomer_advantage"])'''))
+
 CELLS.append(md('''## 9. Metrics (§48)
 
 Metrics that cannot yet be computed report `None` with a reason, never `0.0`. A dashboard that

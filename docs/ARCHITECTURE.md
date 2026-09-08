@@ -125,6 +125,13 @@ claimed). The platform's benchmark framework must be able to fail in that same v
    ┌────────────────────────────────┼─────────────────────────────────────┐
    │                    civitas.services  (use cases)                     │
    │  episodes · retrieval · artifacts · tools · experiments · scheduling │
+   │  projects and request decomposition                            §5 §32│
+   └────────────────────────────────┬─────────────────────────────────────┘
+   ┌────────────────────────────────┼─────────────────────────────────────┐
+   │  civitas.domains  (adapters)                                      §5 │
+   │  the four things the core cannot know: what a task says, which tools │
+   │  act on it, who judges the answer, what the stages are called — plus │
+   │  the §47 leak rule every domain must state and pass                  │
    └────────────────────────────────┬─────────────────────────────────────┘
                                     │
    ┌──────────────┬──────────────┬──┴───────────┬──────────────┬──────────┐
@@ -251,6 +258,12 @@ what it claims.
    a restricted-subprocess fallback both exist behind `SandboxBackend`. The fallback's weaker
    guarantees are stated in the manifest so a result run under it is never mistaken for one run
    under isolation.
+4. **Does the newcomer advantage generalise?** A result measured on one task family is a result
+   about that task family. Addressed in M10: §22's procedure was made domain-parameterised and run
+   on a second domain — code repair, judged by executing the submission in the sandbox — at a
+   matched naive ceiling. Advantage +0.200 against the device's +0.300, with reset and scramble
+   each removing 100%. Two domains is two, not many; the layer that made it possible is the part
+   that generalises.
 
 ---
 
