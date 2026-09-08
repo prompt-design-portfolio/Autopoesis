@@ -43,7 +43,7 @@ target-version = "py310"
 # would make the platform's history and the lineage's history hard to tell apart.
 extend-exclude = [
     "alembic/versions/*",
-    "sim*.py", "analysis*.py", "make_notebook_*.py", "nbcheck.py", "tuning/*",
+    "sim*.py", "analysis*.py", "make_notebook_v3_*.py", "nbcheck.py", "tuning/*",
 ]
 
 [tool.ruff.lint]

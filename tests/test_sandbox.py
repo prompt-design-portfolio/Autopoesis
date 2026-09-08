@@ -6,6 +6,8 @@ that silently stopped being applied fails a test rather than becoming a latent v
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from civitas.config import SandboxBackend, Settings
@@ -73,20 +75,63 @@ def test_the_memory_limit_binds(sandbox):
     assert result.limit_hit == "memory"
 
 
-def test_a_fork_bomb_is_contained(sandbox):
-    """The process limit plus the group kill: neither alone is enough."""
+def test_the_sandbox_declares_a_limit_it_cannot_enforce(sandbox):
+    """`RLIMIT_NPROC` is not enforced for uid 0 (Part B §18, §46).
+
+    Measured, not assumed: against `max_processes=8`, a sandboxed loop performed 5000 sequential
+    forks in under a second while running as root. A bound the caller believes is in force but
+    is not is worse than no bound, because it gets relied on — so the sandbox declares it and the
+    declaration reaches the manifest.
+    """
+    if os.geteuid() != 0:
+        assert "max_processes" not in sandbox.unenforced_limits()
+        pytest.skip("not running as root; RLIMIT_NPROC applies")
+
+    assert "max_processes" in sandbox.unenforced_limits()
+    assert "max_processes" in sandbox.describe()["unenforced_limits"]
+
     result = sandbox.run_python(
         "import os\n"
         "def main():\n"
-        "    for _ in range(10000):\n"
+        "    made = 0\n"
+        "    for _ in range(400):\n"
         "        try:\n"
-        "            os.fork()\n"
+        "            pid = os.fork()\n"
         "        except OSError:\n"
-        "            pass\n"
-        "    return 'survived'\n",
+        "            break\n"
+        "        if pid == 0:\n"
+        "            os._exit(0)\n"
+        "        made += 1\n"
+        "    return made\n",
         limits=SandboxLimits(max_processes=8, wall_seconds=5, memory_mb=128),
     )
-    assert result.limit_hit is not None or not result.succeeded
+    _text, made = parse_result(result.stdout)
+    assert made is not None and made > 8, (
+        "the process limit appeared to hold under uid 0; the declaration is now wrong"
+    )
+    assert result.unenforced_limits == ("max_processes",)
+
+
+def test_unbounded_spawning_is_still_contained_by_the_wall_clock(sandbox):
+    """The control that holds when the process limit does not.
+
+    The workload is non-recursive on purpose: a true fork bomb transiently exhausts the host's
+    process table and made three unrelated tests in this file fail to `fork()`. A test that
+    destabilises its neighbours is measuring the harness, not the sandbox.
+    """
+    result = sandbox.run_python(
+        "import os, time\n"
+        "def main():\n"
+        "    for _ in range(64):\n"
+        "        if os.fork() == 0:\n"
+        "            time.sleep(60)\n"
+        "            os._exit(0)\n"
+        "    time.sleep(60)\n",
+        limits=SandboxLimits(max_processes=8, wall_seconds=3, memory_mb=128),
+    )
+    assert result.timed_out
+    assert result.limit_hit == "wall"
+    assert result.duration_ms < 12_000
 
 
 def test_output_is_truncated_rather_than_exhausting_memory(sandbox):

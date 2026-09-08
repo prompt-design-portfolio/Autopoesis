@@ -76,6 +76,28 @@ class DuplicateHit:
         return "\n".join(lines)
 
 
+def retire_for_workspace(session: Session, workspace_id: uuid.UUID) -> int:
+    """Take a workspace's documented failures out of circulation (§21 `memory_reset`).
+
+    Retired, not deleted (Part A §A1.2): the record of what was tried survives, and only its
+    ability to answer a lookup is withdrawn.
+    """
+    from sqlalchemy import update
+
+    from civitas.persistence.types import utcnow
+
+    result = session.execute(
+        update(DuplicateFailureRecord)
+        .where(
+            DuplicateFailureRecord.workspace_id == workspace_id,
+            DuplicateFailureRecord.retired_at.is_(None),
+        )
+        .values(retired_at=utcnow())
+    )
+    session.flush()
+    return int(result.rowcount or 0)
+
+
 def record_failure(
     session: Session,
     *,
@@ -124,7 +146,11 @@ def check(
     failure, and counting it would inflate the metric with something the collective cannot fix.
     """
     stmt = select(DuplicateFailureRecord).where(
-        DuplicateFailureRecord.workspace_id == workspace_id
+        DuplicateFailureRecord.workspace_id == workspace_id,
+        # A record whose artifact has been archived is out of circulation, and so is the record.
+        # Without this, `memory_reset` would archive the artifacts while the duplicate index kept
+        # answering — the arm would leak exactly what it exists to remove (Part B §21).
+        DuplicateFailureRecord.retired_at.is_(None),
     )
     if exclude_episode_id is not None:
         stmt = stmt.where(

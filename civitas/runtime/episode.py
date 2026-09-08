@@ -319,14 +319,40 @@ class EpisodeRunner:
 
         if not surfaced:
             return None
+
+        # Being told "this was already tried and it failed" is information the episode did not
+        # have a moment ago, so it is progress.
+        #
+        # Without this the mechanism designed to stop wasted work instead kills the episode: a run
+        # of blocked duplicates counts as consecutive no-progress turns and the agent terminates
+        # for `no_progress` with budget unspent. Measured before the fix — 4 of 5 collective-arm
+        # failures terminated that way at 4.6 tool calls of a 7 budget — and it cost a third of
+        # the newcomer advantage.
+        ctx.made_progress = True
+
         if hit.artifact is not None:
             ctx.note_read(hit.artifact.id)
-            self._session.add(
-                ArtifactUsage(
-                    episode_id=ctx.episode_id, artifact_id=hit.artifact.id,
-                    surfaced_as_duplicate_warning=True,
+            # One usage row per (episode, artifact) — the table is uniquely keyed on the pair.
+            # An episode can be warned about the same prior failure several times, and inserting a
+            # row per warning violates that key; the repeat count belongs on `read_count`.
+            existing = (
+                self._session.query(ArtifactUsage)
+                .filter(
+                    ArtifactUsage.episode_id == ctx.episode_id,
+                    ArtifactUsage.artifact_id == hit.artifact.id,
                 )
+                .one_or_none()
             )
+            if existing is None:
+                self._session.add(
+                    ArtifactUsage(
+                        episode_id=ctx.episode_id, artifact_id=hit.artifact.id,
+                        surfaced_as_duplicate_warning=True,
+                    )
+                )
+            else:
+                existing.read_count += 1
+            self._session.flush()
         return ToolResult(
             ok=False, blocked_reason="this has already been tried and failed",
             content=hit.warning(),

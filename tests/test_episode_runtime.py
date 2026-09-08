@@ -334,3 +334,50 @@ def test_cost_budget_is_rechecked_after_a_call_exceeds_its_estimate():
     with pytest.raises(BudgetExceeded) as exc:
         tracker.record_model_call(prompt_tokens=10, completion_tokens=10, cost_usd=5.0)
     assert exc.value.kind == "cost_usd"
+
+
+def test_a_blocked_duplicate_counts_as_progress(db, workspace, profile, task):
+    """Part A §A2.3 must not terminate the episode it is helping.
+
+    A blocked duplicate is information the episode did not have, so it resets the no-progress
+    counter. Without this, an agent successfully avoiding known-failed work accumulates
+    no-progress turns and dies with budget unspent — the mechanism killing what it was built to
+    assist.
+    """
+    from civitas.domain.enums import ArtifactType
+    from civitas.knowledge.duplicate import record_failure
+    from civitas.persistence.models import Artifact
+
+    prior = Artifact(workspace_id=workspace.id, type=ArtifactType.FAILURE,
+                     title="already tried", body="it failed",
+                     environment_version="test-env-1")
+    db.add(prior)
+    db.flush()
+    record_failure(
+        db, workspace_id=workspace.id, artifact_id=prior.id, episode_id=None,
+        environment_version="test-env-1", summary="that exact call failed",
+        tool_name="create_artifact",
+        tool_args={"type": "observation", "title": "repeat me", "body": "same body"},
+        reproducible=True,
+    )
+    db.commit()
+
+    repeat = ToolCall("c1", "create_artifact",
+                      {"type": "observation", "title": "repeat me", "body": "same body"})
+    provider = ScriptedProvider([
+        Completion(text="try", tool_calls=(repeat,)),
+        Completion(text="try again", tool_calls=(repeat,)),
+        Completion(text="and again", tool_calls=(repeat,)),
+        Completion(text="and again", tool_calls=(repeat,)),
+        Completion(text="done", tool_calls=(ToolCall("c9", "submit_result", {"answer": "x"}),)),
+    ])
+    out = EpisodeRunner(db, provider=provider, tools=default_registry()).run(
+        _spec(workspace, profile, task,
+              Budgets(tokens=500_000, tool_calls=10, max_turns=12, max_no_progress_turns=3))
+    )
+    db.commit()
+
+    assert out.termination_reason is not TerminationReason.NO_PROGRESS, (
+        "blocked duplicates were counted as a stall"
+    )
+    assert out.duplicate_failures >= 3, "the repeats must still be detected and counted"

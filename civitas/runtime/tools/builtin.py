@@ -145,15 +145,18 @@ class ReadArtifactTool(Tool):
             episode_id=ctx.episode_id, actor_kind="agent",
             payload={"artifact_id": str(artifact.id)}, config_hash=ctx.config_hash,
         )
-        return ToolResult(ok=True, content=_render(artifact, full=True),
-                          data={"artifact_id": str(artifact.id)})
+        return ToolResult(
+            ok=True, content=_render(artifact),
+            data={"artifact_id": str(artifact.id), "type": artifact.type.value},
+        )
 
 
 class SearchKnowledgeTool(Tool):
     name = "search_knowledge"
     description = (
-        "Search the collective knowledge base. Results depend on what earlier agents recorded; "
-        "an empty result means nobody has worked on this yet, not that the question is new."
+        "Search the collective knowledge base. Returns a ranked list of matching artifacts — "
+        "their ids, types and titles, not their contents. Use read_artifact to read one. "
+        "An empty result means nobody has worked on this yet, not that the question is new."
     )
     read_only = True
     parameters = {
@@ -192,11 +195,14 @@ class SearchKnowledgeTool(Tool):
         if not results.artifacts:
             return ToolResult(ok=True, content="No matching artifacts.", data={"count": 0})
 
-        lines = [f"{len(results.artifacts)} result(s):"]
-        lines += [f"[{i + 1}] {_render(a)}" for i, a in enumerate(results.artifacts)]
+        lines = [f"{len(results.artifacts)} result(s), best first. Use read_artifact for content."]
+        for i, artifact in enumerate(results.artifacts):
+            lines.append(
+                f"[{i + 1}] {_summary(artifact, hide_provenance=results.provenance_hidden)}"
+            )
         return ToolResult(
             ok=True,
-            content="\n\n".join(lines),
+            content="\n".join(lines),
             data={"count": len(results.artifacts),
                   "artifact_ids": [str(a.id) for a in results.artifacts]},
         )
@@ -398,16 +404,41 @@ def _resolve(ctx: ToolContext, raw: str) -> Artifact | None:
     return artifact
 
 
-def _render(artifact: Artifact, *, full: bool = False) -> str:
+def _summary(artifact: Artifact, *, hide_provenance: bool = False) -> str:
+    """One search-result line: enough to choose what to read, not enough to avoid reading.
+
+    Bodies are deliberately withheld from search results, and that is load-bearing twice over:
+
+    * **Credit assignment needs a real read.** Part A §A2.1 propagates credit along what an
+      episode *read*, not what retrieval returned. If a search result carried the content, every
+      retrieval would be a read, `ArtifactUsage` would record everything indiscriminately, and
+      credit would flow to artifacts the episode merely had in front of it.
+    * **Ranking only means something when reading is rationed.** An episode with a tool budget can
+      read two or three of eight results. That is what makes rank consequential — and therefore
+      what makes `collective_scrambled` an actual control rather than a reshuffle of a list the
+      agent was going to consume in full anyway.
+    """
+    head = f"id={artifact.id} type={artifact.type.value}"
+    if not hide_provenance:
+        head += (
+            f" status={artifact.status.value} validation={artifact.validation_state.value}"
+            f" confidence={artifact.confidence:.2f} evidence={artifact.evidence_kind.value}"
+        )
+        if artifact.is_stale:
+            head += " STALE"
+    return f"{head}\n    {artifact.title}"
+
+
+def _render(artifact: Artifact) -> str:
+    """The full artifact, as `read_artifact` returns it."""
     head = (
         f"id={artifact.id} type={artifact.type.value} "
         f"status={artifact.status.value} validation={artifact.validation_state.value} "
-        f"confidence={artifact.confidence:.2f}"
+        f"confidence={artifact.confidence:.2f} environment={artifact.environment_version}"
     )
     if artifact.is_stale:
         head += " STALE"
-    body = artifact.body if full else artifact.body[:400]
-    return f"{head}\n{artifact.title}\n{body}"
+    return f"{head}\n{artifact.title}\n{artifact.body}"
 
 
 def default_registry():

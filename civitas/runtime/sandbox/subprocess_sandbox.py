@@ -130,6 +130,22 @@ class SubprocessSandbox(Sandbox):
     def available(self) -> bool:
         return os.name == "posix"
 
+    def unenforced_limits(self) -> tuple[str, ...]:
+        """`max_processes` does not hold when the host process runs as root.
+
+        `RLIMIT_NPROC` is checked against the real user id and is **not enforced for uid 0**, so a
+        tool running under a root-owned worker can spawn without bound however small the limit is
+        set. Measured, not assumed: a sandboxed loop performed 5000 sequential forks in under a
+        second against `max_processes=8`.
+
+        The wall-clock timeout and the process-group kill still contain such a tool, so the
+        sandbox is not defeated — but the *process* bound is advisory here, and a caller relying
+        on it deserves to be told rather than to find out. Running workers as an unprivileged user
+        restores it; the container backend does not have the problem at all, because cgroups
+        enforce `--pids-limit` regardless of uid.
+        """
+        return ("max_processes",) if os.geteuid() == 0 else ()
+
     def run_python(
         self,
         source: str,
@@ -212,6 +228,7 @@ class SubprocessSandbox(Sandbox):
                 truncated = True
 
             return SandboxResult(
+                unenforced_limits=self.unenforced_limits(),
                 exit_code=proc.returncode,
                 stdout=stdout or "",
                 stderr=stderr or "",

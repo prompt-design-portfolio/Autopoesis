@@ -115,6 +115,20 @@ def retrieve(
     candidates = _candidates(session, workspace_id, types, policy)
     suppressed: list[dict[str, Any]] = []
 
+    # Exclusions applied in SQL are still exclusions. Recording them as an aggregate keeps the
+    # ablation auditable without loading rows the arm has already ruled out — an arm whose effect
+    # can only be inferred from an absence is not auditable (§14), and "it was never in the
+    # candidate set" is exactly such an absence.
+    if policy.excluded_types:
+        removed = _count_excluded(session, workspace_id, types, policy)
+        if removed:
+            suppressed.append({
+                "reason": "arm_excluded_type",
+                "types": sorted(t.value for t in policy.excluded_types),
+                "count": removed,
+                "applied": "sql",
+            })
+
     kept: list[Artifact] = []
     for artifact in candidates:
         reason = _suppression_reason(artifact, policy)
@@ -191,6 +205,27 @@ def _candidates(
     # all. Recency-ordered, so the bound favours what is most likely to still apply.
     stmt = stmt.order_by(Artifact.created_at.desc()).limit(2000)
     return list(session.execute(stmt).scalars())
+
+
+def _count_excluded(
+    session: Session,
+    workspace_id: uuid.UUID,
+    types: list[ArtifactType] | None,
+    policy: ArmPolicy,
+) -> int:
+    """How many candidates the arm's type exclusion removed, for the audit record."""
+    from sqlalchemy import func
+
+    stmt = select(func.count(Artifact.id)).where(
+        Artifact.workspace_id == workspace_id,
+        Artifact.archived_at.is_(None),
+        Artifact.type.in_([t.value for t in policy.excluded_types]),
+    )
+    if types:
+        stmt = stmt.where(Artifact.type.in_([t.value for t in types]))
+    if policy.as_of is not None:
+        stmt = stmt.where(Artifact.created_at <= policy.as_of)
+    return int(session.execute(stmt).scalar_one() or 0)
 
 
 def _suppression_reason(artifact: Artifact, policy: ArmPolicy) -> str | None:

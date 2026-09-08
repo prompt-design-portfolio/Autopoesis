@@ -64,6 +64,10 @@ class SandboxResult:
     isolation_level: IsolationLevel = IsolationLevel.NONE
     error: str = ""
     artifacts: dict[str, bytes] = field(default_factory=dict)
+    #: Limits that were requested but that this backend could not actually enforce here.
+    #: Reported rather than assumed: a bound the caller believes is in force but is not is worse
+    #: than no bound at all, because it is relied on. Reaches the manifest (Part B §46).
+    unenforced_limits: tuple[str, ...] = ()
 
     @property
     def succeeded(self) -> bool:
@@ -101,7 +105,16 @@ class Sandbox(abc.ABC):
             "backend": self.name,
             "isolation_level": self.isolation_level.value,
             "available": self.available(),
+            "unenforced_limits": list(self.unenforced_limits()),
         }
+
+    def unenforced_limits(self) -> tuple[str, ...]:
+        """Limits this backend cannot enforce in the current environment.
+
+        Empty by default. A backend that knows a bound will not hold must say so — see
+        `SubprocessSandbox`, where `max_processes` is unenforceable under uid 0.
+        """
+        return ()
 
 
 #: Environment variables that must never reach a sandbox (Part B §18, §40).

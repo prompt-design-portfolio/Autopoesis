@@ -1,0 +1,532 @@
+{
+  "generated_at": "2026-09-08T10:57:20.654707+00:00",
+  "milestone": "M4",
+  "manifest": {
+    "id": "71a18d21-e814-46e6-a092-d4f4ebdd154b",
+    "experiment_run_id": null,
+    "git_commit": "4a0dffcfb58e199901356ab4f9ee6119c1a9acfe-dirty",
+    "app_version": "0.1.0",
+    "schema_version": "9bec660e0ec5",
+    "dependency_versions": {
+      "python": "3.11.15",
+      "sqlalchemy": "2.0.52",
+      "alembic": "1.19.2",
+      "pydantic": "2.13.5",
+      "fastapi": "0.141.1",
+      "httpx": "0.28.1",
+      "numpy": "2.4.6"
+    },
+    "provider": "policy",
+    "model_name": "policy-v1",
+    "model_version": "policy-v1",
+    "sampling_parameters": {
+      "temperature": 0.0
+    },
+    "prompt_versions": {
+      "system": "hidden-rule/1.0"
+    },
+    "tool_versions": {},
+    "retrieval_policy": {
+      "version": "retrieval/1.0-lexical"
+    },
+    "experiment_arm": "newcomer_benchmark",
+    "budgets": {
+      "tokens": 200000,
+      "context": 32000,
+      "tool_calls": 7,
+      "cost_usd": 1.0,
+      "wall_clock_s": 120,
+      "max_turns": 12
+    },
+    "evaluator": {
+      "kind": "exact_match"
+    },
+    "environment": {
+      "platform": "Linux-6.18.44-fc-v24-x86_64-with-glibc2.39",
+      "machine": "x86_64",
+      "processor": "x86_64",
+      "python_implementation": "CPython",
+      "device": {
+        "torch": false,
+        "cuda": false,
+        "device": "cpu",
+        "dtype": "float32",
+        "device_name": null,
+        "vram_total_gb": null,
+        "vram_free_gb": null
+      },
+      "settings": {
+        "app_version": "0.1.0",
+        "environment_version": "m4-committed",
+        "database_url": "sqlite",
+        "data_dir": "/tmp/claude-0/-home-user-Autopoesis/c92f5ce7-2509-5a58-a852-a9aaabd61779/scratchpad/final3",
+        "object_store_url": "",
+        "runtime": "Runtime.LOCAL",
+        "sandbox_backend": "SandboxBackend.SUBPROCESS",
+        "worker_concurrency": 2,
+        "api_host": "127.0.0.1",
+        "api_port": 8000,
+        "auth_enabled": true,
+        "jwt_ttl_seconds": 3600,
+        "rate_limit_per_minute": 600,
+        "cors_origins": [],
+        "openai_base_url": null,
+        "default_provider": "deterministic",
+        "default_model": "deterministic-v1",
+        "log_level": "INFO",
+        "log_json": true,
+        "otel_endpoint": null,
+        "metrics_enabled": true
+      }
+    },
+    "workspace_snapshot_id": null,
+    "seeds": {
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "accumulation_passes": 3
+    },
+    "config_hash": "3b45214612c1adfaa7e95ba60caf157924e53887483ad2f9e2c4251f578c181e",
+    "sandbox_backend": "subprocess",
+    "created_at": "2026-09-08T10:57:20.651850+00:00"
+  },
+  "instrument_sweep": [
+    {
+      "tool_calls": 5,
+      "gates_passed": true,
+      "failed_gates": [],
+      "arms": {
+        "baseline_empty": {
+          "arm": "baseline_empty",
+          "n": 30,
+          "successes": 9,
+          "excluded": 0,
+          "success_rate": 0.3,
+          "mean_tool_calls": 4.7,
+          "mean_probes": 3.4,
+          "mean_tokens": 1851.8333333333333,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective": {
+          "arm": "collective",
+          "n": 30,
+          "successes": 14,
+          "excluded": 0,
+          "success_rate": 0.4666666666666667,
+          "mean_tool_calls": 4.133333333333334,
+          "mean_probes": 0.5333333333333333,
+          "mean_tokens": 3270.9666666666667,
+          "mean_artifacts_read": 1.5666666666666667,
+          "stale_uses": 0,
+          "duplicate_failures": 17
+        },
+        "memory_reset": {
+          "arm": "memory_reset",
+          "n": 30,
+          "successes": 9,
+          "excluded": 0,
+          "success_rate": 0.3,
+          "mean_tool_calls": 4.7,
+          "mean_probes": 3.4,
+          "mean_tokens": 1851.8333333333333,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective_scrambled": {
+          "arm": "collective_scrambled",
+          "n": 30,
+          "successes": 9,
+          "excluded": 0,
+          "success_rate": 0.3,
+          "mean_tool_calls": 4.566666666666666,
+          "mean_probes": 1.4333333333333333,
+          "mean_tokens": 3766.233333333333,
+          "mean_artifacts_read": 1.8333333333333333,
+          "stale_uses": 0,
+          "duplicate_failures": 16
+        }
+      },
+      "derived": {
+        "newcomer_advantage": 0.1667,
+        "advantage_lost_to_reset": 0.1667,
+        "advantage_lost_to_scramble": 0.1667,
+        "ablation_removes_fraction": 0.9998,
+        "scramble_removes_fraction": 0.9998
+      }
+    },
+    {
+      "tool_calls": 6,
+      "gates_passed": true,
+      "failed_gates": [],
+      "arms": {
+        "baseline_empty": {
+          "arm": "baseline_empty",
+          "n": 30,
+          "successes": 10,
+          "excluded": 0,
+          "success_rate": 0.3333333333333333,
+          "mean_tool_calls": 5.4,
+          "mean_probes": 4.066666666666666,
+          "mean_tokens": 2112.9,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective": {
+          "arm": "collective",
+          "n": 30,
+          "successes": 19,
+          "excluded": 0,
+          "success_rate": 0.6333333333333333,
+          "mean_tool_calls": 4.433333333333334,
+          "mean_probes": 0.5,
+          "mean_tokens": 3403.0333333333333,
+          "mean_artifacts_read": 1.6,
+          "stale_uses": 0,
+          "duplicate_failures": 21
+        },
+        "memory_reset": {
+          "arm": "memory_reset",
+          "n": 30,
+          "successes": 10,
+          "excluded": 0,
+          "success_rate": 0.3333333333333333,
+          "mean_tool_calls": 5.4,
+          "mean_probes": 4.066666666666666,
+          "mean_tokens": 2112.9,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective_scrambled": {
+          "arm": "collective_scrambled",
+          "n": 30,
+          "successes": 10,
+          "excluded": 0,
+          "success_rate": 0.3333333333333333,
+          "mean_tool_calls": 5.566666666666666,
+          "mean_probes": 2.3333333333333335,
+          "mean_tokens": 4603.866666666667,
+          "mean_artifacts_read": 1.9,
+          "stale_uses": 0,
+          "duplicate_failures": 30
+        }
+      },
+      "derived": {
+        "newcomer_advantage": 0.3,
+        "advantage_lost_to_reset": 0.3,
+        "advantage_lost_to_scramble": 0.3,
+        "ablation_removes_fraction": 1.0,
+        "scramble_removes_fraction": 1.0
+      }
+    },
+    {
+      "tool_calls": 7,
+      "gates_passed": true,
+      "failed_gates": [],
+      "arms": {
+        "baseline_empty": {
+          "arm": "baseline_empty",
+          "n": 30,
+          "successes": 14,
+          "excluded": 0,
+          "success_rate": 0.4666666666666667,
+          "mean_tool_calls": 6.066666666666666,
+          "mean_probes": 4.6,
+          "mean_tokens": 2329.0,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective": {
+          "arm": "collective",
+          "n": 30,
+          "successes": 23,
+          "excluded": 0,
+          "success_rate": 0.7666666666666667,
+          "mean_tool_calls": 4.366666666666666,
+          "mean_probes": 0.26666666666666666,
+          "mean_tokens": 3281.633333333333,
+          "mean_artifacts_read": 1.4666666666666666,
+          "stale_uses": 0,
+          "duplicate_failures": 26
+        },
+        "memory_reset": {
+          "arm": "memory_reset",
+          "n": 30,
+          "successes": 14,
+          "excluded": 0,
+          "success_rate": 0.4666666666666667,
+          "mean_tool_calls": 6.066666666666666,
+          "mean_probes": 4.6,
+          "mean_tokens": 2329.0,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective_scrambled": {
+          "arm": "collective_scrambled",
+          "n": 30,
+          "successes": 15,
+          "excluded": 0,
+          "success_rate": 0.5,
+          "mean_tool_calls": 5.866666666666666,
+          "mean_probes": 2.533333333333333,
+          "mean_tokens": 4754.033333333334,
+          "mean_artifacts_read": 1.8333333333333333,
+          "stale_uses": 0,
+          "duplicate_failures": 38
+        }
+      },
+      "derived": {
+        "newcomer_advantage": 0.3,
+        "advantage_lost_to_reset": 0.3,
+        "advantage_lost_to_scramble": 0.2667,
+        "ablation_removes_fraction": 1.0,
+        "scramble_removes_fraction": 0.8889
+      }
+    },
+    {
+      "tool_calls": 9,
+      "gates_passed": true,
+      "failed_gates": [],
+      "arms": {
+        "baseline_empty": {
+          "arm": "baseline_empty",
+          "n": 30,
+          "successes": 21,
+          "excluded": 0,
+          "success_rate": 0.7,
+          "mean_tool_calls": 7.066666666666666,
+          "mean_probes": 5.366666666666666,
+          "mean_tokens": 2654.133333333333,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective": {
+          "arm": "collective",
+          "n": 30,
+          "successes": 23,
+          "excluded": 0,
+          "success_rate": 0.7666666666666667,
+          "mean_tool_calls": 5.766666666666667,
+          "mean_probes": 0.6666666666666666,
+          "mean_tokens": 4759.833333333333,
+          "mean_artifacts_read": 1.5666666666666667,
+          "stale_uses": 0,
+          "duplicate_failures": 53
+        },
+        "memory_reset": {
+          "arm": "memory_reset",
+          "n": 30,
+          "successes": 21,
+          "excluded": 0,
+          "success_rate": 0.7,
+          "mean_tool_calls": 7.066666666666666,
+          "mean_probes": 5.366666666666666,
+          "mean_tokens": 2654.133333333333,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective_scrambled": {
+          "arm": "collective_scrambled",
+          "n": 30,
+          "successes": 17,
+          "excluded": 0,
+          "success_rate": 0.5666666666666667,
+          "mean_tool_calls": 7.1,
+          "mean_probes": 3.6333333333333333,
+          "mean_tokens": 5809.133333333333,
+          "mean_artifacts_read": 1.9,
+          "stale_uses": 0,
+          "duplicate_failures": 54
+        }
+      },
+      "derived": {
+        "newcomer_advantage": 0.0667,
+        "advantage_lost_to_reset": 0.0667,
+        "advantage_lost_to_scramble": 0.2,
+        "ablation_removes_fraction": 0.9995,
+        "scramble_removes_fraction": 1.0
+      }
+    },
+    {
+      "tool_calls": 12,
+      "gates_passed": false,
+      "failed_gates": [
+        "baseline_has_headroom"
+      ],
+      "arms": {
+        "baseline_empty": {
+          "arm": "baseline_empty",
+          "n": 30,
+          "successes": 30,
+          "excluded": 0,
+          "success_rate": 1.0,
+          "mean_tool_calls": 7.766666666666667,
+          "mean_probes": 5.766666666666667,
+          "mean_tokens": 2834.233333333333,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective": {
+          "arm": "collective",
+          "n": 30,
+          "successes": 30,
+          "excluded": 0,
+          "success_rate": 1.0,
+          "mean_tool_calls": 7.0,
+          "mean_probes": 1.1,
+          "mean_tokens": 5854.033333333334,
+          "mean_artifacts_read": 1.6666666666666667,
+          "stale_uses": 0,
+          "duplicate_failures": 67
+        },
+        "memory_reset": {
+          "arm": "memory_reset",
+          "n": 30,
+          "successes": 30,
+          "excluded": 0,
+          "success_rate": 1.0,
+          "mean_tool_calls": 7.766666666666667,
+          "mean_probes": 5.766666666666667,
+          "mean_tokens": 2834.233333333333,
+          "mean_artifacts_read": 0.0,
+          "stale_uses": 0,
+          "duplicate_failures": 0
+        },
+        "collective_scrambled": {
+          "arm": "collective_scrambled",
+          "n": 30,
+          "successes": 25,
+          "excluded": 0,
+          "success_rate": 0.8333333333333334,
+          "mean_tool_calls": 8.333333333333334,
+          "mean_probes": 4.533333333333333,
+          "mean_tokens": 6690.4,
+          "mean_artifacts_read": 1.9666666666666666,
+          "stale_uses": 0,
+          "duplicate_failures": 67
+        }
+      },
+      "derived": {
+        "newcomer_advantage": 0.0,
+        "advantage_lost_to_reset": 0.0,
+        "advantage_lost_to_scramble": 0.1667,
+        "ablation_removes_fraction": null,
+        "scramble_removes_fraction": null
+      }
+    }
+  ],
+  "headline": {
+    "experiment": "newcomer_advantage",
+    "config_hash": "b7ae385f6303f8b2aa642db6f2d4db253823ca52a0a6d9156eb998ece436cb12",
+    "chance_level": 0.1,
+    "naive_probe_ceiling": 0.5,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "gates": {
+      "frozen_model": {
+        "passed": true,
+        "detail": "all arms ran under one configuration hash",
+        "value": [
+          "b7ae385f6303f8b2aa642db6f2d4db253823ca52a0a6d9156eb998ece436cb12"
+        ]
+      },
+      "accumulation_occurred": {
+        "passed": true,
+        "detail": "294 artifacts accumulated across arms and seeds",
+        "value": 294
+      },
+      "baseline_has_headroom": {
+        "passed": true,
+        "detail": "baseline success rate 0.467 leaves headroom",
+        "value": 0.4666666666666667
+      },
+      "sufficient_n": {
+        "passed": true,
+        "detail": "smallest arm has n=30 readable episodes",
+        "value": 30
+      }
+    },
+    "arms": {
+      "baseline_empty": {
+        "arm": "baseline_empty",
+        "n": 30,
+        "successes": 14,
+        "excluded": 0,
+        "success_rate": 0.4666666666666667,
+        "mean_tool_calls": 6.066666666666666,
+        "mean_probes": 4.6,
+        "mean_tokens": 2329.0,
+        "mean_artifacts_read": 0.0,
+        "stale_uses": 0,
+        "duplicate_failures": 0
+      },
+      "collective": {
+        "arm": "collective",
+        "n": 30,
+        "successes": 23,
+        "excluded": 0,
+        "success_rate": 0.7666666666666667,
+        "mean_tool_calls": 4.366666666666666,
+        "mean_probes": 0.26666666666666666,
+        "mean_tokens": 3281.633333333333,
+        "mean_artifacts_read": 1.4666666666666666,
+        "stale_uses": 0,
+        "duplicate_failures": 26
+      },
+      "memory_reset": {
+        "arm": "memory_reset",
+        "n": 30,
+        "successes": 14,
+        "excluded": 0,
+        "success_rate": 0.4666666666666667,
+        "mean_tool_calls": 6.066666666666666,
+        "mean_probes": 4.6,
+        "mean_tokens": 2329.0,
+        "mean_artifacts_read": 0.0,
+        "stale_uses": 0,
+        "duplicate_failures": 0
+      },
+      "collective_scrambled": {
+        "arm": "collective_scrambled",
+        "n": 30,
+        "successes": 15,
+        "excluded": 0,
+        "success_rate": 0.5,
+        "mean_tool_calls": 5.866666666666666,
+        "mean_probes": 2.533333333333333,
+        "mean_tokens": 4754.033333333334,
+        "mean_artifacts_read": 1.8333333333333333,
+        "stale_uses": 0,
+        "duplicate_failures": 38
+      }
+    },
+    "notes": [
+      "accumulation: 3 pass(es) over 6 classes per arm/seed"
+    ],
+    "derived": {
+      "newcomer_advantage": 0.3,
+      "advantage_lost_to_reset": 0.3,
+      "advantage_lost_to_scramble": 0.2667,
+      "ablation_removes_fraction": 1.0,
+      "scramble_removes_fraction": 0.8889
+    }
+  }
+}

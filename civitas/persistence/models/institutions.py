@@ -189,3 +189,7 @@ class DuplicateFailureRecord(Base, UUIDPrimaryKey, Timestamped, Metadataed):
     ruled_out: Mapped[list] = mapped_column(JSONVariant(), default=list, nullable=False)
     reproducible: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
     times_repeated: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
+    #: Set when the record is taken out of circulation — by `memory_reset`, or when its artifact
+    #: is archived. The row survives (Part A §A1.2); only its ability to answer a lookup is
+    #: withdrawn.
+    retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None, index=True)
