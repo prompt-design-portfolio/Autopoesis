@@ -102,7 +102,19 @@ periodically, which kills the server mid-run.
     everywhere — so a population born into it faces exactly the learning problem the real store
     poses, and the arm would read as a null while information had in fact passed. `scrambled_load`
     checks the two are distinct.
-13. **`type_spawn_w` is `None` and five observation inputs are dead.** Both are recorded facts, not
+13. **B cannot be staged identically to A, and the reason is measured** (G3-D1). `mark_decay`
+    0.004 over a 3000-step food-only phase leaves 6e-6 of A's marks: a record injected at B's step
+    0 is gone six orders of magnitude before B's first preparation, so `inherited store` would read
+    exactly like `fresh store` and the null would be about decay. B runs chain-on from step 0. The
+    cost -- unsorted founders, so a random food instinct -- is matched across all four arms and
+    cancels in a between-arm difference. It does forfeit any comparison of B's absolute competence
+    to A's, which is not the claim and is not reported.
+14. **Alignment is a recorded parameter of every G3 run, never an assumption** (G3-D2). A mark is
+    true only of the era it was written in, so a misaligned B gets a record that is not stale but
+    INVERTED. Both are run. A misaligned null is stale culture, not absent culture -- and it need
+    not even be a null, because a ratio below 1 means B learned to avoid the record, and you
+    cannot avoid what you cannot see.
+15. **`type_spawn_w` is `None` and five observation inputs are dead.** Both are recorded facts, not
     oversights. Changing the layout changes every genome and voids the reproduction; changing the
     spawn weights changes the world. They are G4 candidates with their own specs.
 
@@ -115,7 +127,7 @@ periodically, which kills the server mid-run.
 | **G0** | audit and removal (B§1) | **audit delivered** (`docs/G0_G1.md`): the removal list against the tree, the reference hashes, nine findings. **The removal itself is not carried out.** |
 | **G1** | reproduction diff = 0 | **MET.** `precheck_v3_13.txt` reproduced **182/182 fields on SQLite and on PostgreSQL**, backends agreeing, from rows recomputed out of the database. `docs/G1_WRITEUP.md` |
 | **G2** | the record as the artifact store; Gate R, stale-mark lines, frozen assay reproduce through the store | **MET.** G2-D1 ruled and the engine change applied; the reproduction re-run against it gives **182/182 on both backends**, and the same arm's rows are **byte-identical** to the G1 run at full reference length. A2.1's twelve cells run for the first time; `assay_selftest` is built. `docs/G2_WRITEUP.md` |
-| G3 | the store outlives the run | not started |
+| **G3** | the store outlives the run; population B born into population A's record | **spec delivered** (`docs/G3_SPEC.md`, two rulings made); the mechanism is **built** (`civitas_g/g3.py`) and `b_founders_carry_no_H` is **green**; pre-check running |
 | G4 | a world that hardens | not started |
 | G5 | frozen-LLM reference arm | not started |
 
@@ -146,18 +158,21 @@ by A1.1: the agents were deterministic policies, not learners, and two domains i
 
 ## What remains
 
-1. **Agree the G3 spec.** A3: no milestone starts until the previous gate is met and the next spec
+1. **Read the G3 pre-check and decide whether to go to three seeds.** One seed is a pre-check;
+   B§5.2 asks for 3/3 with the scrambled and gain-zero arms flat. `docs/G3_SPEC.md` §6 is the
+   order of work and §5 is the list of seven ways the claim could produce a positive number that
+   means nothing, with what catches each.
+2. **Agree the G3 spec.** A3: no milestone starts until the previous gate is met and the next spec
    is agreed. G2's gate is met, and the engine can now hand a record to a population that did not
    write it — which is exactly what B§5.2 needs. Two things G3 will need that do not exist:
    `b_founders_carry_no_H` (the engine refuses `init_genomes` at G1 and must allow it for
    population B while proving nothing learned crossed), and a ruling on era-clock alignment
    between A and B, which B§5.2 flags as a DECISION with a pre-registered reading attached.
-2. **Carry out G0's removal.** `docs/G0_G1.md` §1 lists every path and line. One judgement call is
+3. **Carry out G0's removal.** `docs/G0_G1.md` §1 lists every path and line. One judgement call is
    already made and should be honoured: the four leak-check tests in `tests/test_domains.py` are
    the only executable statement of the §47 rule B§1 *keeps*, so they are re-homed to the vector
    adapter rather than deleted with the file.
-3. **Finish `assay_selftest`** once G2-D1 is ruled. Two of its three clauses already run as
-   `assay_preconditions`; the third needs a replay that can see a store.
+4. **Three seeds for G3**, once the pre-check reads clean.
 
 ## Open issues
 

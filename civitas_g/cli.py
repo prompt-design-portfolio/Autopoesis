@@ -192,6 +192,52 @@ def cmd_store(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_g3(args: argparse.Namespace) -> int:
+    """A succession: A lives and dies, B is born into what it left."""
+    from civitas_g.g3 import Succession, b_founders_carry_no_h, run_population_a, run_succession
+
+    ok, detail = b_founders_carry_no_h()
+    print(f"b_founders_carry_no_H: {'PASS' if ok else 'FAIL'} -- {detail}\n")
+    if not ok:
+        print("B§6: any failure halts. No B number is read.")
+        return 1
+
+    a = run_population_a(args.seed, args.a_phase_steps, verbose=False)
+    final = a.raw.get("final_store")
+    if final is None:
+        print("population A produced no final store; the engine must be G2-store-fix or later")
+        return 1
+    import numpy as np
+
+    print(f"population A: {a.wall_seconds:.0f}s, final era {tuple(final['mapping'])}, "
+          f"pi {tuple(final['pi'])}, record density "
+          f"{(np.abs(final['marks']) > 1e-3).mean():.6f}\n")
+
+    alignments = (True, False) if args.both_alignments else (not args.misaligned,)
+    failed = False
+    for aligned in alignments:
+        s_ = Succession(seed=args.seed, a_phase_steps=args.a_phase_steps,
+                        b_steps=args.b_steps, aligned=aligned)
+        r = run_succession(s_, a_result=a)
+        print(f"=== population B, {s_.alignment}: A's era {r.a_mapping}, "
+              f"B started at {r.b_mapping} ===")
+        print(r.table())
+        print("  claim lines, each arm minus `fresh store`:")
+        for arm, lines in r.claim_lines().items():
+            print(f"    {arm:<22}" + "  ".join(f"{k} {v:+.3f}" for k, v in lines.items()))
+        if r.gate_r:
+            g = r.gate_r
+            print(f"  Gate R on the inherited marks under B's pi-epochs: obs {g['obs']:.3f} "
+                  f"null {g['null']:.3f} z {g['z']:.2f} -> {g['verdict']}")
+            failed = failed or g["verdict"] != "PASS"
+        for note in r.notes:
+            print(f"  NOTE: {note}")
+        print()
+    print("One seed is a PRE-CHECK. B§5.2 asks for 3/3 seeds with the scrambled and gain-zero")
+    print("arms flat; nothing above is a claim until that runs.")
+    return 1 if failed else 0
+
+
 def cmd_reproduce(args: argparse.Namespace) -> int:
     from civitas_g.g1 import run_g1
 
@@ -225,6 +271,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("store", help="G2: the record as an artifact store, and its blocker")
     s.set_defaults(func=cmd_store)
+
+    s = sub.add_parser("g3", help="a succession: B born into A's record")
+    s.add_argument("--seed", type=int, default=0)
+    s.add_argument("--a-phase-steps", type=int, default=1500,
+                   help="A's phase length; A runs two phases of this")
+    s.add_argument("--b-steps", type=int, default=700,
+                   help="B's single chain-on phase (G3-D1)")
+    s.add_argument("--both-alignments", action="store_true", default=True)
+    s.add_argument("--misaligned", action="store_true",
+                   help="run only the misaligned arm (B§5.2's pre-registered control)")
+    s.set_defaults(func=cmd_g3)
 
     s = sub.add_parser("reproduce", help="the G1 gate: reproduction diff = 0")
     s.add_argument("--sqlite-url", default="sqlite:///var/civitas_g.db")
