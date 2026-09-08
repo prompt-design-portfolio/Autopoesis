@@ -28,6 +28,7 @@ from civitas.domain.enums import (
     TerminationReason,
 )
 from civitas.knowledge.arms import arm_policy
+from civitas.observability import REGISTRY
 from civitas.persistence.events import emit
 from civitas.persistence.models import (
     Artifact,
@@ -143,6 +144,14 @@ class EpisodeRunner:
         # re-derived differently halfway through.
         policy = arm_policy(spec.experiment_arm, as_of=spec.frozen_as_of)
 
+        # §58, checked before the episode row exists. An organization over its limit must not
+        # produce an episode at all: a row created and then refused would be counted by the very
+        # usage query the quota is measured with, so exceeding a quota would raise the usage that
+        # proves it was exceeded.
+        from civitas.quotas import check_workspace
+
+        check_workspace(self._session, spec.workspace_id)
+
         episode = self._create_episode(spec)
         tracker = BudgetTracker(spec.budgets)
         ctx = ToolContext(
@@ -172,6 +181,9 @@ class EpisodeRunner:
         except BudgetExceeded as exc:
             reason, detail = exc.termination_reason, str(exc)
         except ProviderError as exc:
+            # A circuit-breaker skip arrives here too, and that is the point: it is recorded as
+            # `provider_failure`, which `evaluation.is_readable` excludes from success rates. An
+            # outage must not be counted as an agent's failure (§47).
             reason, detail = TerminationReason.PROVIDER_FAILURE, str(exc)[:2000]
         except Exception as exc:  # pragma: no cover - defensive
             log.exception("episode %s failed", episode.id)
@@ -521,6 +533,16 @@ class EpisodeRunner:
         episode.artifacts_read = len(ctx.read_artifacts)
         episode.duplicate_failures = ctx.scratch.get("duplicate_failures", 0)
         self._session.flush()
+
+        # §53. Labelled by arm and reason, never by workspace or task: those are per-tenant and
+        # would put a tenant list on an endpoint people expose to a scraper.
+        REGISTRY.inc(
+            "civitas_episodes_total", arm=spec.experiment_arm.value, reason=reason.value,
+        )
+        REGISTRY.inc(
+            "civitas_episode_tokens_total", float(episode.tokens_used),
+            arm=spec.experiment_arm.value,
+        )
 
         emit(
             self._session, workspace_id=spec.workspace_id, type=EventType.EPISODE_TERMINATED,

@@ -1,0 +1,64 @@
+# A complete deployment: PostgreSQL, the API, and a worker (Part B §57).
+#
+# The API and the worker run the same image and the same code — §6 forbids a separate
+# implementation for a different runtime, and two images would be exactly that.
+
+name: civitas
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: civitas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: civitas
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U civitas -d civitas"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile
+    command: ["civitas", "init-db", "--alembic"]
+    environment: &env
+      CIVITAS_DATABASE_URL: postgresql+psycopg://civitas:${POSTGRES_PASSWORD}@postgres:5432/civitas
+      CIVITAS_JWT_SECRET: ${CIVITAS_JWT_SECRET:?set CIVITAS_JWT_SECRET}
+      CIVITAS_ENVIRONMENT_VERSION: ${CIVITAS_ENVIRONMENT_VERSION:-prod-1}
+      CIVITAS_SANDBOX_BACKEND: ${CIVITAS_SANDBOX_BACKEND:-docker}
+      CIVITAS_LOG_JSON: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile
+    environment: *env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Migrations run once, in their own service, and the API waits for them. An API that migrated
+    # on start would race its own replicas.
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile
+    command: ["civitas", "worker", "--count", "2"]
+    environment: *env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:

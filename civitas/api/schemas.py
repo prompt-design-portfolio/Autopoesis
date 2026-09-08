@@ -450,9 +450,41 @@ class BenchmarkResultOut(BaseModel):
 
 
 class HealthOut(BaseModel):
+    """What is actually in force, not what was configured (§46, §53).
+
+    Every field here exists because the alternative is an operator assuming a control is on. A
+    sandbox that cannot hold a limit, an unauthenticated deployment, a rate limiter that is
+    per-process, tracing configured against a package that is not installed — each is invisible
+    until it matters, and each is reported.
+    """
+
     status: str
     dialect: str
     schema_version: str
     app_version: str
     sandbox_backend: str
     sandbox_unenforced_limits: list[str]
+    auth_enabled: bool
+    metrics_enabled: bool
+    tracing: dict[str, Any]
+    rate_limit_per_minute: int
+    #: True because the limiter is in-process: two replicas allow twice the configured rate.
+    rate_limit_is_per_process: bool = True
+    circuit_breakers: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class QuotaIn(BaseModel):
+    max_tokens: int | None = None
+    max_cost_usd: float | None = None
+    max_episodes: int | None = None
+    window_days: float = 30.0
+
+
+class QuotaOut(BaseModel):
+    """§58. `remaining` is `None` for an unlimited dimension — never a large number, which a
+    dashboard would render as "nearly out"."""
+
+    organization_id: uuid.UUID
+    quota: dict[str, Any]
+    usage: dict[str, Any]
+    remaining: dict[str, Any]

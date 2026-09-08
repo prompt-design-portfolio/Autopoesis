@@ -20,12 +20,24 @@ from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from civitas.api import schemas
+from civitas.api.middleware import (
+    BodyLimitMiddleware,
+    ObservabilityMiddleware,
+    RateLimiter,
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 from civitas.api.security import (
     Principal,
     principal_for,
@@ -35,6 +47,12 @@ from civitas.api.security import (
 )
 from civitas.config import Settings, get_settings
 from civitas.domain.enums import ArtifactType, EventType, ExperimentArm, RelationType, Role
+from civitas.observability import (
+    REGISTRY,
+    configure_logging,
+    configure_tracing,
+    record_build_info,
+)
 from civitas.persistence.engine import (
     get_session_factory,
     healthcheck,
@@ -170,6 +188,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             CORSMiddleware, allow_origins=settings.cors_origins,
             allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
         )
+
+    # Order matters and is the reverse of the order requests traverse: observability is added last
+    # so it runs first, and therefore times and counts the requests the limiter refuses. A rate
+    # limiter outside the metrics would make a flood of 429s invisible on the dashboard that
+    # exists to show it.
+    limiter = RateLimiter(settings.rate_limit_per_minute)
+    app.state.rate_limiter = limiter
+    app.add_middleware(SecurityHeadersMiddleware, settings=settings)
+    app.add_middleware(BodyLimitMiddleware)
+    app.add_middleware(RateLimitMiddleware, limiter=limiter)
+    app.add_middleware(ObservabilityMiddleware, enabled=settings.metrics_enabled)
+
+    configure_logging(settings)
+    record_build_info(settings)
+    tracing = configure_tracing(settings)
+    app.state.tracing = tracing
     app.dependency_overrides[get_settings] = lambda: settings
 
     # ----------------------------------------------------------------------
@@ -180,6 +214,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         health = healthcheck(settings)
         sandbox = best_available()
+        from civitas.observability import tracing_state
+        from civitas.runtime.providers.breaker import BREAKER
+
         return schemas.HealthOut(
             status="ok" if health["ok"] else "degraded",
             dialect=health["dialect"],
@@ -187,7 +224,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app_version=settings.app_version,
             sandbox_backend=sandbox.name,
             sandbox_unenforced_limits=list(sandbox.unenforced_limits()),
+            auth_enabled=settings.auth_enabled,
+            metrics_enabled=settings.metrics_enabled,
+            tracing=tracing_state(),
+            rate_limit_per_minute=settings.rate_limit_per_minute,
+            circuit_breakers=BREAKER.states(),
         )
+
+    @app.get("/metrics", tags=["ops"], include_in_schema=False)
+    def metrics(settings: Settings = Depends(get_settings)):
+        """Prometheus exposition (§53).
+
+        Unauthenticated on purpose and *only* because it discloses nothing per-tenant: every
+        label is a method, a route template, an arm or a provider. Never add a workspace id or a
+        principal here — a metrics endpoint is the easiest place to leak a tenant list, and it is
+        the one endpoint people expose to a scraper without thinking.
+        """
+        if not settings.metrics_enabled:
+            return PlainTextResponse("# metrics are disabled by configuration\n",
+                                     status_code=503)
+        return PlainTextResponse(REGISTRY.render(), media_type="text/plain; version=0.0.4")
 
     @app.get("/readyz", tags=["ops"])
     def readyz(db: Session = Depends(get_db)) -> dict[str, Any]:
@@ -1011,6 +1067,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             media_type="text/event-stream",
             headers={"cache-control": "no-cache", "x-accel-buffering": "no"},
         )
+
+    # ------------------------------------------------------------------ §58
+    @app.get(f"{API_PREFIX}/organizations/{{organization_id}}/quota",
+             response_model=schemas.QuotaOut, tags=["ops"])
+    def get_quota(
+        organization_id: uuid.UUID,
+        db: Session = Depends(get_db),
+        principal: Principal = Depends(resolve_principal),
+    ):
+        from civitas.quotas import remaining
+
+        if organization_id != principal.organization_id:
+            # 404, not 403 — the same rule as everywhere else: confirming an id exists is itself
+            # a disclosure (§52).
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such organization")
+        return schemas.QuotaOut(organization_id=organization_id,
+                                **remaining(db, organization_id))
+
+    @app.put(f"{API_PREFIX}/organizations/{{organization_id}}/quota",
+             response_model=schemas.QuotaOut, tags=["ops"])
+    def put_quota(
+        organization_id: uuid.UUID,
+        payload: schemas.QuotaIn,
+        db: Session = Depends(get_db),
+        principal: Principal = Depends(require_role(Role.ADMIN)),
+    ):
+        """Admin only. A quota an operator can raise is a quota, and one an agent can raise is
+        not — so this sits above `OPERATOR` on the ladder (§51)."""
+        from civitas.quotas import Quota, remaining, set_quota
+
+        if organization_id != principal.organization_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such organization")
+        set_quota(db, organization_id, Quota(
+            max_tokens=payload.max_tokens, max_cost_usd=payload.max_cost_usd,
+            max_episodes=payload.max_episodes, window_days=payload.window_days,
+        ))
+        db.flush()
+        return schemas.QuotaOut(organization_id=organization_id,
+                                **remaining(db, organization_id))
 
     # ------------------------------------------------------------------ §49
     web_root = pathlib.Path(__file__).resolve().parent.parent / "web"

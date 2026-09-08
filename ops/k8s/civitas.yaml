@@ -1,0 +1,150 @@
+# Kubernetes deployment (Part B §57).
+#
+# One file rather than a chart: it is readable end to end, and every value that would be a
+# template parameter is a Secret or ConfigMap key here. A chart adds indirection this does not
+# need until there are several environments to differ between.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: civitas-config
+data:
+  CIVITAS_LOG_JSON: "true"
+  CIVITAS_LOG_LEVEL: "INFO"
+  CIVITAS_METRICS_ENABLED: "true"
+  CIVITAS_ENVIRONMENT_VERSION: "prod-1"
+  # Container isolation, not the subprocess fallback: `Sandbox.unenforced_limits()` reports which
+  # bounds a backend cannot hold, and under the subprocess backend that list is non-empty. A
+  # result produced under weaker isolation must never be mistaken for one produced under this.
+  CIVITAS_SANDBOX_BACKEND: "docker"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: civitas-secrets
+type: Opaque
+stringData:
+  # Replace before applying. Kept as a Secret rather than a ConfigMap so it is not printed by
+  # `kubectl describe`, and never baked into the image.
+  CIVITAS_DATABASE_URL: "postgresql+psycopg://civitas:CHANGE_ME@postgres:5432/civitas"
+  CIVITAS_JWT_SECRET: "CHANGE_ME"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: civitas-migrate
+  annotations:
+    # Migrations are a Job that must complete before the Deployment rolls: an API replica that
+    # migrated on start would race the other replicas for the same schema change.
+    "helm.sh/hook": pre-install,pre-upgrade
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: civitas:latest
+          args: ["civitas", "init-db", "--alembic"]
+          envFrom:
+            - configMapRef: {name: civitas-config}
+            - secretRef: {name: civitas-secrets}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: civitas-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: civitas, component: api}
+  template:
+    metadata:
+      labels: {app: civitas, component: api}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: civitas:latest
+          ports: [{containerPort: 8000, name: http}]
+          envFrom:
+            - configMapRef: {name: civitas-config}
+            - secretRef: {name: civitas-secrets}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: data, mountPath: /var/lib/civitas}
+          resources:
+            requests: {cpu: "250m", memory: "512Mi"}
+            limits: {cpu: "2", memory: "2Gi"}
+          # Liveness on /healthz (is the process alive) and readiness on /readyz (can it reach the
+          # database). Using /readyz for liveness would restart every replica during a database
+          # blip, turning a recoverable outage into a crash loop.
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - {name: data, emptyDir: {}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: civitas-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: civitas, component: worker}
+  template:
+    metadata:
+      labels: {app: civitas, component: worker}
+    spec:
+      # Long enough for an episode to finish and release its lease. A worker killed mid-episode is
+      # survivable — the lease expires and `reap_expired` requeues the job (§42) — but a clean
+      # shutdown costs nothing and does not spend the budget twice.
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: worker
+          image: civitas:latest
+          args: ["civitas", "worker", "--count", "2"]
+          envFrom:
+            - configMapRef: {name: civitas-config}
+            - secretRef: {name: civitas-secrets}
+          resources:
+            requests: {cpu: "500m", memory: "1Gi"}
+            limits: {cpu: "2", memory: "4Gi"}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: civitas-api
+spec:
+  selector: {app: civitas, component: api}
+  ports: [{port: 80, targetPort: http, name: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: civitas-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: civitas, component: api}

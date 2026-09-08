@@ -112,6 +112,23 @@ does. Two rules are enforced on screen and tested in a real browser: a metric th
 as `null` renders as "not available" with its reason, never as `0`, and a benchmark whose gates
 failed shows the gates and withholds the numbers.
 
+### Deployment
+
+```bash
+docker compose -f ops/docker-compose.yml up      # Postgres, migrations, API, worker
+kubectl apply -f ops/k8s/civitas.yaml            # or Kubernetes
+```
+
+The container runs as a non-root user, and that is load-bearing rather than hygiene: `RLIMIT_NPROC`
+is **silently unenforced for uid 0** — measured in M4, where a test spawned 5000 processes against
+a limit of 8 — so an image running as root would advertise sandbox limits it does not hold. CI
+asserts it.
+
+Operational surface: `/healthz` reports what is actually in force (the sandbox backend and the
+limits it *cannot* enforce, whether auth is on, whether tracing is configured against a package
+that is installed), `/readyz` reports whether the database is reachable, and `/metrics` serves
+Prometheus exposition with no tenant identifier in any label.
+
 Colab is a first-class runtime (Part B §33). `notebooks/Civitas_Colab.ipynb` runs the same package
 — detects the runtime and GPU, mounts Drive, migrates, runs the benchmark, exports the manifest,
 and reconnects to a civilization a previous runtime left behind.
@@ -138,6 +155,8 @@ allocator that SQLite structurally cannot expose (`docs/milestones/M02.md`).
 ```
 civitas/
   cli.py            the `civitas` command line
+  observability.py  structured logs, Prometheus metrics, optional tracing (§53)
+  quotas.py         organization resource limits over a rolling window (§58)
   web/              the UI (§49) — one HTML file, one script, one stylesheet, no build step
   config.py         settings and secrets (§40)
   domain/           closed enumerations — arms, termination reasons, artifact and relation types
@@ -152,6 +171,7 @@ civitas/
   api/              the versioned HTTP API and its security boundary (§50–§52)
   workers/          durable worker loop (§37, §42)
 alembic/            migrations
+ops/                Dockerfile, docker-compose, Kubernetes manifests (§57)
 docs/               ARCHITECTURE.md and per-milestone write-ups
 notebooks/          Civitas_Colab.ipynb
 results/            committed benchmark output
@@ -184,8 +204,8 @@ These are load-bearing, and each has a test that drives the real mechanism:
 
 | milestone | state |
 |---|---|
-| M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions · M9 advanced benchmarks · M10 projects, domains, API, CLI · M11 web UI | complete |
-| M12–M13 | see `docs/ARCHITECTURE.md` §5 |
+| M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions · M9 advanced benchmarks · M10 projects, domains, API, CLI · M11 web UI · M12 hardening | complete |
+| M13 acceptance | see `docs/ARCHITECTURE.md` §5 |
 
 Each milestone reports its effect on the M4 benchmark. A feature that moves no number is reported
 as such rather than hidden (Part A §A1.5) — M5's hybrid retrieval moved it by exactly 0.000, and

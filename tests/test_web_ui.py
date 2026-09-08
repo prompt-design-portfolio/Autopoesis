@@ -363,3 +363,27 @@ def test_the_api_key_never_leaves_this_browser_except_as_a_header(page, live_ser
     assert stored
     assert page.evaluate("() => localStorage.getItem('civitas.apiKey')") is None
 
+
+# --------------------------------------------------------------------------- §52 in a browser
+
+
+def test_the_ui_renders_under_the_real_content_security_policy(page, live_server):
+    """§52 checked where it can actually fail.
+
+    A CSP is trivial to write and trivial to get wrong in a way no unit test sees: the header is
+    present, the assertion passes, and the page is silently broken because a browser refused a
+    script. So this asserts the header is served *and* that the browser reported no violation
+    while rendering — which is only meaningful because the policy has no `unsafe-inline`.
+    """
+    violations = []
+    page.on("console", lambda m: violations.append(m.text)
+            if "Content Security Policy" in m.text else None)
+
+    response = page.goto(live_server + "/ui/", wait_until="domcontentloaded")
+    policy = response.headers.get("content-security-policy", "")
+    assert "default-src 'self'" in policy
+    assert "unsafe-inline" not in policy
+
+    page.wait_for_function("() => window.civitas !== undefined")
+    _open(page, "overview")
+    assert violations == [], violations

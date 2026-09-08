@@ -1,0 +1,40 @@
+{
+ "arms": {
+  "breaker": {
+   "calls_skipped_by_breaker": 37,
+   "derived_backoff_seconds_worst_case": 15.8,
+   "derived_network_attempts": 12,
+   "episodes": 40,
+   "episodes_terminated_provider_failure": 40,
+   "provider_attempts": 3
+  },
+  "no_breaker": {
+   "calls_skipped_by_breaker": 0,
+   "derived_backoff_seconds_worst_case": 210.0,
+   "derived_network_attempts": 160,
+   "episodes": 40,
+   "episodes_terminated_provider_failure": 40,
+   "provider_attempts": 40
+  }
+ },
+ "configuration": {
+  "episodes": 40,
+  "failure_threshold": 3,
+  "http_max_retries": 4,
+  "note": "One variable: the breaker. Same provider, same episodes, same budgets. The recovery window is longer than the run so the measurement is of a sustained outage rather than of a flapping one.",
+  "recovery_seconds": 3600
+ },
+ "derived": {
+  "attempts_avoided": 37,
+  "backoff_seconds_avoided_worst_case": 194.2,
+  "fraction_of_attempts_avoided": 0.925,
+  "network_attempts_avoided": 148
+ },
+ "generated_at": "2026-09-08T14:40:50.551022+00:00",
+ "milestone": "M12",
+ "question": "During a provider outage, how much work does a circuit breaker stop the platform from repeating?",
+ "readability": {
+  "is_readable_excludes_infrastructure_failure": true,
+  "note": "Every episode in both arms terminates as `provider_failure`, and `evaluation.is_readable` excludes that from success rates (\u00a747). The breaker changes what the outage costs, not what any arm scores \u2014 an outage must not be counted as an agent's failure."
+ }
+}
