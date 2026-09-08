@@ -155,21 +155,25 @@ def cmd_world(args: argparse.Namespace) -> int:
 def cmd_store(args: argparse.Namespace) -> int:
     """G2's state: what the store layer can do, and the one thing it cannot."""
     import sim_v3_13
-    from civitas_g.selftests import PATCH_PATH, REPO_ROOT
+    from civitas_g.manifest import ENGINE_VERSIONS, verify_engine
+    from civitas_g.selftests import PATCH_PATH
     from civitas_g.store.record import ScrambleMode
 
     print("THE RECORD AS AN ARTIFACT STORE (G2)\n")
-    source = (REPO_ROOT / "sim_v3_13.py").read_text()
-    applied = "store_snaps" in source and "init_store" in source
-    print(f"  engine patch:      {'APPLIED' if applied else 'NOT APPLIED (G2-D1 unruled)'}")
-    print(f"  patch file:        {PATCH_PATH}")
-    print(f"  run() returns the store:  {'yes' if applied else 'NO'}")
-    print(f"  run() accepts a store:    {'yes' if applied else 'NO'}")
-    if not applied:
-        print("\n  Consequence: frozen_replay builds a fresh World whose marks are zeroed and "
-              "whose\n  pi is redrawn, so A2.1's store-visible / hidden / label-permuted arms "
-              "have never been\n  runnable, and G3's population B cannot be born into A's "
-              "record. See docs/G2_SPEC.md §1.")
+    ok, detail = verify_engine()
+    print(f"  engine:            {detail}")
+    if not ok:
+        print("  the engine on disk is not a version this build records; nothing below is safe")
+        return 1
+    print("\n  engine versions (A1.8: the hash is in every manifest; a change is versioned, "
+          "not silent)")
+    for v in ENGINE_VERSIONS:
+        print(f"    {v.label:<12}{v.sha256[:12]}  {v.change[:80]}")
+        if v.equivalence:
+            print(f"    {'':<12}{'':<12}  checked by: {v.equivalence[:78]}")
+    print(f"\n  the change is stated readably in {PATCH_PATH}")
+    print("  run() returns the store:  yes, when cfg.store_snaps")
+    print("  run() accepts a store:    yes, run(..., init_store=...)")
 
     print(f"\n  store shape:       ({sim_v3_13.N_TYPES}, {sim_v3_13.N_PREPS}, "
           f"{sim_v3_13.Config().grid}, {sim_v3_13.Config().grid}) signed floats")

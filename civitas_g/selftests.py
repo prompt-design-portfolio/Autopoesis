@@ -220,29 +220,24 @@ def _engine_drift_selftest() -> SelfTestResult:
         f"HEAD's engine reproduces the reference blob's trajectory.")
 
 
+#: Kept for the record: the change that produced the current engine, applied at G2 under G2-D1.
+#: The engine now carries it, so this file is history rather than a pending action.
 PATCH_PATH = "docs/patches/g2-store-capture-and-injection.diff"
 
 
-def _patched_engine(tmp: str):
-    """Apply the unapplied G2 patch to a copy of the engine and import it.
-
-    The patch lives in the repository and is applied to a temporary copy, never to the working
-    tree. That is what lets the proof below be re-run by anyone from a clean checkout, and what
-    keeps `sim_v3_13.py` byte-identical while the decision to apply is still open (G2-D1).
-    """
+def _engine_at(commit: str, tmp: str):
+    """Import `sim_v3_13.py` as it was at a named commit, without touching the working tree."""
     import importlib.util
-    import shutil
     import subprocess
 
-    shutil.copy(REPO_ROOT / "sim_v3_13.py", f"{tmp}/sim_v3_13.py")
-    applied = subprocess.run(("patch", "-p0", "--quiet",
-                              "-i", str(REPO_ROOT / PATCH_PATH)),
-                             cwd=tmp, capture_output=True, text=True, timeout=60)
-    if applied.returncode != 0:
-        raise RuntimeError(f"the G2 patch no longer applies to sim_v3_13.py: "
-                           f"{(applied.stderr or applied.stdout).strip()[:200]}")
-    spec_ = importlib.util.spec_from_file_location("sim_v3_13_g2patched",
-                                                   f"{tmp}/sim_v3_13.py")
+    blob = subprocess.run(("git", "show", f"{commit}:sim_v3_13.py"),
+                          cwd=REPO_ROOT, capture_output=True, timeout=30)
+    if blob.returncode != 0:
+        raise RuntimeError(f"cannot read sim_v3_13.py at {commit}: "
+                           f"{blob.stderr.decode(errors='replace').strip()[:160]}")
+    path = Path(tmp) / f"sim_at_{commit[:7]}.py"
+    path.write_bytes(blob.stdout)
+    spec_ = importlib.util.spec_from_file_location(f"sim_at_{commit[:7]}", path)
     module = importlib.util.module_from_spec(spec_)      # type: ignore[arg-type]
     spec_.loader.exec_module(module)                     # type: ignore[union-attr]
     return module
@@ -260,82 +255,85 @@ def _logs_differ(a: list, b: list) -> list[str]:
     })
 
 
-def _store_patch_selftest() -> SelfTestResult:
-    """G2-D1's safety argument, as a measurement rather than as a reading of a diff.
+def _engine_store_selftest() -> SelfTestResult:
+    """G2-D1's safety argument, kept running now that the change is applied.
 
-    Three claims, each checked:
-      1. with both flags off, the patched engine is bit-identical to the unpatched one;
-      2. with capture ON, the trajectory still does not move -- copying an array draws no RNG;
-      3. injection actually works -- a fresh world receives a record it did not write.
+    The engine gained store capture and injection at G2. A1.8 says the engine runs byte-identical
+    and its hash is in every manifest -- which is a claim about a *named* engine, not a claim that
+    it can never change. So the claim that has to keep holding is that the named change is
+    trajectory-neutral, and it is measured here rather than argued:
 
-    (3) is the one that makes the patch worth applying at all: without it A2.1's store arms and
-    G3's population B are both unrunnable.
+      1. with both flags off, the current engine is bit-identical to the one at G0;
+      2. with capture on, the trajectory still does not move -- copying an array draws no RNG;
+      3. injection works, which is the whole reason the change was made: without it
+         `frozen_replay` has no store to see.
+
+    This is the regression that stops a later edit quietly turning capture into participation.
     """
     import tempfile
 
     import numpy as np
 
-    import sim_v3_13 as base
+    import sim_v3_13 as current
+    from civitas_g.manifest import ENGINE_VERSIONS
     from civitas_g.world.engine import build_run_spec
 
+    previous = next(v for v in ENGINE_VERSIONS if v.label == "G0")
     spec = build_run_spec("collective", seed=0, phase_steps=800)   # crosses a mapping remap
+
     with tempfile.TemporaryDirectory() as tmp:
-        patched = _patched_engine(tmp)
+        before = _engine_at(previous.at_commit, tmp)
 
-        plain = base.run(base.Config(seed=0, **spec.kwargs), verbose=False,
-                         phases=spec.phases())
-        off = patched.run(patched.Config(seed=0, **spec.kwargs), verbose=False,
-                          phases=spec.phases())
-        if len(plain["log"]) != len(off["log"]):
-            return SelfTestResult("store_patch", "fail",
-                                  f"{len(plain['log'])} log rows unpatched vs {len(off['log'])} "
-                                  f"patched", milestone="G2")
-        differing = _logs_differ(plain["log"], off["log"])
-        added = sorted(set(off["log"][0]) - set(plain["log"][0]))
-        if differing or added or plain["final_mapping"] != off["final_mapping"]:
-            return SelfTestResult(
-                "store_patch", "fail",
-                f"with both flags off the patch is NOT bit-identical: {len(differing)} fields "
-                f"differ {differing[:6]}, log fields added {added}", milestone="G2")
+        old_run = before.run(before.Config(seed=0, **spec.kwargs), verbose=False,
+                             phases=spec.phases())
+        new_run = current.run(current.Config(seed=0, **spec.kwargs), verbose=False,
+                              phases=spec.phases())
 
-        on = patched.run(patched.Config(seed=0, store_snaps=True, **spec.kwargs),
-                         verbose=False, phases=spec.phases())
-        differing_on = _logs_differ(plain["log"], on["log"])
-        if differing_on:
-            return SelfTestResult(
-                "store_patch", "fail",
-                f"capture moved the trajectory in {len(differing_on)} fields "
-                f"{differing_on[:6]} -- a snapshot must observe, not participate",
-                milestone="G2")
-        if not on["store_snaps"]:
-            return SelfTestResult("store_patch", "fail",
-                                  "capture was on and produced no store snapshots",
-                                  milestone="G2")
+    if len(old_run["log"]) != len(new_run["log"]):
+        return SelfTestResult("engine_store", "fail",
+                              f"{len(old_run['log'])} log rows at {previous.label} vs "
+                              f"{len(new_run['log'])} now", milestone="G2")
+    differing = _logs_differ(old_run["log"], new_run["log"])
+    added = sorted(set(new_run["log"][0]) - set(old_run["log"][0]))
+    if differing or added or old_run["final_mapping"] != new_run["final_mapping"]:
+        return SelfTestResult(
+            "engine_store", "fail",
+            f"the store change is NOT trajectory-neutral: {len(differing)} log fields differ "
+            f"{differing[:6]}, fields added {added}", milestone="G2")
 
-        store = on["store_snaps"][-1]
-        # long enough to produce one log row: the engine appends every `log_every` steps, so a
-        # one-step probe would come back with an empty log and nothing to read.
-        probe_phase = [dict(n_steps=int(patched.Config(**spec.kwargs).log_every), chain=True)]
-        injected = patched.run(patched.Config(seed=99, **spec.kwargs), verbose=False,
-                               phases=probe_phase, init_store=store)
-        fresh = patched.run(patched.Config(seed=99, **spec.kwargs), verbose=False,
-                            phases=probe_phase)
-        got = float(injected["log"][-1]["mark_density"])
-        none = float(fresh["log"][-1]["mark_density"])
-        if not (got > 0) or (none == got):
-            return SelfTestResult(
-                "store_patch", "fail",
-                f"injection did not take: density {got} with a store, {none} without",
-                milestone="G2")
+    captured = current.run(current.Config(seed=0, store_snaps=True, **spec.kwargs),
+                           verbose=False, phases=spec.phases())
+    differing_on = _logs_differ(old_run["log"], captured["log"])
+    if differing_on:
+        return SelfTestResult(
+            "engine_store", "fail",
+            f"capture moved the trajectory in {len(differing_on)} fields {differing_on[:6]} -- "
+            f"a snapshot must observe, not participate", milestone="G2")
+    if not captured["store_snaps"]:
+        return SelfTestResult("engine_store", "fail",
+                              "capture was on and produced no store snapshots", milestone="G2")
+
+    store = captured["store_snaps"][-1]
+    probe = [dict(n_steps=int(current.Config(**spec.kwargs).log_every), chain=True)]
+    injected = current.run(current.Config(seed=99, **spec.kwargs), verbose=False,
+                           phases=probe, init_store=store)
+    fresh = current.run(current.Config(seed=99, **spec.kwargs), verbose=False, phases=probe)
+    got = float(injected["log"][-1]["mark_density"])
+    none = float(fresh["log"][-1]["mark_density"])
+    if not (got > none):
+        return SelfTestResult(
+            "engine_store", "fail",
+            f"injection did not take: density {got} with a store, {none} without",
+            milestone="G2")
 
     live = float((np.abs(store["marks"]) > 1e-3).mean())
+    shared = len(set(old_run["log"][0]) & set(new_run["log"][0]))
     return SelfTestResult(
-        "store_patch", "pass",
-        f"{len(plain['log'])} log rows, {len(set(plain['log'][0]) & set(off['log'][0]))} shared "
-        f"fields identical with the flags off and with capture on; {len(on['store_snaps'])} store "
-        f"snapshots captured (density {live:.6f}); injection gives a fresh world density "
-        f"{got:.6f} against {none:.6f} without. The patch is trajectory-neutral and injection "
-        f"works.", milestone="G2")
+        "engine_store", "pass",
+        f"{len(old_run['log'])} log rows, {shared} shared fields identical to engine "
+        f"{previous.label} with the flags off and with capture on; "
+        f"{len(captured['store_snaps'])} store snapshot(s) (density {live:.6f}); injection gives "
+        f"a fresh world density {got:.6f} against {none:.6f} without.", milestone="G2")
 
 
 def _assay_selftest_unavailable() -> SelfTestResult:
@@ -510,8 +508,8 @@ def _registry() -> list[SelfTest]:
                  milestone="G2", source="civitas_g.store.persistence"),
         SelfTest("assay_preconditions", _assay_preconditions_selftest,
                  milestone="G2", source="civitas_g.store.record"),
-        SelfTest("store_patch", _store_patch_selftest,
-                 milestone="G2", source=PATCH_PATH),
+        SelfTest("engine_store", _engine_store_selftest,
+                 milestone="G2", source="sim_v3_13 (engine G2-store)"),
         SelfTest("b_founders_carry_no_h",
                  _g2_g3_unavailable(
                      "b_founders_carry_no_h", "G3",

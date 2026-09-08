@@ -1,72 +1,105 @@
-"""The unapplied G2 engine patch (G2-D1).
+"""The G2 engine change (ruled under G2-D1, applied).
 
-The patch is in the repository and is applied to a temporary copy, never to the working tree. That
-is what lets these checks be re-run from a clean checkout while `sim_v3_13.py` stays byte-identical
-and the decision to apply is still open.
+The engine gained store capture and injection at G2. A1.8 says it runs byte-identical with its
+hash in every manifest -- a claim about a *named* engine, not a claim that it can never change.
+So what these tests hold is the thing that has to keep being true: the engine on disk is a version
+this build records, the change is additive, and it is trajectory-neutral.
+
+The file `docs/patches/g2-store-capture-and-injection.diff` is now history rather than a pending
+action, and is kept because it is the readable statement of exactly what changed.
 """
 
 from __future__ import annotations
 
-import subprocess
-import tempfile
-from pathlib import Path
+import inspect
 
 import pytest
 
-from civitas_g.selftests import PATCH_PATH, REPO_ROOT, _patched_engine
+import sim_v3_13
+from civitas_g.manifest import (
+    CURRENT_ENGINE,
+    ENGINE_BY_SHA,
+    ENGINE_VERSIONS,
+    REPO_ROOT,
+    engine_identity,
+    sha256_file,
+    verify_engine,
+)
+from civitas_g.selftests import PATCH_PATH
 
 
-def test_the_patch_is_in_the_repository_and_is_not_applied():
-    """A1.8: the engine runs byte-identical. It is still the unpatched engine on disk."""
-    import sim_v3_13
+def test_the_engine_on_disk_is_a_version_this_build_records():
+    """The failure this catches is a stray edit that no manifest can name."""
+    ok, detail = verify_engine()
+    assert ok, detail
+    assert engine_identity()["engine_version"] == CURRENT_ENGINE.label
 
+
+def test_the_current_engine_hash_is_the_recorded_one():
+    assert sha256_file(REPO_ROOT / "sim_v3_13.py") == CURRENT_ENGINE.sha256
+
+
+def test_an_unrecorded_engine_is_named_as_unrecorded_not_as_a_mismatch():
+    assert "0" * 64 not in ENGINE_BY_SHA
+    assert len({v.sha256 for v in ENGINE_VERSIONS}) == len(ENGINE_VERSIONS)
+
+
+def test_every_engine_version_after_the_first_says_how_equivalence_was_checked():
+    """A version that changed the engine without a stated equivalence check is a version whose
+    numbers cannot be compared to the ones before it."""
+    for version in ENGINE_VERSIONS[1:]:
+        assert version.equivalence, f"{version.label} records no equivalence check"
+        assert version.change, f"{version.label} records no change"
+
+
+def test_the_engine_exposes_capture_and_injection():
+    assert hasattr(sim_v3_13.Config(), "store_snaps")
+    assert sim_v3_13.Config().store_snaps is False, "capture must be off by default"
+    assert "init_store" in inspect.signature(sim_v3_13.run).parameters
+
+
+def test_capture_is_off_by_default_so_every_existing_call_is_unchanged():
+    """The G1 reproduction calls run() without either flag. If the default moved, the reproduction
+    would be measuring a different engine than the one it was gated on."""
+    cfg = sim_v3_13.Config()
+    assert cfg.store_snaps is False
+    assert inspect.signature(sim_v3_13.run).parameters["init_store"].default is None
+
+
+def test_the_patch_file_is_kept_as_the_readable_statement_of_the_change():
     assert (REPO_ROOT / PATCH_PATH).exists()
-    source = Path(sim_v3_13.__file__).read_text()
-    assert "store_snaps" not in source, "the G2 patch has been applied without a ruling on G2-D1"
-    assert "init_store" not in source
+    diff = (REPO_ROOT / PATCH_PATH).read_text()
+    assert "store_snaps" in diff and "init_store" in diff
 
 
-def test_the_patch_still_applies_cleanly():
-    with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(("cp", str(REPO_ROOT / "sim_v3_13.py"), f"{tmp}/sim_v3_13.py"), check=True)
-        applied = subprocess.run(("patch", "-p0", "--quiet", "-i", str(REPO_ROOT / PATCH_PATH)),
-                                 cwd=tmp, capture_output=True, text=True, timeout=60)
-        assert applied.returncode == 0, applied.stderr or applied.stdout
-
-
-def test_the_patch_adds_and_removes_nothing_else():
-    """Four additions, nothing removed. A patch that deleted a line would not be additive, and the
-    bit-identity argument rests on it being additive."""
+def test_the_change_is_additive():
+    """The trajectory-neutrality argument rests on nothing being removed."""
     diff = (REPO_ROOT / PATCH_PATH).read_text().splitlines()
-    removed = [ln for ln in diff
-               if ln.startswith("-") and not ln.startswith("---")
-               and ln[1:].strip() not in ("", )]
-    # the only "removed" lines are the three context lines the additions attach to, re-emitted
-    for ln in removed:
-        body = ln[1:].strip()
-        assert ("era_snap_keep" in body or "def run(" in body
-                or "notebook did." in body or "era_snaps=era_snaps" in body
-                or "era_snaps = []" in body
-                or "era_snaps.append" in body or "del era_snaps" in body
-                or "genomes=snapshot" in body or "world = World" in body), \
-            f"the patch removes a line it should not: {body!r}"
+    removed = [ln[1:].strip() for ln in diff
+               if ln.startswith("-") and not ln.startswith("---") and ln[1:].strip()]
+    for body in removed:
+        assert any(k in body for k in (
+            "era_snap_keep", "def run(", "notebook did.", "era_snaps=era_snaps",
+            "era_snaps = []", "era_snaps.append", "del era_snaps", "genomes=snapshot",
+            "world = World")), f"the change removes a line it should not: {body!r}"
 
 
-def test_the_patched_engine_imports_and_exposes_the_new_surface():
-    with tempfile.TemporaryDirectory() as tmp:
-        patched = _patched_engine(tmp)
-        assert hasattr(patched.Config(), "store_snaps")
-        assert patched.Config().store_snaps is False, "capture must be off by default"
-        import inspect
+def test_analysis_v3_13_was_not_touched():
+    """G2-D3: keeping the assay on the Civitas side means exactly one research file changed, so
+    frozen_replay and frozen_knockout still work and the G1 reproduction stays a valid regression
+    test for the engine change."""
+    from civitas_g.manifest import CONTEXT_PINS
 
-        assert "init_store" in inspect.signature(patched.run).parameters
+    pin = next(p for p in CONTEXT_PINS if p.path == "analysis_v3_13.py")
+    ok, detail = pin.verify()
+    assert ok, detail
 
 
 @pytest.mark.slow
-def test_the_patch_is_trajectory_neutral_and_injection_works():
-    """The whole of G2-D1's safety argument, measured. Slow: it runs the engine three times."""
+def test_the_store_change_is_trajectory_neutral_and_injection_works():
+    """Measured, against the engine as it was at G0. Slow: it runs the engine four times."""
     from civitas_g.selftests import run_selftests
 
-    result = run_selftests(names=["store_patch"], verbose=False)[0]
+    result = run_selftests(names=["engine_store"], verbose=False)[0]
     assert result.ok, result.detail
-    assert "trajectory-neutral" in result.detail
+    assert "identical to engine G0" in result.detail

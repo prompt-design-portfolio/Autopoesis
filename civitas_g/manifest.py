@@ -153,13 +153,60 @@ CONTEXT_PINS: tuple[Pin, ...] = (
         "b37e08877f8770c0d88d87a47acdf575ec46128600896f5159cbb385c89dc13c", G0_COMMIT),
     Pin("autopoiesis_v3_13_record.ipynb",
         "a3877ffd363a141f1b62ddcb08f48997ee391acc82a8960da1a784157834d829", G0_COMMIT),
-    Pin("sim_v3_13.py",
-        "3b51b191d953a71691831095e1f631eb69ab07d1d17b180376547ea4fceb84f5", G0_COMMIT,
-        "HEAD's engine -- what a run today uses"),
     Pin("analysis_v3_13.py",
         "9e6911263f2ad3117a441fada46c25056989dcc84d22e456e48f71e3d4048aad", G0_COMMIT,
-        "HEAD's reading"),
+        "the reading. NOT touched by the G2 change -- frozen_replay and frozen_knockout still "
+        "work exactly as they did, which is what keeps the G1 reproduction a valid regression "
+        "test for the engine change."),
 )
+
+
+@dataclass(frozen=True)
+class EngineVersion:
+    """One version of the compute engine, and what made it a different one.
+
+    A1.8 says the engine runs byte-identical and its hash is in every manifest. That is a claim
+    about a *named* engine, not a claim that it can never change: the directive's own escape hatch
+    is that an instrument change "arrives as a versioned change with its own gate". So the engine
+    is versioned here, every version keeps its hash, and a manifest names which one produced each
+    number. What is forbidden is an engine that moved without anyone recording that it did.
+    """
+
+    label: str
+    sha256: str
+    at_commit: str
+    change: str
+    #: How the claim that this version is trajectory-equivalent to its predecessor was checked.
+    equivalence: str = ""
+
+
+#: Oldest first. The current engine is the last entry.
+ENGINE_VERSIONS: tuple[EngineVersion, ...] = (
+    EngineVersion(
+        "reference", "fa577b9c171e27b967b4c6f21d11840b293ced5a46630c92cbc93e4c8f4afdcd",
+        "3d7b228",
+        "the blob that produced precheck_v3_13.txt",
+        ""),
+    EngineVersion(
+        "G0", "3b51b191d953a71691831095e1f631eb69ab07d1d17b180376547ea4fceb84f5",
+        G0_COMMIT,
+        "adds the four (ii-newborn) counters (41c100d)",
+        "engine_drift_selftest: 129 shared log fields identical to `reference` across a mapping "
+        "remap; the only difference is the four added counters"),
+    EngineVersion(
+        "G2-store", "d5bb11c8a15290e7b1a082e8afd1ac3f21f7c098c8099e1e45e93fd4b5a37920",
+        "applied at G2",
+        "adds Config.store_snaps (default False), run(..., init_store=None), an era-boundary copy "
+        "of world.marks and pi beside the genome snapshot, and store_snaps in the returned dict. "
+        "Nothing removed; analysis_v3_13.py untouched. Ruled under G2-D1 -- without it "
+        "frozen_replay has no store to see, so A2.1's store arms and G3's population B are both "
+        "unrunnable.",
+        "engine_store_selftest: with both flags off, bit-identical to `G0`; with capture on, the "
+        "trajectory still does not move. Plus the G1 reproduction re-run against it."),
+)
+
+CURRENT_ENGINE = ENGINE_VERSIONS[-1]
+ENGINE_BY_SHA: dict[str, EngineVersion] = {v.sha256: v for v in ENGINE_VERSIONS}
 
 #: Required reading that does not exist (F1). Recorded rather than reconstructed: writing a
 #: substitute finding for runs nobody here observed would be worse than the gap.
@@ -202,6 +249,9 @@ REFERENCE_INVOCATION: dict[str, Any] = {
 #: branch, so the trajectory is bit-identical and HEAD's engine reproduces 3d7b228's numbers.
 SIM_V3_13_DRIFT: dict[str, Any] = {
     "from": "3d7b228", "to": G0_COMMIT,
+    "note": "the FIRST hop. The engine moved again at G2 -- see ENGINE_VERSIONS and "
+            "engine_store_selftest. This entry stays because it is what licenses reproducing "
+            "precheck_v3_13.txt with anything other than the blob that produced it.",
     "change": "adds follgf_n/ok and follbf_n/ok counters, records two new log fields, and "
               "rewrites one `else:` as `elif True:`",
     "consumes_rng": False,
@@ -259,8 +309,11 @@ def engine_identity(root: Path | None = None) -> dict[str, str]:
     """
     root = root or REPO_ROOT
     dirty = _git("status", "--porcelain", "--", "sim_v3_13.py", "analysis_v3_13.py")
+    engine_sha = sha256_file(root / "sim_v3_13.py")
+    version = ENGINE_BY_SHA.get(engine_sha)
     return {
-        "sim_v3_13.py": sha256_file(root / "sim_v3_13.py"),
+        "sim_v3_13.py": engine_sha,
+        "engine_version": version.label if version else "UNRECORDED",
         "analysis_v3_13.py": sha256_file(root / "analysis_v3_13.py"),
         "commit": _git("rev-parse", "HEAD") or "unknown",
         "engine_tree_clean": "no" if dirty else "yes",
@@ -280,7 +333,30 @@ def verify_pins(root: Path | None = None) -> list[tuple[bool, str]]:
             out.append(pin.verify(root))
     for pin in CONTEXT_PINS:
         out.append(pin.verify(root))
+    out.append(verify_engine(root))
     return out
+
+
+def verify_engine(root: Path | None = None) -> tuple[bool, str]:
+    """The engine on disk must be a version this build knows about, and it says which.
+
+    Not a plain hash pin: the engine is versioned (see `ENGINE_VERSIONS`), so an engine that moved
+    deliberately reports the version it moved to, and an engine that moved by accident reports an
+    unknown hash. The failure mode this exists to catch is the second one wearing the first one's
+    clothes -- a stray edit to sim_v3_13.py that no manifest records.
+    """
+    actual = sha256_file((root or REPO_ROOT) / "sim_v3_13.py")
+    version = ENGINE_BY_SHA.get(actual)
+    if version is None:
+        return False, (
+            f"sim_v3_13.py is {actual[:12]}, which is no recorded engine version "
+            f"({', '.join(f'{v.label}={v.sha256[:8]}' for v in ENGINE_VERSIONS)}). An engine that "
+            f"moved without a version entry is an engine no manifest can name.")
+    if version is not CURRENT_ENGINE:
+        return False, (
+            f"sim_v3_13.py is engine {version.label} ({actual[:12]}), but this build expects "
+            f"{CURRENT_ENGINE.label} ({CURRENT_ENGINE.sha256[:12]}).")
+    return True, f"sim_v3_13.py: engine {version.label} ({actual[:12]})"
 
 
 def build_manifest(*, kind: str, arms: list[str], seeds: list[int],

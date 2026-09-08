@@ -114,6 +114,11 @@ class Config:
                                   # -- it is simply not lethal.  Nothing about the POPULATION can
                                   # change, so the only thing that can move a hit rate over the
                                   # window is H.  That is what makes the replay an attribution.
+    store_snaps: bool = False     # CAPTURE: also snapshot the RECORD at every era boundary.
+                                  # Default off, and off it changes nothing -- the branch is not
+                                  # taken, no RNG is drawn, and every trajectory is byte-identical
+                                  # to the unpatched engine.  On, it copies world.marks and pi into
+                                  # the result so the store can outlive the run.
     era_snap_keep: int = 2        # era-boundary snapshots retained (rolling, most recent last)
     era_snap_max: int = 300       # agents sampled per snapshot, to bound the pickle
     # --- v3.13 record ---
@@ -921,11 +926,17 @@ def resolve_action(a, action, world, cfg, rng, t=0):
 # the run
 # --------------------------------------------------------------------------
 
-def run(cfg, verbose=True, init_genomes=None, phases=None):
+def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None):
     """phases: a list of {"n_steps": int, "chain": bool} run back to back on ONE population.
     The agents list, their H, their eligibility traces and the world are all carried across a
     phase boundary untouched -- only cfg.chain flips.  phases=None runs a single phase of
-    cfg.n_steps at cfg.chain, which is what every earlier notebook did."""
+    cfg.n_steps at cfg.chain, which is what every earlier notebook did.
+
+    INJECTION: init_store is {"marks": (T,K,g,g) array, "pi": tuple} written into the world before
+    step 0, so a population can be born into a record it did not write.  The frozen assay's store
+    arms and G3's population B both need it: without it World.__init__ zeroes the marks and redraws
+    pi, so a replay never sees the store the population actually left.  None -- the default --
+    leaves the world exactly as it was, byte for byte."""
     if phases is None:
         phases = [dict(n_steps=cfg.n_steps, chain=cfg.chain)]
     schedule, bounds, acc = [], [], 0
@@ -939,6 +950,11 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     g, v = cfg.grid, cfg.view
     win = 2 * v + 1
     world = World(cfg, rng)
+    if init_store is not None:
+        # Written, not drawn: no RNG is consumed here, so init_store=None is bit-identical to the
+        # unpatched engine.
+        world.marks[:] = np.asarray(init_store["marks"], dtype=float)
+        world.pi = tuple(int(x) for x in init_store["pi"])
     world.chain_on = schedule[0][1]
     for _ in range(100):
         world.step(-1)
@@ -982,6 +998,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     # because rng.shuffle reorders the list every step.
     _frozen_e = {id(a): float(a.energy) for a in agents} if cfg.frozen else {}
     era_snaps = []                                   # rolling era-boundary genome snapshots
+    store_snaps = []                                 # rolling era-boundary RECORD snapshots
     prev_mapping = tuple(int(x) for x in world.mapping)
     t0 = time.time()
 
@@ -1010,6 +1027,13 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 era_snaps.append(dict(t=t, mapping=prev_mapping, n_pop=len(agents),
                                       genomes=snapshot(samp)))
                 del era_snaps[:-cfg.era_snap_keep]
+                if cfg.store_snaps:
+                    # The RECORD at the same moment as the genomes.  Two different things: the
+                    # genomes are what the population IS, the record is what it LEFT.
+                    store_snaps.append(dict(t=t, mapping=prev_mapping,
+                                            pi=tuple(int(x) for x in world.pi),
+                                            marks=world.marks.copy()))
+                    del store_snaps[:-cfg.era_snap_keep]
             prev_mapping = tuple(int(x) for x in world.mapping)
             for a in agents:
                 a.since_recipe = 0
@@ -1360,6 +1384,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 # re-seeds the world does NOT get this mapping, so a genome test has to pin it.
                 final_mapping=tuple(int(x) for x in world.mapping),
                 era_snaps=era_snaps,     # genomes at era boundaries, with the mapping just lived
+                store_snaps=store_snaps,  # the RECORD at those boundaries, when cfg.store_snaps
                 cfg=asdict(cfg), final=snapshot(agents))
 
 
