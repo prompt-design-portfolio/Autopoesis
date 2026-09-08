@@ -1,5 +1,42 @@
 # Civitas — Architecture and Repository Audit (M1)
 
+> ## Superseded for the live build — read this first
+>
+> `CIVITAS_G_MASTER_BUILD_DIRECTIVE.md` supersedes the combined prompt this document was written
+> against, and the architecture below is the **M1–M13 lineage**, which B§1 makes partly dormant
+> and partly removed. It remains accurate as history and as the description of §33–§46, §47 and
+> §50–§58 — the layers B§1 *keeps* — and `civitas_g` reuses one of them directly (the dialect seam
+> in `civitas/persistence/types.py`).
+>
+> **The live architecture is `civitas_g/`,** and it is much smaller, because A1.1 removed the
+> reason for most of what is described below:
+>
+> > The learner is the only thing that thinks. Civitas provides persistence, measurement and the
+> > environment; it never provides cognition.
+>
+> There is no agent layer, no provider registry serving cognition, no scheduler, no institutions
+> and no tool ecology on any live path. What replaces them:
+>
+> | | |
+> |---|---|
+> | `civitas_g/world/` | the world of record (`analysis_v3_13.WORLD`, checked, not `Config()`'s defaults), the vector domain adapter, B§4's arms, and the whole of Civitas's contact with the engine |
+> | `civitas_g/provider/` | the **population** provider — it starts the engine and writes down what came out; it holds no policy, no belief state and no per-step surface |
+> | `civitas_g/persistence/` | campaigns, runs, era rows, era snapshots, store artifacts, reproductions, on both backends |
+> | `civitas_g/store/` | the record as an artifact: byte-exact serialisation, artifact-level provenance, the hidden and scrambled controls |
+> | `civitas_g/reading/` | recompute a reading **from the persisted rows**, parse a reference summary, diff the two |
+> | `civitas_g/selftests.py` | B§6's registry, including the ones that do not exist yet, named rather than omitted |
+>
+> Three invariants are worth carrying over from §4 below, because they survived the rebuild and
+> are enforced in the new code too: **reading must not write** (SQLite's `BEGIN IMMEDIATE` takes
+> the write lock even to read), **a metric that cannot be computed reports `None` with a reason,
+> never 0.0**, and **the dialect difference lives in a type decorator and nothing above it knows
+> which backend it has**.
+>
+> Start at `docs/HANDOFF.md`, then `docs/G0_G1.md` (the audit and the G1 spec), `docs/G1_WRITEUP.md`
+> (the milestone) and `docs/G2_SPEC.md` (the current spec and its blocking decision).
+
+---
+
 Status: M1 complete. This document is the audit required by Part A §A5 and Part B §3/§62 Phase 1.
 It maps what exists to Part B sections, names what is missing, and fixes the architecture the
 later milestones build against.
