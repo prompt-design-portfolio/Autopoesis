@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-09-08T12:10:19.317635+00:00",
+  "milestone": "M8",
+  "note": "two proposals under one matched configuration hash; the gate decided each",
+  "proposals": [
+    {
+      "name": "hybrid",
+      "kind": "retrieval",
+      "metric": "newcomer_advantage",
+      "treatment": 0.4444,
+      "control": 0.4444,
+      "approved": false,
+      "reason": "cannot approve on this comparison (Part A \u00a7A2.2): the treatment did not improve newcomer_advantage: 0.4444 vs control 0.4444",
+      "policy_id": "3fbdaf13-758d-4afb-b9ee-a11350a002bf"
+    },
+    {
+      "name": "productive_repeats",
+      "kind": "scheduler",
+      "metric": "coverage",
+      "treatment": 0.8333,
+      "control": 0.5,
+      "approved": true,
+      "reason": "coverage improved from 0.5 to 0.8333",
+      "policy_id": "fa67c33c-17bf-442a-b95f-e8cf3fa88139"
+    }
+  ],
+  "active_configuration": {
+    "consolidation": null,
+    "retrieval": null,
+    "role_mix": null,
+    "scheduler": {
+      "name": "productive_repeats",
+      "version": 1,
+      "body": {
+        "duplication_penalty": "unproductive_only"
+      },
+      "evidence": {
+        "config_hash": "m8-matched-configuration",
+        "control": 0.5,
+        "control_run_id": "b9d1325f-0e8d-4940-a08b-9388de23de25",
+        "metric": "coverage",
+        "superseded": null,
+        "treatment": 0.8333,
+        "treatment_run_id": "cfe949d1-bf05-4fc1-a99b-6afb72c38f5a"
+      }
+    },
+    "tool_use": null,
+    "verification": null
+  },
+  "gate_metrics": {
+    "policy": {
+      "proposed": 2,
+      "approved": 1,
+      "adoption_rate": 0.5,
+      "rolled_back": 0,
+      "mean_attributed_improvement": 0.3333
+    },
+    "procedure": {
+      "proposed": 0,
+      "approved": 0,
+      "adoption_rate": null,
+      "rolled_back": 0,
+      "mean_attributed_improvement": null
+    },
+    "prompt": {
+      "proposed": 0,
+      "approved": 0,
+      "adoption_rate": null,
+      "rolled_back": 0,
+      "mean_attributed_improvement": null
+    }
+  }
+}
