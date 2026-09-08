@@ -30,13 +30,28 @@ def test_the_five_research_selftests_are_called_unchanged(registry):
         assert hasattr(sim_v3_13, f"{name}_selftest")
 
 
-def test_assay_selftest_is_registered_as_a_named_gap_not_omitted(registry):
-    """F6. A2.1 cites it as an existing reference; it is nowhere in the repository. Registering it
-    as unavailable makes it appear in every report instead of silently not running."""
+def test_assay_selftest_is_built_and_no_longer_a_named_gap(registry):
+    """F6, closed at G2.
+
+    A2.1 cited `assay_selftest` as an *existing* reference and it was nowhere in the repository.
+    It was registered as a named gap so it appeared in every report rather than silently not
+    running -- and at G2 the reason it could not be built got worse before it got better: the
+    instrument it names could not be run at all, because `run()` neither returned the store nor
+    accepted one. The engine change (G2-D1) fixed that, and D5's specification is now a
+    measurement. This test is the inverse of the one it replaces, on purpose: the gap being closed
+    has to be as load-bearing as the gap being open was.
+    """
+    assert registry["assay_selftest"].source == "civitas_g.assay"
+    assert registry["assay_selftest"].milestone == "G2"
+
+
+@pytest.mark.slow
+def test_assay_selftest_measures_both_of_d5s_clauses(registry):
+    """Both are of the same shape: a condition under which the three store arms CANNOT differ."""
     result = registry["assay_selftest"].run()
-    assert result.status == "unavailable"
-    assert result.milestone == "G2"
-    assert "NOT AVAILABLE" in result.detail
+    assert result.status == "pass", result.detail
+    assert "record='none'" in result.detail
+    assert "sym_gain = 0" in result.detail
 
 
 def test_a_g1_test_that_is_unavailable_halts_but_a_g2_one_does_not():
