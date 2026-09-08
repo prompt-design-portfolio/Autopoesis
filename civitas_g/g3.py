@@ -183,6 +183,28 @@ class G3Result:
         d["arms"] = [a.as_dict() for a in self.arms]
         return d
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> G3Result:
+        """Rebuild a stored result. G4 needs it: `compounding` is a difference against a
+        baseline, and re-running the baseline for every mechanic would compare each mechanic
+        against a different draw of the same world, which makes the mechanics incomparable to
+        each other -- the one thing a difference of differences cannot survive.
+
+        Deliberately strict about arm fields: a stored result written by an older build that is
+        missing a field the claim line reads should fail here, loudly, rather than arrive as a
+        default and be differenced.
+        """
+        arms = [BArmResult(**a) for a in d.get("arms", [])]
+        succession = Succession(**d["succession"])
+        return cls(succession=succession, arms=arms,
+                   a_store_sha256=d.get("a_store_sha256", ""),
+                   a_mapping=tuple(d.get("a_mapping", ())),
+                   a_pi=tuple(d.get("a_pi", ())),
+                   b_mapping=tuple(d.get("b_mapping", ())),
+                   gate_r=dict(d.get("gate_r", {})),
+                   assay=dict(d.get("assay") or {}),
+                   notes=list(d.get("notes", [])))
+
 
 # ---------------------------------------------------------------------------------------------
 # running a succession

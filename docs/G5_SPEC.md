@@ -175,3 +175,59 @@ unreproducible number is worse than no number, and this arm's whole purpose is t
 
 **There is no step 5.** The reference arm does not get three seeds, an acceptance, or a claim,
 because it is not eligible for one.
+
+---
+
+## 7. How an external policy substitutes for the network
+
+§3 asks for the same statistics from the same code path. That is not a preference: a bespoke
+stepping loop for the reference arm would be a bespoke metric in disguise, and the comparison
+would mean nothing. So the model has to choose actions **inside the engine's own step**, at the
+one line where the network currently does:
+
+```python
+action = a.act(obs, cfg, rng, world.chain_on)      # sim_v3_13, the agent loop
+```
+
+**Ruled (G5-D7):** the engine gains an `external_policy` hook, in the pattern already used twice
+in this lineage — G2-store's `init_store` and G3-mapping's `init_mapping`. Its contract:
+
+* **Signature.** `external_policy(lineage, obs, chain_on) -> int | None`. Returning `None` means
+  *this agent, this step, is the network's* — so the hook can be applied to a sampled subset
+  (G5-D4) without a second mechanism for the sampling.
+* **The RNG stream is untouched.** `act` computes its logits, including the
+  `rng.normal(0, action_noise, n_actions)` draw, before the override is applied. This is
+  G3-mapping's discipline exactly: draw, then overwrite. Without it every downstream draw shifts
+  and the arm is not on the world the learner ran in.
+* **The eligibility trace follows the action actually taken.** `act` writes its trace for the
+  action it returns, so the override is passed *into* `act` rather than applied after it. With
+  `eta_scale = 0` — which G5-D7 also rules for every reference arm, because an agent learning
+  while a model drives it confounds both — the trace is inert and this costs nothing. It is done
+  anyway so the code is not silently wrong the first time someone raises `eta_scale`.
+* **Masking is the engine's, not the policy's.** A returned action outside `0 .. n_actions - 1`,
+  or a preparation while `chain_on` is False, is refused rather than clipped. A model that
+  proposes an illegal action has told us something, and clipping it to a legal one would record
+  that as a choice it did not make.
+
+### 7.1 The equivalence check, which needs no model at all
+
+Every engine version in this lineage carries one (`docs/G2_SPEC.md`, `docs/ARCHITECTURE.md`), and
+this one gets two — the second is the interesting one:
+
+1. `external_policy=None` reproduces the previous engine version bit-for-bit.
+2. **A policy that returns the network's own choice reproduces the same run bit-for-bit.** This is
+   the whole loop — hook, observation, action, modulator, statistics — exercised end to end, with
+   the model replaced by a stand-in whose answers are known. If the trajectories diverge, the hook
+   is wrong, and finding that out costs nothing rather than costing a run's worth of tokens.
+
+Step 2 of §6 — *"prove the loop"* — is this check, not a small model run. A model run proves the
+provider works; it cannot prove the hook is faithful, because with a model in the loop there is no
+trajectory to compare against.
+
+### 7.2 What this does not do
+
+The hook does not let a model be *part of an agent*. A1.1 is absolute: *"No LLM is a component of
+any agent."* The hook replaces the policy of a population in a frozen replay, in an arm that has
+no claim line and is stored in its own table. Nothing inherits from a reference run, no genome is
+written back, and `run` refuses `init_genomes` from a reference arm for the same reason it refuses
+it everywhere else in the G lineage.
