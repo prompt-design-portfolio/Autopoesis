@@ -76,11 +76,20 @@ run with `store_snaps=False, init_store=None` must be bit-identical to the unpat
 that is checked the same way `engine_drift_selftest` already checks the `3d7b228 → HEAD` drift, by
 running both engines at one seed across a mapping remap and comparing every shared log field.
 
-> **Measured** *(filled from the proof run; see `civitas_g.selftests.store_patch_selftest`)*
+> **Measured** — `civitas_g.selftests.store_patch_selftest`, at seed 0 over 800-step phases so the
+> run crosses a mapping remap. The patch is applied to a temporary copy, so the working tree stays
+> byte-identical while G2-D1 is open.
 >
-> * default off: **REPRODUCTION_PROOF_1**
-> * capture on: **REPRODUCTION_PROOF_2**
-> * injection: **REPRODUCTION_PROOF_3**
+> | claim | result |
+> |---|---|
+> | both flags off | **32 log rows, 133 shared fields, zero differing, no log fields added, same `final_mapping`** |
+> | capture on | **zero differing fields**; one store snapshot at `t = 1500`, `pi = (1, 3, 0, 2, 4)`, density **0.129167** |
+> | injection | a world at a different seed reads density **0.152488** with the record against **0.025926** without |
+>
+> The "without" figure is not zero because that probe writes its own marks over its 50 steps; the
+> difference between the two is the injected record. A probe that had been forced to zero would
+> have been a weaker check, not a stronger one — it would not have shown the injected store
+> surviving alongside new writes.
 
 `analysis_v3_13.py` is **not** touched. Civitas runs the assay itself, calling `sim_v3_13.run`
 directly with `init_store`, `init_genomes`, `frozen=True` and `force_mapping` — so `frozen_replay`

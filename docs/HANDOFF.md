@@ -110,8 +110,9 @@ periodically, which kills the server mid-run.
 | G4 | a world that hardens | not started |
 | G5 | frozen-LLM reference arm | not started |
 
-174 G tests green on both backends; ruff clean; `nbcheck` green on all eight notebooks; eleven
-available self-tests green. The M1–M13 suite still passes untouched (778 passed, 4 skipped, both
+174 G tests green on both backends; ruff clean; `nbcheck` green on all eight notebooks; fifteen
+available self-tests green — the four added at G2 are `store_round_trip`, `scrambled_load`,
+`assay_preconditions` and `store_patch`. The M1–M13 suite still passes untouched (778 passed, 4 skipped, both
 backends), so the two lineages coexist without either disturbing the other — `civitas_g` imports
 nothing from `civitas/` except the kept dialect seam in `persistence/types.py`.
 
