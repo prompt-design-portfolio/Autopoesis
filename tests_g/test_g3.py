@@ -63,9 +63,23 @@ def test_there_are_four_arms_and_fresh_store_is_the_baseline():
     assert B_ARMS[0] == "fresh store"
 
 
-def test_fresh_store_is_handed_nothing(record):
+def test_fresh_store_is_handed_a_hidden_store_not_nothing(record):
+    """A matched nuisance parameter. With `init_store=None` the world draws its own pi, so the
+    baseline would differ from the treatment in the LABEL PERMUTATION as well as in the marks, and
+    B's own writes would land in different channels from the inherited arms'. pi carries no
+    information about the world -- it is redrawn every era, which is what makes meaning
+    non-inheritable -- so holding it constant costs nothing and removes a difference that is not
+    the one being measured."""
     store, extra = store_for_arm(record, "fresh store")
-    assert store is None and extra == {}
+    assert extra == {}
+    assert not store["marks"].any(), "the baseline must carry no marks"
+    assert store["pi"] == record.pi, "the baseline must carry the same pi as the treatment"
+
+
+def test_every_arm_is_handed_the_same_pi(record):
+    """So a difference between arms is a difference in the MARKS and in nothing else."""
+    pis = {arm: store_for_arm(record, arm)[0]["pi"] for arm in B_ARMS}
+    assert len(set(pis.values())) == 1, pis
 
 
 def test_inherited_store_is_handed_the_record_unchanged(record):

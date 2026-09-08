@@ -161,7 +161,14 @@ def store_for_arm(record: Record, arm: str, *,
     disabled. Removing the store instead would change the world.
     """
     if arm == "fresh store":
-        return None, {}
+        # A HIDDEN store, not no store, and the difference is a matched nuisance parameter.
+        # With init_store=None the world draws its own pi, so the baseline would differ from the
+        # treatment in the LABEL PERMUTATION as well as in the marks -- and B's own writes would
+        # then land in different channels from the inherited arms'. pi carries no information
+        # about the world (it is redrawn every era; that is what makes meaning non-inheritable),
+        # so holding it constant costs nothing and removes a difference that is not the one being
+        # measured. The marks are zero either way: World.__init__ zeroes them.
+        return {"marks": np.zeros_like(record.marks), "pi": record.pi}, {}
     if arm == "inherited store":
         return {"marks": record.marks, "pi": record.pi}, {}
     if arm == "inherited scrambled":
