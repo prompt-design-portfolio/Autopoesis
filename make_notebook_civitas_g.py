@@ -12,7 +12,6 @@ is a real newline by the time the generator runs, which produces a notebook whos
 syntactically broken in a way JSON validity and notebook loading both miss. It shipped three times
 before nbcheck existed.
 """
-import json
 import pathlib
 
 from nbcheck import write_checked
