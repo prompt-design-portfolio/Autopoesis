@@ -146,7 +146,52 @@ asks for, and it is what the re-run is for.
 
 ### 4.2 The field-level diff
 
-*(pending — the five-arm campaign)*
+Five arms, one seed, 3000-step phases, **capture on**, against the reference pinned at G0.
+
+```
+precheck_v3_13 on postgresql: 182/182 fields matched  ->  DIFF = 0
+precheck_v3_13 on sqlite:     182/182 fields matched  ->  DIFF = 0
+backends agree: yes
+G0 hashes: 11/11 verified
+```
+
+**The G1 gate still holds against the changed engine.** That is the condition G2-D1's
+recommendation was made on, and it is the one that matters: an engine change that had perturbed
+anything would have shown up here as a field that no longer matched what the reference printed.
+
+Campaign wall clock 34.6 min, roughly twice G1's 17.3 — the engine was sharing the machine with
+the test suite for most of it. Nothing in the trajectory differs (§4.1), only the wall clock.
+
+The self-test line reads `0 pass, 0 fail` because the campaign was run with `skip_selftests=True`;
+they were run separately and are reported in §5 of `docs/HANDOFF.md`. Skipping them inside a gate
+run is a convenience for iterating and is exactly what B§6 forbids for a *reported* number — so it
+is said here rather than left to be noticed.
+
+### 4.3 The store, captured
+
+Ten artifacts per backend: five arms × the two era boundaries `era_snap_keep` retains.
+
+| arm | t = 5100 | t = 5800 |
+|---|---|---|
+| `memory_reset` | **0.000000** (+0/−0) | **0.000000** (+0/−0) |
+| `collective` | 0.520457 (+7089/−10898) | 0.502025 (+6692/−10658) |
+| `collective_scrambled` | 0.568142 (+9468/−10167) | 0.620052 (+11137/−10292) |
+| `no_plasticity` | 0.207755 (+2215/−4965) | 0.294155 (+3408/−6758) |
+| `collective_slow_labels` | 0.415394 (+4235/−10121) | 0.478617 (+7136/−9405) |
+
+Three things worth reading off this table:
+
+* **`memory_reset` captured an empty store**, which is the arm behaving as B§4 says it must: the
+  read channels exist and are zero, and nothing is written. A non-zero density there would have
+  meant the arm was not the control it claims to be.
+* **The densities agree with what the reference printed** for the same arms — `precheck_v3_13.txt`
+  reports mark density 0.5074, 0.5664, 0.2420, 0.4365 as phase-2 second-half means, against these
+  era-boundary snapshots. They are different windows of the same quantity and they line up.
+* **Every content hash is identical across SQLite and PostgreSQL.** All ten. The store's
+  serialisation is byte-identical through both backends, which is the store-level form of the
+  claim D12 makes about rows.
+
+---
 
 ---
 

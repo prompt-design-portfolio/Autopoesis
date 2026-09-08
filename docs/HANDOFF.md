@@ -114,15 +114,16 @@ periodically, which kills the server mid-run.
 |---|---|---|
 | **G0** | audit and removal (B§1) | **audit delivered** (`docs/G0_G1.md`): the removal list against the tree, the reference hashes, nine findings. **The removal itself is not carried out.** |
 | **G1** | reproduction diff = 0 | **MET.** `precheck_v3_13.txt` reproduced **182/182 fields on SQLite and on PostgreSQL**, backends agreeing, from rows recomputed out of the database. `docs/G1_WRITEUP.md` |
-| **G2** | the record as the artifact store; Gate R, stale-mark lines, frozen assay reproduce through the store | **spec delivered** (`docs/G2_SPEC.md`); the store layer is **built and green**; the assay is **blocked on G2-D1** — see below |
+| **G2** | the record as the artifact store; Gate R, stale-mark lines, frozen assay reproduce through the store | **MET.** G2-D1 ruled and the engine change applied; the reproduction re-run against it gives **182/182 on both backends**, and the same arm's rows are **byte-identical** to the G1 run at full reference length. A2.1's twelve cells run for the first time; `assay_selftest` is built. `docs/G2_WRITEUP.md` |
 | G3 | the store outlives the run | not started |
 | G4 | a world that hardens | not started |
 | G5 | frozen-LLM reference arm | not started |
 
 191 G tests green on both backends (176 in one 8m18s run plus the 15 notebook tests added
 after it started); ruff clean; `nbcheck` green on all nine notebooks; fifteen
-available self-tests green — the four added at G2 are `store_round_trip`, `scrambled_load`,
-`assay_preconditions` and `store_patch`. The M1–M13 suite still passes untouched (778 passed, 4 skipped, both
+available self-tests green, with **no named gaps left at G1 or G2** — `assay_selftest` was the last
+one and it is now a measurement. The five added at G2 are `store_round_trip`, `scrambled_load`,
+`assay_preconditions`, `assay_selftest` and `engine_store`. The M1–M13 suite still passes untouched (778 passed, 4 skipped, both
 backends), so the two lineages coexist without either disturbing the other — `civitas_g` imports
 nothing from `civitas/` except the kept dialect seam in `persistence/types.py`.
 
@@ -145,13 +146,12 @@ by A1.1: the agents were deterministic policies, not learners, and two domains i
 
 ## What remains
 
-1. **Rule on G2-D1: apply the engine patch?** This is the blocking decision and everything else in
-   G2 and G3 waits behind it. `run()` neither returns the store nor accepts one, so
-   `frozen_replay` has **never seen a store** — A2.1's `store visible / hidden / label-permuted`
-   arms have never been runnable, and G3's "population B born into A's record" is blocked by the
-   same fact. The patch is written, applies cleanly, and is **measured** trajectory-neutral;
-   it is deliberately **not applied**. `docs/patches/g2-store-capture-and-injection.diff`,
-   `docs/G2_SPEC.md` §2 and §5.
+1. **Agree the G3 spec.** A3: no milestone starts until the previous gate is met and the next spec
+   is agreed. G2's gate is met, and the engine can now hand a record to a population that did not
+   write it — which is exactly what B§5.2 needs. Two things G3 will need that do not exist:
+   `b_founders_carry_no_H` (the engine refuses `init_genomes` at G1 and must allow it for
+   population B while proving nothing learned crossed), and a ruling on era-clock alignment
+   between A and B, which B§5.2 flags as a DECISION with a pre-registered reading attached.
 2. **Carry out G0's removal.** `docs/G0_G1.md` §1 lists every path and line. One judgement call is
    already made and should be honoured: the four leak-check tests in `tests/test_domains.py` are
    the only executable statement of the §47 rule B§1 *keeps*, so they are re-homed to the vector
