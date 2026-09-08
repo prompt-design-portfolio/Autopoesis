@@ -85,12 +85,18 @@ CODE_RUN = r'''# MODE picks the stage.  All stages share ONE checkpoint and each
 #   "acceptance"  fixed / scrambled / plastic (W2) x seeds 0-1, full.      ~60-75 min
 #   "grid"        continues: adds `random policy` and `fixed + B (ceiling)`
 #                 for seeds 0-1, and all five arms for seed 2.  Nine runs.  ~75-90 min
-MODE = "acceptance"
+MODE = "grid"
 
 CKPT = "results_v3_13.pkl"
 CORE = ["plastic", "plastic + record", "plastic + record (slow)"]
 ALL  = list(A.VARIANTS)
-REFRESH = []
+# REFRESH: the three core arms at seeds 0-1 MUST be re-run.  The acceptance checkpoint was
+# written before the newborn counters, the matched-null tables and the store-in-snapshot existed,
+# and none is derivable from the log -- they are accumulated inside the sim.  The corrected
+# store_gain probe also only applies at run time.  Everything else (noise record, fixed + record,
+# seed 2) runs fresh and carries the new fields.
+REFRESH = [(a, s_) for a in ["plastic", "plastic + record", "plastic + record (slow)"]
+           for s_ in (0, 1)]
 
 if MODE == "quick":
     SEEDS, PHASE_STEPS, ARMS, OVERRIDES = [0], 1500, CORE, dict(prep_every=300, recipe_every=500)
@@ -101,6 +107,8 @@ elif MODE == "acceptance":
     # controls and join at the grid stage.
     SEEDS, PHASE_STEPS, ARMS, OVERRIDES = [0, 1], 8000, CORE, {}
 elif MODE == "grid":
+    # all five arms x seeds 0-2.  `plastic + noise` and `fixed + record` are the controls the
+    # pre-registered reading needs at the matched-null ratio.
     SEEDS, PHASE_STEPS, ARMS, OVERRIDES = [0, 1, 2], 8000, ALL, {}
 else:
     raise SystemExit(f"MODE must be quick / acceptance / grid, not {MODE!r}")

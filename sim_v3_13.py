@@ -129,6 +129,10 @@ class Config:
                                   # record is evolved, not wired.  May go negative -- "do the
                                   # opposite of the mark" is a coherent policy and the right one
                                   # in `noise`.
+    record_hidden: bool = False   # the store is live and written to, but the READ channels are
+                                  # zeroed.  The assay's "hidden" cell: marks exist, nothing can
+                                  # be read from them.  Distinct from sym_gain_lock, which zeroes
+                                  # the gene; this zeroes the input.
     sym_gain_lock: bool = False   # force sym_gain = 0 for every agent and every child.  This is
                                   # the NEWBORN CONTROL: the store stays live -- same mark density,
                                   # same cell state, same decay -- and only the READING is
@@ -752,21 +756,28 @@ def standing_variation(agents, cfg, n_sample=400, thresholds=(1, 5, 20)):
     return dict(n_triples=len(c), n_valid=len(valid), held=held, n_above=above, n=n)
 
 
-def _obs_with_mark(ftype, label, sign):
+def _obs_with_mark(ftype, label, sign, gain=1.0):
     """A synthetic observation: food type `ftype` underfoot, one mark present at `label` with
-    `sign`, nothing else.  No behaviour, no history."""
+    `sign`, nothing else.  No behaviour, no history.
+
+    THE MARK IS SCALED BY `gain`, and the caller passes the agent's OWN sym_gain.  In the real
+    observation the read channel is `a.sym_gain * marks[...]`, and sym_gain is frequently NEGATIVE
+    (mean -0.085 in the v3.13 acceptance's record arm).  Injecting an unscaled +1 therefore fed
+    the network an input of the WRONG SIGN and of a magnitude no agent ever sees, so the probe was
+    measuring the response to a stimulus that does not occur.
+    """
     obs = np.zeros(N_IN)
     obs[HERE + ftype] = 1.0
     obs[ENERGY] = 0.5
     if label is not None:
-        obs[READ + label] = float(sign)
+        obs[READ + label] = float(sign) * float(gain)
     return obs
 
 
 def read_pref(a, cfg, ftype, label, sign, k, learned=True):
     """Food type `ftype` underfoot and a mark of `sign` at `label`: how much does this agent want
     preparation `k`?  The READING side of the binding, within-agent."""
-    obs = _obs_with_mark(ftype, label, sign)
+    obs = _obs_with_mark(ftype, label, sign, gain=a.sym_gain)
     logits = _forward(a, cfg, obs, learned)
     j = PREP0 + k
     return float(logits[j] - np.delete(logits, j).max())
@@ -921,7 +932,7 @@ def resolve_action(a, action, world, cfg, rng, t=0):
 # the run
 # --------------------------------------------------------------------------
 
-def run(cfg, verbose=True, init_genomes=None, phases=None):
+def run(cfg, verbose=True, init_genomes=None, phases=None, init_marks=None, init_pi=None):
     """phases: a list of {"n_steps": int, "chain": bool} run back to back on ONE population.
     The agents list, their H, their eligibility traces and the world are all carried across a
     phase boundary untouched -- only cfg.chain flips.  phases=None runs a single phase of
@@ -939,6 +950,10 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
     g, v = cfg.grid, cfg.view
     win = 2 * v + 1
     world = World(cfg, rng)
+    if init_marks is not None:
+        world.marks = np.asarray(init_marks, dtype=float).copy()
+    if init_pi is not None:
+        world.pi = tuple(int(x) for x in init_pi)     # a FRESH, INDEPENDENT pi for the assay
     world.chain_on = schedule[0][1]
     for _ in range(100):
         world.step(-1)
@@ -962,6 +977,16 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
              fp_pos_n=0, fp_pos_ok=0, fp_none_n=0, fp_none_ok=0, foll_n=0, foll_ok=0,
              follg_n=0, follg_ok=0, follb_n=0, follb_ok=0,
              follgf_n=0, follgf_ok=0, follbf_n=0, follbf_ok=0)
+    # THE MATCHED NULL.  (1-hit)/(K-1) assumes wrong choices are UNIFORM.  They are not: a sorted
+    # genome concentrates them, and in the slow arm it concentrates them on exactly the
+    # preparation a stale mark endorses -- so the old null scores a confound as reading.  The
+    # matched null is, for the same endorsed preparation k' on the same food type, the rate at
+    # which this arm chooses k' when NO mark is present.  Accumulated as two tables and combined
+    # at read time, so the null is per arm and per seed.
+    NOMARK = np.zeros((N_TYPES, N_PREPS))     # choices with no mark present
+    NOMARK_F = np.zeros((N_TYPES, N_PREPS))   # ... first-ever preparations only
+    STALE_TK = np.zeros((N_TYPES, N_PREPS))   # stale events, keyed by (type, endorsed k')
+    STALE_TK_F = np.zeros((N_TYPES, N_PREPS))
     # FOUNDER-FREE mirror.  Injected agents are fresh random genomes; their own events dilute
     # every event-weighted metric toward chance, and the dilution is heaviest in exactly the arms
     # that need injecting -- so a non-learning arm reads as MORE random the worse it does.  WF
@@ -1008,7 +1033,12 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 samp = agents if len(agents) <= cfg.era_snap_max else [
                     agents[i] for i in rng.choice(len(agents), cfg.era_snap_max, replace=False)]
                 era_snaps.append(dict(t=t, mapping=prev_mapping, n_pop=len(agents),
-                                      genomes=snapshot(samp)))
+                                      genomes=snapshot(samp),
+                                      # the STORE as it stood at the boundary.  The frozen record
+                                      # assay replays from it, so the marks must travel with the
+                                      # genomes -- a fresh World starts with an empty store, and
+                                      # replaying into one would test nothing.
+                                      marks=world.marks.copy(), pi=tuple(world.pi)))
                 del era_snaps[:-cfg.era_snap_keep]
             prev_mapping = tuple(int(x) for x in world.mapping)
             for a in agents:
@@ -1041,7 +1071,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             chans = [p[sl] for p in pF] + [pO[sl], pFood[sl]]
             # the K read channels: the marks under this agent, for the food type under it, scaled
             # by its own heritable gain.  No food underfoot -> zeros.  No record -> zeros.
-            if cfg.record != "none" and ft_here_pre >= 0:
+            if cfg.record != "none" and ft_here_pre >= 0 and not cfg.record_hidden:
                 read = a.sym_gain * world.marks[ft_here_pre, :, y, x]
             else:
                 read = np.zeros(N_PREPS)
@@ -1128,6 +1158,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                             # demonstrably reading the mark rather than being right for its own
                             # reasons.  1/K is still the null.
                             W["follb_n"] += 1; W["follb_ok"] += agrees
+                            STALE_TK[ft, endorsed] += 1
                             if a.attempts == 1:
                                 # (ii-newborn): the SAME stale-mark ratio over FIRST-EVER
                                 # preparations only.  The agent has learned nothing and written
@@ -1136,10 +1167,14 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                                 # SEPARATE from (ii), which pools over a life and so mixes
                                 # transmission with an agent's own within-life binding.
                                 W["follbf_n"] += 1; W["follbf_ok"] += agrees
+                                STALE_TK_F[ft, endorsed] += 1
                         if a.attempts == 1:
                             W["fp_pos_n"] += 1; W["fp_pos_ok"] += ok
-                    elif a.attempts == 1:
-                        W["fp_none_n"] += 1; W["fp_none_ok"] += ok
+                    else:
+                        NOMARK[ft, info["prep"]] += 1
+                        if a.attempts == 1:
+                            NOMARK_F[ft, info["prep"]] += 1
+                            W["fp_none_n"] += 1; W["fp_none_ok"] += ok
                 world.write_mark(ft, info["prep"], bool(ok), y, x, cfg)   # AUTOMATIC, costless
                 # NEWBORN preparations-to-first-correct.  A newborn has written nothing, so every
                 # mark it reads was left by someone else: this is the TRANSMISSION line, and it is
@@ -1318,6 +1353,8 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
                 n_follb=W["follb_n"], n_follb_ok=W["follb_ok"],
                 n_follgf=W["follgf_n"], n_follgf_ok=W["follgf_ok"],
                 n_follbf=W["follbf_n"], n_follbf_ok=W["follbf_ok"],
+                nomark=NOMARK.copy(), nomark_f=NOMARK_F.copy(),
+                stale_tk=STALE_TK.copy(), stale_tk_f=STALE_TK_F.copy(),
                 n_remaps=world.n_remaps, pi_every=max(1, int(round(cfg.label_every / max(1, cfg.prep_every))) if cfg.label_every else 1),
                 f_n_nfc=WF["nfc_n"], f_nfc_sum=WF["nfc_sum"], f_n_nfc_cens=WF["nfc_cens"],
                 mi_counts=world.mi.copy(), pi=tuple(world.pi),
@@ -1344,6 +1381,7 @@ def run(cfg, verbose=True, init_genomes=None, phases=None):
             ))
             ATT[:] = 0; ATT_R[:] = 0; MEALS[:] = 0; ATT_F[:] = 0; ATT_R_F[:] = 0
             world.mi[:] = 0.0        # per-window counts; the reader pools per era or overall
+            NOMARK[:] = 0.0; NOMARK_F[:] = 0.0; STALE_TK[:] = 0.0; STALE_TK_F[:] = 0.0
             for k in W:
                 W[k] = 0 if isinstance(W[k], int) else 0.0
             for k in WF:

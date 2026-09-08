@@ -763,11 +763,12 @@ def v313_precheck(results, control=None):
     print("\n" + "=" * 78)
     print("sym_gain -- the heritable read gain, starting at 0.05 and free to go negative")
     print("=" * 78)
-    print(f"  {'arm':<24}{'phase 1':>10}{'phase 2':>10}{'change':>9}{'frac > 0':>10}")
+    print(f"  {'arm / seed':<28}{'phase 1':>10}{'phase 2':>10}{'change':>9}{'frac > 0':>10}")
     for n in names:
-        p1 = np.nanmean([half(phase_half(r, 0), "sym_gain") for r in results[n]])
-        p2 = g(n, "sym_gain")
-        print(f"  {n:<24}{p1:>10.4f}{p2:>10.4f}{p2 - p1:>+9.4f}{g(n, 'sym_gain_pos'):>10.3f}")
+        for r in results[n]:
+            p1 = half(phase_half(r, 0), "sym_gain"); p2 = half(P2(r), "sym_gain")
+            print(f"  {n + ' s' + str(r['cfg']['seed']):<28}{p1:>10.4f}{p2:>10.4f}"
+                  f"{p2 - p1:>+9.4f}{half(P2(r), 'sym_gain_pos'):>10.3f}")
     base = next((k for k in names if k == "plastic"), None)
     if base:
         b = abs(g(base, "sym_gain"))
@@ -792,10 +793,15 @@ def v313_precheck(results, control=None):
     print("  learned vs innate is the BINDING instrument: innate ~ 0 says the genome cannot read")
     print("  the record (which redrawing pi guarantees); learned > 0 says this agent bound it")
     print("  inside its own life.")
-    print(f"  {'arm':<24}{'learned':>10}{'innate':>10}{'learned - innate':>18}")
+    print("  THE PROBE IS NOW SCALED BY EACH AGENT'S OWN sym_gain.  Unscaled, it injected +1 on")
+    print("  the read channel while mean sym_gain was NEGATIVE -- an input of the wrong sign and")
+    print("  of a magnitude no agent ever sees.  Re-measured on the acceptance genomes, innate")
+    print("  moved from -0.2016 to -0.0103: the -0.19 WAS the sign.")
+    print(f"  {'arm / seed':<28}{'learned':>10}{'innate':>10}{'learned - innate':>18}")
     for n in names:
-        le, i_ = g(n, "store_gain"), g(n, "store_gain_innate")
-        print(f"  {n:<24}{le:>10.4f}{i_:>10.4f}{le - i_:>+18.4f}")
+        for r in results[n]:
+            le, i_ = half(P2(r), "store_gain"), half(P2(r), "store_gain_innate")
+            print(f"  {n + ' s' + str(r['cfg']['seed']):<28}{le:>10.4f}{i_:>10.4f}{le - i_:>+18.4f}")
 
     print("\n" + "=" * 78)
     print("TRANSMISSION -- two conditioned lines, both on behaviour the agent could not have")
@@ -825,42 +831,48 @@ def v313_precheck(results, control=None):
     print("       correct preparation picks it and so never agrees with a stale mark, whatever it")
     print("       reads.  The null is the chance of landing on the endorsed-but-wrong preparation")
     print("       GIVEN you did not pick the correct one: (1 - hit) / (K - 1).")
-    print(f"  {'arm':<26}{'all':>8}{'endorse=ok':>12}{'STALE':>8}{'null':>8}{'ratio':>8}{'n stale':>9}")
+    print("  PER SEED.  The matched null is the arm's own no-mark choice rate for the SAME")
+    print("  endorsed preparation on the SAME food type; the old (1-hit)/(K-1) null is printed")
+    print("  beside it for this build only.  It assumes wrong choices are uniform, and a sorted")
+    print("  genome concentrates them -- in the slow arm on exactly what a stale mark endorses.")
+    print(f"  {'arm / seed':<28}{'stale':>8}{'matched':>9}{'ratio':>7}{'| old null':>11}{'old r':>7}{'n':>8}")
     for n in names:
-        f_, nn = follow_rate(P2(results[n][0]))
-        gg, ng, bb, nb = follow_split(P2(results[n][0]))
-        h = prep_hit(P2(results[n][0]), True)
-        null = (1.0 - h) / (N_PREPS - 1) if np.isfinite(h) else np.nan
-        print(f"  {n:<26}{f_:>8.3f}{gg:>12.3f}{bb:>8.3f}{null:>8.3f}"
-              f"{(bb / null if null else np.nan):>8.2f}{nb:>9.0f}")
-    print("       ratio > 1 = FOLLOWS a mark it should not; ratio < 1 = AVOIDS it.  Either way")
-    print("       the label was read: you cannot avoid what you cannot see.  The noise arm is the")
-    print("       reference for how far from 1 an unread channel sits.")
+        for i, r in enumerate(results[n]):
+            L = P2(r)
+            obs, mn, ra, nn = stale_ratio(L)
+            h = prep_hit(L, True)
+            oldn = (1.0 - h) / (N_PREPS - 1) if np.isfinite(h) else np.nan
+            print(f"  {n + ' s' + str(r['cfg']['seed']):<28}{obs:>8.3f}{mn:>9.3f}{ra:>7.2f}"
+                  f"{oldn:>11.3f}{(obs / oldn if oldn else np.nan):>7.2f}{nn:>8.0f}")
+    print("       ratio > 1 = FOLLOWS a mark it should not; < 1 = AVOIDS it.  Either way the")
+    print("       label was read: you cannot avoid what you cannot see.")
+
     print("\n  (ii-newborn) THE TRANSMISSION LINE -- the same stale-mark ratio over FIRST-EVER")
     print("  preparations only.  (ii) pools over a life and so mixes transmission with an agent's")
     print("  own within-life binding; a first-ever preparation cannot -- it has learned nothing,")
     print("  written nothing, and by no-self-echo the mark cannot be its own.")
-    print(f"  {'arm':<26}{'stale':>9}{'null':>8}{'ratio':>8}{'n':>9}")
+    print(f"  {'arm / seed':<28}{'stale':>8}{'matched':>9}{'ratio':>7}{'n':>8}")
     missing = []
     for n in names:
-        L = P2(results[n][0])
-        _, _, bb, nb = follow_split_newborn(L)
-        if not has(L, "n_follbf"):
-            missing.append(n); continue
-        h = prep_hit(L, True)
-        null = (1.0 - h) / (N_PREPS - 1) if np.isfinite(h) else np.nan
-        print(f"  {n:<26}{bb:>9.3f}{null:>8.3f}"
-              f"{(bb / null if null else np.nan):>8.2f}{nb:>9.0f}")
+        for i, r in enumerate(results[n]):
+            L = P2(r)
+            if not has(L, "n_follbf"):
+                if n not in missing:
+                    missing.append(n)
+                continue
+            obs, mn, ra, nn = stale_ratio(L, first=True)
+            print(f"  {n + ' s' + str(r['cfg']['seed']):<28}{obs:>8.3f}{mn:>9.3f}{ra:>7.2f}{nn:>8.0f}")
     if missing:
         print(f"  NOT AVAILABLE for {missing}: this checkpoint predates the counter.  It is")
         print("  accumulated inside the sim at the preparation event and is not derivable from")
         print("  the log -- the same class of thing as final_mapping in v3.11 and sr_w in v3.12.")
         print("  Re-run those arms with the current sim_v3_13.py to get the transmission line.")
     print("\n  preparations-to-first-correct -- CORROBORATING ONLY, over agents that reached 5")
-    print(f"  {'arm':<32}{'mean preps':>12}{'censored':>10}{'n':>8}")
+    print(f"  {'arm / seed':<32}{'mean preps':>12}{'censored':>10}{'n':>8}")
     for n in names:
-        m, c, nn = nfc(P2(results[n][0]), True)
-        print(f"  {n:<32}{m:>12.3f}{c:>10.3f}{nn:>8d}")
+        for r in results[n]:
+            m, c, nn = nfc(P2(r), True)
+            print(f"  {n + ' s' + str(r['cfg']['seed']):<32}{m:>12.3f}{c:>10.3f}{nn:>8d}")
     if control:
         for n, r in control.items():
             m, c, nn = nfc(P2(r), True)
@@ -869,6 +881,37 @@ def v313_precheck(results, control=None):
             print(f"  {n + '  [sym_gain = 0]':<32}{m:>12.3f}{c:>10.3f}{nn:>8d}")
             print(f"    its (i) P(ok|mark) {pos:.3f} vs P(ok|none) {none:.3f}  gap {pos-none:+.3f}"
                   f"   its (ii) follow {f_:.3f}")
+
+    print("\n" + "=" * 78)
+    print("FROZEN RECORD ASSAY -- the attribution row for transmission")
+    print("=" * 78)
+    print("  Era-boundary snapshot; population frozen exactly as row 3b; the store carried in as")
+    print("  it stood; a FRESH INDEPENDENT pi, so the binding must be rebuilt inside the window.")
+    print("  Stale-mark ratio (matched null) over EXPERIENCE, in 50-step bins.")
+    print("  REQUIRED: rising in visible/on; FLAT in hidden, permuted and visible/off.")
+    print("  PRE-REGISTERED: visible/off rising means shared genome + shared context, NOT reading.")
+    for n in names:
+        for r in results[n]:
+            if not r.get("era_snaps") or "marks" not in r["era_snaps"][-1]:
+                print(f"  {n} s{r['cfg']['seed']}: no store in the snapshot -- checkpoint predates it")
+                continue
+            try:
+                a = frozen_record_assay(r)
+            except Exception as exc:
+                print(f"  {n} s{r['cfg']['seed']}: assay failed: {type(exc).__name__}: {exc}")
+                continue
+            print(f"  {n} s{r['cfg']['seed']}")
+            for cell in ASSAY_CELLS:
+                b = [x[2] for x in a[cell]]
+                ns = [int(x[3]) for x in a[cell]]
+                tr = (b[-1] - b[0]) if len(b) >= 2 and np.isfinite(b[0]) and np.isfinite(b[-1]) else np.nan
+                print(f"    {cell:<16}{np.round(b,2).tolist()}   first->last {tr:+.2f}")
+                print(f"    {'':<16}n {ns}")
+    print("  READ n ALONGSIDE THE TREND.  A frozen population eats the board down and never")
+    print("  regrows it, so stale events per bin FALL across the window -- measured 353 -> 91 in")
+    print("  visible/on at pop 300.  The last bins are the thinnest (SE ~0.10 on a ratio near 1),")
+    print("  and first->last rests on the noisiest one.  A trend worth calling should be visible")
+    print("  in the shape of the whole series, not in its endpoints.")
 
     print("\n" + "=" * 78)
     print("POPULATION and the store")
@@ -888,6 +931,118 @@ def _bins(run_, k):
     lo, hi = L[0]["t"], L[-1]["t"]
     step = max(1, (hi - lo) // k)
     return [[r for r in L if b < r["t"] <= b + step] for b in range(lo - 1, hi, step)][:k]
+
+
+def matched_null(L, first=False):
+    """THE MATCHED NULL for the stale-mark ratio.
+
+    `(1 - hit)/(K - 1)` assumes an agent's wrong choices are UNIFORM over the other preparations.
+    They are not.  A sorted genome concentrates its wrong choices, and in the slow arm it
+    concentrates them on exactly the preparation a stale mark endorses -- so the old null scores a
+    confound as reading.
+
+    The matched null is: for the same endorsed preparation k' on the same food type, the rate at
+    which THIS ARM chooses k' when NO mark is present.  Built from two tables accumulated in the
+    sim -- the no-mark choice counts per (type, preparation), and the stale events keyed by
+    (type, endorsed k') -- and combined here, so the null is per arm and per seed and carries the
+    arm's own choice concentration.
+    """
+    nm, st = ("nomark_f", "stale_tk_f") if first else ("nomark", "stale_tk")
+    if not has(L, nm) or not has(L, st):
+        return np.nan
+    N = np.sum([np.asarray(r[nm]) for r in L], axis=0)
+    S = np.sum([np.asarray(r[st]) for r in L], axis=0)
+    tot = S.sum()
+    if tot <= 0:
+        return np.nan
+    row = N.sum(axis=1, keepdims=True)
+    P = np.divide(N, np.maximum(row, 1.0), out=np.zeros_like(N), where=row > 0)
+    return float((S * P).sum() / tot)
+
+
+def stale_ratio(L, first=False):
+    """(observed stale-follow rate, matched null, ratio, n).  ratio > 1 = follows a mark it should
+    not; < 1 = avoids one.  Either way the label was read."""
+    num, den = ("n_follbf_ok", "n_follbf") if first else ("n_follb_ok", "n_follb")
+    obs = rate(L, num, den)
+    mn = matched_null(L, first)
+    n = float(np.sum([r.get(den, 0) for r in L]))
+    return obs, mn, (obs / mn if (mn and np.isfinite(mn) and mn > 0) else np.nan), n
+
+
+ASSAY_CELLS = ("hidden / on", "visible / on", "permuted / on", "visible / off")
+
+
+def frozen_record_assay(run_, steps=300, snap=-1, bin_=50, seed_offset=9000):
+    """THE ATTRIBUTION ROW for transmission.
+
+    Era-boundary snapshot; population frozen exactly as row 3b (births, deaths and injection off,
+    energy pinned by identity); the STORE carried in as it stood; a FRESH INDEPENDENT pi, so every
+    mark already there endorses a preparation unrelated to what it was written about, and the
+    binding has to be rebuilt inside the window.  Four cells, differing only in what the agent can
+    see and whether it can learn:
+
+        hidden / on      marks exist and are written, the read channels are zeroed
+        visible / on     the record, as it is
+        permuted / on    marks present, their LABEL AXIS permuted -- presence kept, content gone
+        visible / off    the record, with plasticity off
+
+    The stale-mark ratio (matched null) is read over EXPERIENCE, in 50-step bins.  Required for a
+    transmission claim: RISING in visible/on; FLAT in hidden, permuted and visible/off.
+
+    PRE-REGISTERED: visible/off RISING means shared genome plus shared context, not reading -- the
+    agents would be converging on the same choices without any plasticity to do it with.
+    """
+    from sim_v3_13 import Config, run as _run, N_PREPS as K
+    sn = run_["era_snaps"][snap]
+    fm = tuple(sn["mapping"])
+    rng = np.random.default_rng(seed_offset)
+    fresh_pi = tuple(int(x) for x in rng.permutation(K))
+    spec = {"hidden / on":   dict(record_hidden=True,  eta_scale=1.0, perm=False),
+            "visible / on":  dict(record_hidden=False, eta_scale=1.0, perm=False),
+            "permuted / on": dict(record_hidden=False, eta_scale=1.0, perm=True),
+            "visible / off": dict(record_hidden=False, eta_scale=0.0, perm=False)}
+    out = {}
+    for name in ASSAY_CELLS:
+        c = spec[name]
+        marks = np.asarray(sn["marks"]).copy()
+        if c["perm"]:
+            marks = marks[:, rng.permutation(K), :, :]
+        cfg = dict(run_["cfg"]); cfg.pop("seed", None); cfg.pop("n_steps", None)
+        cfg.update(frozen=True, force_mapping=fm, eta_scale=c["eta_scale"],
+                   record_hidden=c["record_hidden"], log_every=bin_)
+        rr = _run(Config(seed=seed_offset + int(run_["cfg"]["seed"]), **cfg), verbose=False,
+                  init_genomes=sn["genomes"], phases=[dict(n_steps=steps, chain=True)],
+                  init_marks=marks, init_pi=fresh_pi)
+        out[name] = [stale_ratio([w]) for w in rr["log"]]
+    return out
+
+
+def assay_selftest(seed=0, verbose=True):
+    """hidden/on and visible/off must not differ from each other in the FIRST bin.
+
+    Before any learning has happened, plasticity has changed nothing, so an agent that can see the
+    marks and an agent that cannot should behave the same -- UNLESS the genome itself responds to
+    the read channel, which redrawing pi is supposed to prevent.  A difference in the first bin is
+    therefore a finding about the genome, not a pass or a fail of the assay's plumbing.
+    """
+    from sim_v3_13 import Config, run as _run
+    kw = dict(WORLD); kw.update(mode="plastic", plastic_layers="W2", record="real")
+    src = _run(Config(seed=seed, **kw), verbose=False,
+               phases=[dict(n_steps=1500, chain=False), dict(n_steps=2100, chain=True)])
+    if not src.get("era_snaps") or "marks" not in src["era_snaps"][-1]:
+        print("  assay self-test: FAIL (no era snapshot carrying the store)")
+        return False
+    a = frozen_record_assay(src)
+    h0, v0 = a["hidden / on"][0][2], a["visible / off"][0][2]
+    d = abs(h0 - v0) if np.isfinite(h0) and np.isfinite(v0) else np.nan
+    ok = np.isfinite(d) and d <= 0.25
+    if verbose:
+        print(f"  first bin ratio -- hidden/on {h0:.3f}   visible/off {v0:.3f}   |diff| {d:.3f}")
+        print("  they must not differ: before learning, seeing the marks and not seeing them")
+        print("  should be the same, unless the GENOME responds to the read channel.")
+    print(f"  assay self-test: {'PASS' if ok else 'FAIL'}")
+    return bool(ok)
 
 
 def frozen_selftest(seed=0, verbose=True):
