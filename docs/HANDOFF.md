@@ -124,12 +124,12 @@ periodically, which kills the server mid-run.
 
 | milestone | gate | state |
 |---|---|---|
-| **G0** | audit and removal (B§1) | **audit delivered** (`docs/G0_G1.md`): the removal list against the tree, the reference hashes, nine findings. **The removal itself is not carried out.** |
+| **G0** | audit and removal (B§1) | **MET.** The audit is `docs/G0_G1.md`; the removal is carried out — the removed surface is in `civitas/legacy/`, its scripts in `scripts/legacy/`, `m4`–`m13` in `results/legacy/`, its tests deleted, and `civitas acceptance` and `civitas benchmark` retired. Moved rather than deleted because these modules produced the results B§1 keeps as history, and a result whose producing code is gone is the very gap this audit found for `precheck_v3_12.txt`. |
 | **G1** | reproduction diff = 0 | **MET.** `precheck_v3_13.txt` reproduced **182/182 fields on SQLite and on PostgreSQL**, backends agreeing, from rows recomputed out of the database. `docs/G1_WRITEUP.md` |
 | **G2** | the record as the artifact store; Gate R, stale-mark lines, frozen assay reproduce through the store | **MET.** G2-D1 ruled and the engine change applied; the reproduction re-run against it gives **182/182 on both backends**, and the same arm's rows are **byte-identical** to the G1 run at full reference length. A2.1's twelve cells run for the first time; `assay_selftest` is built. `docs/G2_WRITEUP.md` |
 | **G3** | the store outlives the run; population B born into population A's record | **spec delivered** (`docs/G3_SPEC.md`, two rulings made); the mechanism is **built** (`civitas_g/g3.py`) and `b_founders_carry_no_H` is **green**; pre-check running |
-| G4 | a world that hardens | not started |
-| G5 | frozen-LLM reference arm | not started |
+| G4 | a world that hardens, one mechanic per milestone | **spec delivered** (`docs/G4_SPEC.md`): what compounding means, three ways to falsify it, mechanic 1 (K raised) designed. Held until G3's gate is met — G4's number is a *difference from* G3's. |
+| G5 | reference arm: one frozen LLM against the same store | **spec delivered** (`docs/G5_SPEC.md`): the presentation, the prompt, three variants, cost, provider freezing. Reported, never claimed. |
 
 191 G tests green on both backends (176 in one 8m18s run plus the 15 notebook tests added
 after it started); ruff clean; `nbcheck` green on all nine notebooks; fifteen
