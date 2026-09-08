@@ -471,3 +471,27 @@ def test_the_assay_on_b_uses_the_FIRST_boundary():
     source = inspect.getsource(g3.assay_on_b)
     assert "stores[0]" in source
     assert "snap=0" in source
+
+
+def test_the_controls_must_agree_on_BOTH_statistics():
+    """Seed 0 misaligned is why. Its nfc controls agreed to 0.006 while its stale ratios sat 0.76
+    apart (1.87 against 1.11). Checking only nfc would have called that design coherent when one
+    of its two instruments was not measuring label information at all."""
+    from civitas_g.g3 import acceptance
+
+    # the misaligned seed-0 numbers: nfc controls agree, stale controls do not
+    nfc = {"fresh store": 1.686, "inherited store": 1.695,
+           "inherited scrambled": 1.677, "inherited gain-zero": 1.683}
+    ratio = {"fresh store": float("nan"), "inherited store": 1.42,
+             "inherited scrambled": 1.87, "inherited gain-zero": 1.11}
+    d = acceptance([_seed(nfc, ratio, aligned=True)])["per_seed"][0]
+    assert d["controls_agree_nfc"] is True
+    assert d["controls_agree_stale"] is False
+    assert d["controls_agree"] is False
+
+
+def test_the_aligned_seed_zero_numbers_agree_on_both():
+    from civitas_g.g3 import acceptance
+
+    d = acceptance([_seed(SEED0_NFC, SEED0_RATIO)])["per_seed"][0]
+    assert d["controls_agree_nfc"] and d["controls_agree_stale"]

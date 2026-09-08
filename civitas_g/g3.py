@@ -533,13 +533,25 @@ def acceptance(results: list[G3Result], *, alignment: str = "aligned") -> dict[s
         stale_content = treat.ratio - scram.ratio
         stale_reading = treat.ratio - gain0.ratio
 
-        scale = max(abs(content), abs(reading))
-        controls_agree = bool(np.isfinite(disagreement) and scale > 0
-                              and abs(disagreement) <= agree_within * scale)
+        # The two information-removing arms must agree on BOTH statistics, not just on nfc.
+        # Seed 0 misaligned is why: its nfc controls agreed to 0.006 while its stale ratios sat
+        # 0.76 apart (1.87 against 1.11). Checking only nfc would have called that design coherent
+        # when one of its two instruments was not measuring label information at all.
+        stale_disagreement = scram.ratio - gain0.ratio
+        nfc_scale = max(abs(content), abs(reading))
+        stale_scale = max(abs(stale_content), abs(stale_reading))
+        agrees_nfc = bool(np.isfinite(disagreement) and nfc_scale > 0
+                          and abs(disagreement) <= agree_within * nfc_scale)
+        agrees_stale = bool(np.isfinite(stale_disagreement) and stale_scale > 0
+                            and abs(stale_disagreement) <= agree_within * stale_scale)
+        controls_agree = agrees_nfc and agrees_stale
         per_seed[r.succession.seed] = {
             "content_vs_scrambled": content,
             "reading_vs_gain_zero": reading,
             "controls_disagreement": disagreement,
+            "controls_disagreement_stale": stale_disagreement,
+            "controls_agree_nfc": agrees_nfc,
+            "controls_agree_stale": agrees_stale,
             "total_vs_fresh": total,
             "stale_content": stale_content,
             "stale_reading": stale_reading,
