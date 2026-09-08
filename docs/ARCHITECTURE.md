@@ -251,3 +251,17 @@ what it claims.
    a restricted-subprocess fallback both exist behind `SandboxBackend`. The fallback's weaker
    guarantees are stated in the manifest so a result run under it is never mistaken for one run
    under isolation.
+
+---
+
+## 7. Running the tests
+
+```bash
+python -m pytest tests/ -q                    # SQLite only
+CIVITAS_TEST_POSTGRES_URL=postgresql+psycopg://user@host:5432/db \
+  python -m pytest tests/ -q                  # both backends
+```
+
+The PostgreSQL parametrisation is not optional in CI. Part B §6 forbids separate application logic
+for Colab, and the only way to know that holds is to run the same tests on both dialects — M2 found
+a concurrency race that SQLite could not expose (see `docs/milestones/M02.md`).
