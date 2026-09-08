@@ -181,20 +181,74 @@ def test_the_matched_null_is_not_one_over_k():
     assert matched_stale_null(0.6) != CHANCE
 
 
-def test_claim_lines_are_stated_against_fresh_store():
-    from civitas_g.g3 import BArmResult, G3Result
+def _fake_arm(name, ratio, nfc, hit):
+    from civitas_g.g3 import BArmResult
 
-    def arm(name, ratio, nfc, hit):
-        return BArmResult(arm=name, seed=0, aligned=True, stale=0.1, stale_n=100, null=0.1,
-                          ratio=ratio, nfc_mean=nfc, nfc_censored=0.0, nfc_n=50, prep_hit=hit,
-                          pop=300.0, store_sha256=None, store_density=None, sym_gain=0.0)
+    return BArmResult(arm=name, seed=0, aligned=True, stale=0.1, stale_n=100, null=0.1,
+                      ratio=ratio, nfc_mean=nfc, nfc_censored=0.0, nfc_n=50, prep_hit=hit,
+                      pop=300.0, store_sha256=None, store_density=None, sym_gain=0.0)
 
-    r = G3Result(succession=Succession(0, 100, 100, True), a_store_sha256="x",
-                 a_mapping=(0, 1, 2), a_pi=(0, 1, 2, 3, 4), b_mapping=(0, 1, 2),
-                 arms=[arm("fresh store", 1.0, 2.0, 0.30),
-                       arm("inherited store", 1.5, 1.6, 0.40)])
+
+def _fake_result(arms):
+    from civitas_g.g3 import G3Result
+
+    return G3Result(succession=Succession(0, 100, 100, True), a_store_sha256="x",
+                    a_mapping=(0, 1, 2), a_pi=(0, 1, 2, 3, 4), b_mapping=(0, 1, 2), arms=arms)
+
+
+def test_the_two_claim_lines_have_different_baselines_and_that_is_deliberate():
+    """B§5.2 says both go against `fresh store`, but `fresh store` has NO marks, so it has no
+    stale-mark events at all -- its ratio is undefined, not small. And the pre-check showed the
+    ratio's own null is not enough either: `inherited gain-zero` came out at 1.48 with sym_gain
+    pinned to exactly zero, so above 1 is reachable without reading anything."""
+    r = _fake_result([_fake_arm("fresh store", float("nan"), 2.0, 0.30),
+                      _fake_arm("inherited store", 1.8, 1.6, 0.40),
+                      _fake_arm("inherited gain-zero", 1.5, 1.9, 0.31)])
     lines = r.claim_lines()
     assert "fresh store" not in lines
-    assert lines["inherited store"]["stale_ratio_vs_fresh"] == pytest.approx(0.5)
     assert lines["inherited store"]["nfc_vs_fresh"] == pytest.approx(-0.4)
     assert lines["inherited store"]["prep_hit_vs_fresh"] == pytest.approx(0.10)
+    # the stale ratio is against the arm that has the same store and cannot read it
+    assert lines["inherited store"]["stale_ratio_vs_unreading"] == pytest.approx(0.3)
+    # and the unreading arm has no such line of its own
+    assert "stale_ratio_vs_unreading" not in lines["inherited gain-zero"]
+
+
+def test_a_nan_baseline_never_silently_becomes_a_number():
+    """`fresh store`'s ratio is nan. Subtracting it would give nan, and a reader could mistake a
+    failed comparison for an absent one."""
+    r = _fake_result([_fake_arm("fresh store", float("nan"), 2.0, 0.30),
+                      _fake_arm("inherited store", 1.8, 1.6, 0.40),
+                      _fake_arm("inherited gain-zero", 1.5, 1.9, 0.31)])
+    for lines in r.claim_lines().values():
+        for name, value in lines.items():
+            assert not np.isnan(value), f"{name} is nan"
+
+
+@pytest.mark.parametrize("gp,expect", [
+    ({"eras": 1, "sd": 0.0, "z": 0.0}, "NOT AVAILABLE"),
+    ({"eras": 5, "sd": 0.0, "z": 0.0}, "NOT AVAILABLE"),
+    ({"eras": 5, "sd": 0.1, "z": float("nan")}, "NOT AVAILABLE"),
+    ({"eras": 5, "sd": 0.1, "z": 1.2}, "PASS"),
+    ({"eras": 5, "sd": 0.1, "z": 2.5}, "GATE R FIRES"),
+])
+def test_a_degenerate_gate_r_is_not_a_pass(gp, expect):
+    """With one pi-epoch there is nothing to permute across: every permutation returns the same
+    pooled value, the null equals the observation, sd is exactly zero and z comes out 0.00.
+    Reporting that as PASS reports an absent measurement as a passed gate."""
+    from civitas_g.g3 import _gate_r_verdict
+
+    assert _gate_r_verdict(gp).startswith(expect)
+
+
+def test_the_claim_window_and_the_surviving_fraction_travel_with_the_result():
+    """A claim read over a window where almost none of A's record still stands is a claim about
+    decay. The number a reader needs to see that is on the row."""
+    from civitas_g.g3 import BArmResult
+
+    row = BArmResult(arm="x", seed=0, aligned=True, stale=0.1, stale_n=1, null=0.1, ratio=1.0,
+                     nfc_mean=1.0, nfc_censored=0.0, nfc_n=1, prep_hit=0.3, pop=1.0,
+                     store_sha256=None, store_density=None, sym_gain=0.0,
+                     claim_window=700, marks_surviving_at_window_end=0.996 ** 700)
+    assert row.claim_window == 700
+    assert row.marks_surviving_at_window_end == pytest.approx(0.0605, abs=1e-3)

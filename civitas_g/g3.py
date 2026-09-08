@@ -44,13 +44,29 @@ B_ARMS: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class Succession:
-    """One A -> B lineage: which A, which alignment, which seed."""
+    """One A -> B lineage: which A, which alignment, which seed.
+
+    `b_steps` and `claim_window` pull in opposite directions and both are needed.
+
+    * The **claim** must be read while A's record is still live. `mark_decay` 0.004 gives a
+      173-step half-life, so a window of one era (700 steps) already costs the record 94% of its
+      magnitude; anything longer dilutes B's first-ever preparations with ones made after the
+      inheritance has effectively gone.
+    * **Gate R** needs at least two pi-epochs to have anything to permute across, and B rotates pi
+      on its own clock -- so it needs a run several eras long.
+
+    So B runs long (`b_steps`) and the claim lines are read on an early window (`claim_window`),
+    with Gate R read over the whole run. Reading both on the same window would have meant choosing
+    which of the two to make meaningless.
+    """
 
     seed: int
     a_phase_steps: int
     b_steps: int
     aligned: bool
     scramble_seed: int = 0
+    #: The window the claim lines are read on. None means the whole run.
+    claim_window: int | None = None
 
     @property
     def alignment(self) -> str:
@@ -80,6 +96,10 @@ class BArmResult:
     store_sha256: str | None
     store_density: float | None
     sym_gain: float
+    #: The window the claim lines were read on, and the fraction of A's marks still standing at
+    #: its end. A claim read over a window where that fraction is ~0 is a claim about decay.
+    claim_window: int | None = None
+    marks_surviving_at_window_end: float = 1.0
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -105,23 +125,45 @@ class G3Result:
     # ---------------------------------------------------------------- the claim lines
 
     def claim_lines(self) -> dict[str, dict[str, float]]:
-        """Each arm against `fresh store`, on B's first-ever preparations only.
+        """Each arm against its right baseline, on B's first-ever preparations only.
 
-        Two lines, and they point in opposite directions on purpose: a store that helps should
-        RAISE the stale-mark ratio (B is following marks it would otherwise have ignored) and
-        LOWER preparations-to-first-correct (B gets there sooner). A store that helps on one and
-        not the other is reported as that, not averaged.
+        **The two lines have different baselines, and that is not a convenience.** B§5.2 says both
+        go "against `fresh store`", but `fresh store` has no marks, so it has no stale-mark events
+        at all -- its ratio is not a small number, it is undefined. Subtracting it would produce
+        `nan` and a reader could mistake that for a failed comparison rather than an absent one.
+
+        So:
+
+        * **preparations-to-first-correct** and **hit** are against `fresh store`, as specified.
+        * the **stale-mark ratio** is against `inherited gain-zero` -- the arm handed the SAME
+          store that cannot read it. Its own null (ratio = 1) is not enough, and the pre-check
+          showed why: gain-zero came out at 1.48 with `sym_gain` pinned to exactly zero, so a
+          ratio above 1 is reachable without reading anything. The population shares innate action
+          biases, marks accumulate where the population prepares, and an agent that revisits such
+          a cell "agrees" with a mark it never read. `(1 - hit) / (K - 1)` does not capture that.
+          The unconfounded quantity is the difference between an arm that can read the store and
+          one that cannot.
+
+        The two lines also point in opposite directions on purpose: a store that helps should RAISE
+        the stale-mark ratio and LOWER preparations-to-first-correct. An arm that moves one and not
+        the other is reported as that, not averaged.
         """
-        base = self.arm("fresh store")
+        fresh = self.arm("fresh store")
+        try:
+            unreading = self.arm("inherited gain-zero")
+        except KeyError:
+            unreading = None
         out: dict[str, dict[str, float]] = {}
         for a in self.arms:
-            if a.arm == base.arm:
+            if a.arm == fresh.arm:
                 continue
-            out[a.arm] = {
-                "stale_ratio_vs_fresh": a.ratio - base.ratio,
-                "nfc_vs_fresh": a.nfc_mean - base.nfc_mean,
-                "prep_hit_vs_fresh": a.prep_hit - base.prep_hit,
+            lines = {
+                "nfc_vs_fresh": a.nfc_mean - fresh.nfc_mean,
+                "prep_hit_vs_fresh": a.prep_hit - fresh.prep_hit,
             }
+            if unreading is not None and a.arm != unreading.arm:
+                lines["stale_ratio_vs_unreading"] = a.ratio - unreading.ratio
+            out[a.arm] = lines
         return out
 
     def table(self) -> str:
@@ -180,14 +222,17 @@ def store_for_arm(record: Record, arm: str, *,
 
 
 def _b_statistics(arm: str, seed: int, aligned: bool, raw: dict[str, Any],
-                  store: dict[str, Any] | None) -> BArmResult:
+                  store: dict[str, Any] | None, claim_window: int | None = None) -> BArmResult:
     """The claim-line statistics for one arm of B.
 
-    Read over B's WHOLE log rather than a phase half: B runs one phase, and the newborn counters
-    accumulate at the preparation event for agents on their first attempt, so the whole run is the
-    window in which B's first-ever preparations happen.
+    Read on an EARLY window, not the whole run: the newborn counters accumulate at the preparation
+    event for agents on their first attempt, and those events go on happening long after A's record
+    has decayed away. Pooling them would average a live inheritance with an absent one and call the
+    result a weaker effect.
     """
-    log = raw["log"]
+    log = raw["log"] if claim_window is None else A.window(raw, 0, claim_window)
+    if not log:
+        log = raw["log"]
     _endorse_ok, _n_ok, stale, stale_n = A.follow_split_newborn(log)
     hit = A.prep_hit(log, True)
     null = (1.0 - hit) / (N_PREPS - 1) if np.isfinite(hit) else np.nan
@@ -195,7 +240,11 @@ def _b_statistics(arm: str, seed: int, aligned: bool, raw: dict[str, Any],
     density = None
     if store is not None:
         density = float((np.abs(np.asarray(store["marks"])) > 1e-3).mean())
+    decay = float(raw["cfg"].get("mark_decay", 0.0))
+    window = claim_window if claim_window is not None else int(raw["n_steps"])
     return BArmResult(
+        claim_window=window,
+        marks_surviving_at_window_end=float((1.0 - decay) ** window),
         arm=arm, seed=seed, aligned=aligned,
         stale=float(stale), stale_n=int(stale_n),
         null=float(null), ratio=float(stale / null) if null else float("nan"),
@@ -253,7 +302,8 @@ def run_succession(succession: Succession, *, verbose: bool = False,
                          init_mapping=a_mapping if succession.aligned else None).raw
         if not result.b_mapping:
             result.b_mapping = tuple(int(x) for x in raw["log"][0]["mapping"])
-        row = _b_statistics(arm, succession.seed, succession.aligned, raw, store)
+        row = _b_statistics(arm, succession.seed, succession.aligned, raw, store,
+                            claim_window=succession.claim_window)
         row.store_sha256 = None if store is None else record.sha256()
         result.arms.append(row)
         if arm == "inherited store":
@@ -267,9 +317,32 @@ def run_succession(succession: Succession, *, verbose: bool = False,
                                        "phase_bounds": raw["phase_bounds"]})
             result.gate_r = {k: (float(v) if isinstance(v, (int, float, np.floating)) else v)
                              for k, v in gp.items()}
-            result.gate_r["verdict"] = ("PASS" if np.isfinite(gp["z"]) and gp["z"] <= 2.0
-                                        else "GATE R FIRES")
+            result.gate_r["verdict"] = _gate_r_verdict(gp)
     return result
+
+
+def _gate_r_verdict(gp: dict[str, Any]) -> str:
+    """Gate R's verdict, refusing to call a degenerate null a pass.
+
+    The permutation null permutes each pi-epoch's label axis INDEPENDENTLY and pools. With one
+    epoch there is nothing to permute across: every permutation returns the same pooled value, the
+    null equals the observation, `sd` is exactly zero and `z` comes out 0.00. Reporting that as
+    PASS would be reporting an absent measurement as a passed gate, which is the failure A5 names
+    and the one this project keeps having to catch.
+
+    A B that runs a single era therefore CANNOT be gated on Gate R -- and a B that runs long enough
+    to rotate pi has lost the record it inherited to decay (G3-D1's arithmetic in the other
+    direction). That tension is structural and is reported, not resolved by a verdict.
+    """
+    epochs = int(gp.get("eras") or 0)
+    if epochs < 2:
+        return (f"NOT AVAILABLE: {epochs} pi-epoch(s). The permutation null needs at least two to "
+                f"have anything to permute across; with one it returns the observation itself.")
+    if float(gp.get("sd") or 0.0) == 0.0:
+        return ("NOT AVAILABLE: the null has zero spread, so z is undefined rather than small.")
+    if not np.isfinite(gp.get("z", np.nan)):
+        return "NOT AVAILABLE: z is not finite."
+    return "PASS" if gp["z"] <= 2.0 else "GATE R FIRES"
 
 
 def b_founders_carry_no_h(seed: int = 0, steps: int = 200) -> tuple[bool, str]:
