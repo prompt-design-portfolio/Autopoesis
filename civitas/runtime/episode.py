@@ -188,8 +188,13 @@ class EpisodeRunner:
             except BudgetExceeded as exc:
                 return exc.termination_reason, str(exc)
 
-            prompt_tokens = sum(self._provider.count_tokens(m.content) for m in messages)
             info = self._provider.model_info(spec.model_name)
+            # Includes tool-call arguments and tool declarations. A content-only count
+            # under-estimates most for exactly the agents a budget most needs to bound.
+            prompt_tokens = self._provider.count_message_tokens(messages)
+            if info.supports_tools:
+                for spec_ in tools.specs():
+                    prompt_tokens += self._provider.count_tokens(spec_.description)
             max_out = min(
                 spec.model_parameters.get("max_tokens", 2048), info.max_output_tokens
             )

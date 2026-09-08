@@ -195,6 +195,32 @@ class Provider(abc.ABC):
         """
         return max(1, (len(text) + 3) // 4)
 
+    def count_message_tokens(self, messages: tuple[Message, ...] | list[Message]) -> int:
+        """Tokens a message list will cost, **including tool-call arguments**.
+
+        Counting only `content` under-counts systematically, and the error is largest exactly
+        where it matters: an agent that writes a tool puts the entire source in a tool call's
+        arguments, where a content-only count sees nothing. Measured on the tool benchmark, an
+        episode that wrote a full source file and test suite was billed fewer prompt tokens than
+        one that read a short listing — so a token budget (§8) would not have bounded the
+        behaviour it most needs to bound.
+        """
+        total = 0
+        for message in messages:
+            total += self.count_tokens(message.content)
+            for call in message.tool_calls:
+                total += self.count_tokens(call.name)
+                total += self.count_tokens(json.dumps(call.arguments, default=str))
+        return total
+
+    def count_request_tokens(self, request: CompletionRequest) -> int:
+        """Everything the provider will be sent: messages, tool calls, and tool declarations."""
+        total = self.count_message_tokens(request.messages)
+        for spec in request.tools:
+            total += self.count_tokens(spec.name) + self.count_tokens(spec.description)
+            total += self.count_tokens(json.dumps(spec.parameters, default=str))
+        return total
+
     def estimate_cost(self, model: str, usage: Usage) -> float:
         info = self.model_info(model)
         return (

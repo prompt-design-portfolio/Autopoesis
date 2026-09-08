@@ -1,0 +1,735 @@
+{
+  "generated_at": "2026-09-08T11:35:37.482689+00:00",
+  "milestone": "M6",
+  "comparison": "matched A/B over tool discovery; both arms can build, only `reuse` can find",
+  "tool_size_sweep": [
+    {
+      "padding_lines": 0,
+      "summary": {
+        "reuse": {
+          "episodes": 8,
+          "success_rate": 1.0,
+          "mean_tool_calls": 3.125,
+          "mean_tokens": 3947.0,
+          "steady_state_mean_tokens": 3761.4,
+          "builds": 1,
+          "reuses": 7,
+          "reuse_rate": 0.875,
+          "by_generation": [
+            {
+              "generation": 0,
+              "succeeded": true,
+              "tool_calls": 4,
+              "tokens": 5246,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 1,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 2,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 3,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 4,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 5,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 6,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 7,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            }
+          ]
+        },
+        "rebuild": {
+          "episodes": 8,
+          "success_rate": 1.0,
+          "mean_tool_calls": 3.0,
+          "mean_tokens": 3828.4,
+          "steady_state_mean_tokens": 3828.4,
+          "builds": 8,
+          "reuses": 0,
+          "reuse_rate": 0.0,
+          "by_generation": [
+            {
+              "generation": 0,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3828,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 1,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3828,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 2,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3829,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 3,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3829,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 4,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3829,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 5,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3828,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 6,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3828,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 7,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3828,
+              "built": true,
+              "reused": false
+            }
+          ]
+        }
+      },
+      "derived": {
+        "tokens_saved_per_episode": -118.6,
+        "steady_state_tokens_saved": 67.0,
+        "steady_state_saved_fraction": 0.0175,
+        "tokens_saved_fraction": -0.031,
+        "tool_calls_saved_per_episode": -0.125,
+        "reuse_rate": 0.875,
+        "rebuilds_avoided": 7
+      }
+    },
+    {
+      "padding_lines": 20,
+      "summary": {
+        "reuse": {
+          "episodes": 8,
+          "success_rate": 1.0,
+          "mean_tool_calls": 3.125,
+          "mean_tokens": 4145.2,
+          "steady_state_mean_tokens": 3761.4,
+          "builds": 1,
+          "reuses": 7,
+          "reuse_rate": 0.875,
+          "by_generation": [
+            {
+              "generation": 0,
+              "succeeded": true,
+              "tool_calls": 4,
+              "tokens": 6832,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 1,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 2,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 3,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 4,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 5,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 6,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 7,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            }
+          ]
+        },
+        "rebuild": {
+          "episodes": 8,
+          "success_rate": 1.0,
+          "mean_tool_calls": 3.0,
+          "mean_tokens": 5414.4,
+          "steady_state_mean_tokens": 5414.4,
+          "builds": 8,
+          "reuses": 0,
+          "reuse_rate": 0.0,
+          "by_generation": [
+            {
+              "generation": 0,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 5414,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 1,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 5414,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 2,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 5415,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 3,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 5415,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 4,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 5415,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 5,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 5414,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 6,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 5414,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 7,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 5414,
+              "built": true,
+              "reused": false
+            }
+          ]
+        }
+      },
+      "derived": {
+        "tokens_saved_per_episode": 1269.2,
+        "steady_state_tokens_saved": 1653.0,
+        "steady_state_saved_fraction": 0.3053,
+        "tokens_saved_fraction": 0.2344,
+        "tool_calls_saved_per_episode": -0.125,
+        "reuse_rate": 0.875,
+        "rebuilds_avoided": 7
+      }
+    },
+    {
+      "padding_lines": 60,
+      "summary": {
+        "reuse": {
+          "episodes": 8,
+          "success_rate": 1.0,
+          "mean_tool_calls": 3.125,
+          "mean_tokens": 4542.8,
+          "steady_state_mean_tokens": 3761.4,
+          "builds": 1,
+          "reuses": 7,
+          "reuse_rate": 0.875,
+          "by_generation": [
+            {
+              "generation": 0,
+              "succeeded": true,
+              "tool_calls": 4,
+              "tokens": 10012,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 1,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 2,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 3,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 4,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 5,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 6,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 7,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            }
+          ]
+        },
+        "rebuild": {
+          "episodes": 8,
+          "success_rate": 1.0,
+          "mean_tool_calls": 3.0,
+          "mean_tokens": 8594.4,
+          "steady_state_mean_tokens": 8594.4,
+          "builds": 8,
+          "reuses": 0,
+          "reuse_rate": 0.0,
+          "by_generation": [
+            {
+              "generation": 0,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 8594,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 1,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 8594,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 2,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 8595,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 3,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 8595,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 4,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 8595,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 5,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 8594,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 6,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 8594,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 7,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 8594,
+              "built": true,
+              "reused": false
+            }
+          ]
+        }
+      },
+      "derived": {
+        "tokens_saved_per_episode": 4051.6,
+        "steady_state_tokens_saved": 4833.0,
+        "steady_state_saved_fraction": 0.5623,
+        "tokens_saved_fraction": 0.4714,
+        "tool_calls_saved_per_episode": -0.125,
+        "reuse_rate": 0.875,
+        "rebuilds_avoided": 7
+      }
+    },
+    {
+      "padding_lines": 150,
+      "summary": {
+        "reuse": {
+          "episodes": 8,
+          "success_rate": 1.0,
+          "mean_tool_calls": 3.125,
+          "mean_tokens": 5440.2,
+          "steady_state_mean_tokens": 3761.4,
+          "builds": 1,
+          "reuses": 7,
+          "reuse_rate": 0.875,
+          "by_generation": [
+            {
+              "generation": 0,
+              "succeeded": true,
+              "tool_calls": 4,
+              "tokens": 17192,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 1,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 2,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 3,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 4,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3762,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 5,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 6,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            },
+            {
+              "generation": 7,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 3761,
+              "built": false,
+              "reused": true
+            }
+          ]
+        },
+        "rebuild": {
+          "episodes": 8,
+          "success_rate": 1.0,
+          "mean_tool_calls": 3.0,
+          "mean_tokens": 15774.4,
+          "steady_state_mean_tokens": 15774.4,
+          "builds": 8,
+          "reuses": 0,
+          "reuse_rate": 0.0,
+          "by_generation": [
+            {
+              "generation": 0,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 15774,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 1,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 15774,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 2,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 15775,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 3,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 15775,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 4,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 15775,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 5,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 15774,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 6,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 15774,
+              "built": true,
+              "reused": false
+            },
+            {
+              "generation": 7,
+              "succeeded": true,
+              "tool_calls": 3,
+              "tokens": 15774,
+              "built": true,
+              "reused": false
+            }
+          ]
+        }
+      },
+      "derived": {
+        "tokens_saved_per_episode": 10334.2,
+        "steady_state_tokens_saved": 12013.0,
+        "steady_state_saved_fraction": 0.7616,
+        "tokens_saved_fraction": 0.6551,
+        "tool_calls_saved_per_episode": -0.125,
+        "reuse_rate": 0.875,
+        "rebuilds_avoided": 7
+      }
+    }
+  ],
+  "newcomer_benchmark_under_m6": {
+    "arms": {
+      "baseline_empty": {
+        "arm": "baseline_empty",
+        "n": 30,
+        "successes": 14,
+        "excluded": 0,
+        "success_rate": 0.4666666666666667,
+        "mean_tool_calls": 6.066666666666666,
+        "mean_probes": 4.6,
+        "mean_tokens": 8217.0,
+        "mean_artifacts_read": 0.0,
+        "stale_uses": 0,
+        "duplicate_failures": 0
+      },
+      "collective": {
+        "arm": "collective",
+        "n": 30,
+        "successes": 23,
+        "excluded": 0,
+        "success_rate": 0.7666666666666667,
+        "mean_tool_calls": 4.133333333333334,
+        "mean_probes": 0.3333333333333333,
+        "mean_tokens": 6988.2,
+        "mean_artifacts_read": 1.3,
+        "stale_uses": 0,
+        "duplicate_failures": 22
+      },
+      "memory_reset": {
+        "arm": "memory_reset",
+        "n": 30,
+        "successes": 14,
+        "excluded": 0,
+        "success_rate": 0.4666666666666667,
+        "mean_tool_calls": 6.066666666666666,
+        "mean_probes": 4.6,
+        "mean_tokens": 8217.0,
+        "mean_artifacts_read": 0.0,
+        "stale_uses": 0,
+        "duplicate_failures": 0
+      },
+      "collective_scrambled": {
+        "arm": "collective_scrambled",
+        "n": 30,
+        "successes": 14,
+        "excluded": 0,
+        "success_rate": 0.4666666666666667,
+        "mean_tool_calls": 5.933333333333334,
+        "mean_probes": 2.6,
+        "mean_tokens": 10662.866666666667,
+        "mean_artifacts_read": 1.8666666666666667,
+        "stale_uses": 0,
+        "duplicate_failures": 37
+      }
+    },
+    "derived": {
+      "newcomer_advantage": 0.3,
+      "advantage_lost_to_reset": 0.3,
+      "advantage_lost_to_scramble": 0.3,
+      "ablation_removes_fraction": 1.0,
+      "scramble_removes_fraction": 1.0
+    },
+    "note": "unchanged from M4 (+0.300): the hidden-rule family needs no agent-written tool, so the tool ecology has nothing to contribute to it"
+  }
+}

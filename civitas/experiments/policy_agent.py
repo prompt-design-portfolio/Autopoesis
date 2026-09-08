@@ -205,7 +205,7 @@ class PolicyAgentProvider(Provider):
     def complete(self, request: CompletionRequest) -> Completion:
         belief = self._read_history(request)
         available = {t.name for t in request.tools}
-        prompt_tokens = sum(self.count_tokens(m.content) for m in request.messages)
+        prompt_tokens = self.count_request_tokens(request)
 
         call, text = self._decide(belief, available)
         return Completion(

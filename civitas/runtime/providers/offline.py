@@ -86,7 +86,7 @@ class DeterministicProvider(Provider):
             structured = _schema_stub(request.response_schema, rng)
             text = json.dumps(structured, sort_keys=True)
 
-        prompt_tokens = sum(self.count_tokens(m.content) for m in request.messages)
+        prompt_tokens = self.count_request_tokens(request)
         return Completion(
             text=text,
             tool_calls=tool_calls,
@@ -160,7 +160,7 @@ class ScriptedProvider(Provider):
                 "the agent took more turns than the script covers"
             )
         out = self._script[i]
-        prompt_tokens = sum(self.count_tokens(m.content) for m in request.messages)
+        prompt_tokens = self.count_request_tokens(request)
         return Completion(
             text=out.text,
             tool_calls=out.tool_calls,
