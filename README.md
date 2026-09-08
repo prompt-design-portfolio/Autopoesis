@@ -5,6 +5,43 @@
 [![Acceptance](https://img.shields.io/badge/Actions-run%20acceptance-2088FF?logo=githubactions&logoColor=white)](https://github.com/prompt-design-portfolio/Autopoesis/actions/workflows/acceptance.yml)
 [![Run from a phone](https://img.shields.io/badge/Tap%20to-run%20acceptance-30a14e?logo=github)](https://github.com/prompt-design-portfolio/Autopoesis/issues/new?labels=run&title=Run+acceptance&body=levels%3A%0Aseeds%3A+0%2C1%2C2%2C3%2C4%0Apasses%3A+3%0A%0ALeave+levels+blank+for+all+six.+Submit%2C+and+the+result+table+is+posted+here.)
 
+> ## The live build is Civitas-G
+>
+> [![Open Civitas-G in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/prompt-design-portfolio/Autopoesis/blob/claude/master-prompt-init-ehmsbe/notebooks/Civitas_G_Colab.ipynb)
+>
+> `CIVITAS_G_MASTER_BUILD_DIRECTIVE.md` supersedes the prompt the rest of this README describes,
+> and it inverts the central premise. The text below said the collective gets smarter *while the
+> underlying foundation model stays frozen*. The directive says there is no foundation model:
+>
+> > **The learner is the only thing that thinks.** Civitas provides persistence, measurement and
+> > the environment; it never provides cognition. No LLM is a component of any agent. No
+> > hand-written policy stands in for a learner.
+>
+> So the learner is the **grown network** of `sim_v3_13.py` — innate weights plus a learned
+> component `H`, a local rule with an eligibility trace, the agent's own modulator, and `H` is not
+> inherited. The claim the platform now exists to test is:
+>
+> > A record left by one population raises the competence of a population that never met it, and
+> > the gain compounds.
+>
+> **One line below is now false and worth correcting explicitly:** "the platform does not import
+> them". `civitas_g` imports `sim_v3_13` as its compute engine and runs it byte-identical, with
+> its hash in every manifest. That is the point — the research lineage is no longer a reference
+> the platform generalises, it is the thing the platform measures.
+>
+> | | |
+> |---|---|
+> | `civitas_g/` | the live package |
+> | `docs/HANDOFF.md` | start here |
+> | `docs/G0_G1.md` | the audit, the reference hashes, the G1 spec |
+> | `docs/G1_WRITEUP.md` | G1 — reproduction diff = 0, both backends |
+> | `docs/G2_SPEC.md` | the current spec, and the decision that blocks it |
+> | `civitas/`, `results/m4…m13` | M1–M13, history; B§1 makes it partly dormant, partly removed |
+>
+> The badges above this box, and everything below it, describe M1–M13.
+
+---
+
 A persistent artificial civilization for cumulative collective intelligence.
 
 > The collective becomes more intelligent over time even if the underlying individual foundation
