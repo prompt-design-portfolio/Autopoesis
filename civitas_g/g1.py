@@ -100,7 +100,8 @@ def reference_plan(reference: Reference = PRECHECK_V3_13, *, seed: int | None = 
         kind="reproduction",
         label=f"reproduce {reference.summary.path} @ {reference.summary.sha256[:12]}",
         arms=list(REFERENCE_ARM_ORDER),
-        seeds=[inv["seed"] if seed is None and inv["seed"] is not None else (seed or 0)],
+        # the file records no seed (F5), so an explicit one wins, then the recorded one, then 0
+        seeds=[seed if seed is not None else (inv["seed"] if inv["seed"] is not None else 0)],
         phase_steps=phase_steps or int(inv["phase_steps"]),
         notes=[
             f"reference {reference.summary.path} sha256 {reference.summary.sha256}",

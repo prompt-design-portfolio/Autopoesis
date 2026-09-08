@@ -47,7 +47,7 @@ class RunSpec:
     kwargs: dict[str, Any]
 
     def phases(self) -> list[dict[str, Any]]:
-        base = int(_sim.Config().n_steps) if False else int(STAGED[0]["n_steps"])
+        base = int(STAGED[0]["n_steps"])
         return [dict(p, n_steps=int(p["n_steps"] / base * self.phase_steps)) for p in STAGED]
 
     def config(self) -> _sim.Config:

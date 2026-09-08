@@ -126,3 +126,15 @@ def test_a_read_only_session_takes_no_write_lock(readers, sessions, stored):
     with readers() as a, readers() as b:
         assert a.get(Campaign, campaign_id) is not None
         assert b.get(Campaign, campaign_id) is not None
+
+
+def test_an_arm_with_no_record_emits_no_permutation_fields(sessions):
+    """The computed side must follow the reference's own convention for an absent row."""
+    from civitas_g.provider.population import CampaignPlan, run_campaign
+
+    plan = CampaignPlan(kind="test", arms=["memory_reset"], seeds=[0], phase_steps=150)
+    campaign_id = run_campaign(sessions, plan)
+    with sessions() as session:
+        fields = compute_fields(load_results(session, campaign_id))
+    assert not any(k.startswith("gate_r_perm/") for k in fields)
+    assert any(k.startswith("gate_r/plastic/") for k in fields)

@@ -134,15 +134,15 @@ def store_run(session: Session, campaign: Campaign, result: RunResult) -> Run:
 
     for i, snap in enumerate(raw.get("era_snaps") or []):
         data, digest = _blob(snap)
-        mapping = snap.get("mapping") if isinstance(snap, dict) else None
-        pi = snap.get("pi") if isinstance(snap, dict) else None
-        genomes = snap.get("genomes") if isinstance(snap, dict) else None
+        # The engine writes dict(t, mapping, n_pop, genomes=snapshot(sample)). There is no `pi`
+        # key, and `genomes` is a snapshot DICT rather than a list, so len() would count its
+        # fields; `n_pop` is the population the snapshot was taken from.
+        mapping = snap.get("mapping")
         session.add(EraSnapshot(
-            run_id=run.id, ordinal=i,
-            t=int(snap["t"]) if isinstance(snap, dict) and "t" in snap else None,
+            run_id=run.id, ordinal=i, t=int(snap["t"]) if "t" in snap else None,
             mapping=encode(list(mapping)) if mapping is not None else None,
-            pi=encode(list(pi)) if pi is not None else None,
-            n_agents=len(genomes) if genomes is not None else 0,
+            pi=encode(list(snap["pi"])) if snap.get("pi") is not None else None,
+            n_agents=int(snap.get("n_pop", 0)),
             blob=data, blob_sha256=digest,
         ))
     session.flush()
@@ -186,7 +186,6 @@ def run_campaign(session_factory: Callable[[], Any], plan: CampaignPlan, *,
 
     for spec in plan.specs():
         with session_factory() as session:
-            campaign = session.get(Campaign, campaign_id)
             if (spec.arm, spec.seed) in existing_runs(session, campaign_id):
                 continue
         try:
@@ -247,8 +246,6 @@ def load_results(session: Session, campaign_id: Any,
     `analysis_v3_13`'s readers key on. The manifest vocabulary is what the database stores; the
     translation happens here, once, and nowhere else.
     """
-    from civitas_g.world.arms import BY_NAME
-
     stmt = select(Run).where(Run.campaign_id == campaign_id, Run.status == "ok")
     if arms is not None:
         wanted = {get_arm(a).name for a in arms}
@@ -257,7 +254,9 @@ def load_results(session: Session, campaign_id: Any,
 
     out: dict[str, list[dict[str, Any]]] = {}
     for r in runs:
-        out.setdefault(BY_NAME[r.arm].research_name, []).append(load_run(session, r))
+        # get_arm rather than a dict lookup: a row carrying one of §21's retired arms is named as
+        # retired, which is what a reader needs, instead of raising a bare KeyError.
+        out.setdefault(get_arm(r.arm).research_name, []).append(load_run(session, r))
     for name in out:
         out[name].sort(key=lambda d: d["seed"])
     return out

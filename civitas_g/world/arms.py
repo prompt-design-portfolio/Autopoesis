@@ -82,8 +82,13 @@ ARMS: tuple[Arm, ...] = (
     Arm("collective", "plastic + record",
         "the record, written and read",
         dict(mode="plastic", plastic_layers="W2", record="real")),
-    Arm("collective_scrambled", "plastic + noise record",
-        "same writes, density and signs; labels randomised",
+    # B§4's table calls this "plastic + noise record". That is its DESCRIPTION; the key in
+    # analysis_v3_13.VARIANTS -- and therefore the name every reference summary prints -- is
+    # "plastic + noise". The research name has to be the key, or the manifest vocabulary does not
+    # survive the mapping it exists to survive: the reproduction compared 38 fields against
+    # nothing on each side before this was corrected, with every value identical underneath.
+    Arm("collective_scrambled", "plastic + noise",
+        "same writes, density and signs; labels randomised (B§4: 'plastic + noise record')",
         dict(mode="plastic", plastic_layers="W2", record="noise")),
     Arm("no_plasticity", "fixed + record",
         "the record, a genome that cannot learn",

@@ -1,98 +1,146 @@
 # Handoff
 
-Read this first if you are resuming work (Part A §A5).
+Read this first if you are resuming work (A5).
 
-## State
+## Where the project is
 
-Branch `claude/master-prompt-init-ehmsbe`, pushed. **M1–M13 complete**, 778 tests green on both
-SQLite and PostgreSQL, ruff clean.
+Two lineages live in this repository and they are not the same project.
+
+**Civitas-G (`civitas_g/`) is the live one.** It is a rebuild under
+`CIVITAS_G_MASTER_BUILD_DIRECTIVE.md`, which supersedes the original combined prompt wherever the
+two conflict. Its inversion is the whole point:
+
+> The learner is the only thing that thinks. Civitas provides persistence, measurement and the
+> environment; it never provides cognition. (A1.1)
+
+There is no agent in `civitas_g/`. No LLM is a component of one, no hand-written policy stands in
+for one, and nothing reads the store on a learner's behalf. The learner is the grown network of
+`sim_v3_13.py`.
+
+**Civitas M1–M13 (`civitas/`) is history, and partly on the removal list.** B§1 removes the
+deterministic policy agents, the two agent-facing domains, `acceptance.py`'s six levels and the
+`m4`–`m13` results as acceptance artifacts; makes §9–§18 and §26–§32 and §49 dormant; and keeps
+§33–§46, §47 and §50–§58. The audit that enumerates all of that against the tree is
+`docs/G0_G1.md` §1. **The removal itself has not been carried out** — see "What remains".
+
+## Running it
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]" "psycopg[binary]"
-bash scripts/start_test_postgres.sh /var/tmp/civitas-pg     # prints the URL to export
-CIVITAS_TEST_POSTGRES_URL=postgresql+psycopg://civitas@127.0.0.1:55432/civitas_test \
-  .venv/bin/python -m pytest tests/ -q
+bash scripts/start_test_postgres.sh /var/tmp/civitas-pg     # prints a URL
+
+# the G suite, both backends
+CIVITAS_G_TEST_POSTGRES_URL=postgresql+psycopg://civitas@127.0.0.1:55432/civitas_test \
+  .venv/bin/python -m pytest tests_g/ -q
+
+.venv/bin/python -m civitas_g world       # the world of record, arms, modulator table, layout
+.venv/bin/python -m civitas_g pins        # the G0 hashes against the working tree
+.venv/bin/python -m civitas_g selftest    # B§6; any failure halts a read
+.venv/bin/python -m civitas_g reproduce --postgres-url "$PG"   # the G1 gate
 ```
 
-The two-backend run is not optional — M2 found a concurrency race SQLite structurally cannot
-expose. The PostgreSQL cluster lives outside the scratchpad because the scratchpad's permissions
-are reset periodically, which kills the server mid-run.
+The PostgreSQL cluster lives outside the scratchpad because the scratchpad's permissions are reset
+periodically, which kills the server mid-run.
+
+## Things a resumed session must know
+
+1. **The world of record is `analysis_v3_13.WORLD`, not `sim_v3_13.Config()`.** The `Config`
+   defaults are v3.10 leftovers: they put the chance EV of a preparation at **−0.100** and the era
+   at 2000 steps. A provider that builds a bare `Config()` builds a different experiment. This is
+   checked at construction (`check_world`, `check_chance_ev_is_zero`) and it is the easiest way for
+   a G number to be silently wrong.
+2. **The modulator is a table, not the energy delta.** `resolve_action` says so in terms. `m` is a
+   literal ±1, independent of `prep_value` and `prep_fail`, which is why v3.12 could halve
+   `prep_fail` without touching learning. G4 changes economics one mechanic at a time; if this were
+   recorded wrong, the first change would confound every claim line. `modulator_selftest` measures
+   it.
+3. **Reproduce against the blob at the reference's own commit, not HEAD.** Every candidate
+   reference summary in this repository was produced by code that changed afterwards.
+   `precheck_v3_12.txt` is worse: its producing code does not exist at the commit that added it, so
+   it is recorded and never gated on.
+4. **`precheck_v3_13.txt` records neither its seeds nor its configuration.** The invocation is
+   recovered by inference, with a stated basis per element, in `manifest.REFERENCE_INVOCATION`. The
+   seed is *not* recoverable and is recorded as `None` rather than as a value. If a reproduction
+   fails, D4 says try the candidate seeds and then declare the artifact unreproducible — it does
+   **not** say vary the configuration until the numbers agree. A1.2 calls that failing.
+5. **The reading is recomputed from the persisted rows, never from the result in memory.**
+   Otherwise "both backends" is vacuous: the numbers come from numpy either way. Each run is
+   executed once and written to every backend, so a disagreement is a round-trip defect.
+6. **NaN is a measurement and storage is where it gets destroyed.** PostgreSQL's JSONB rejects it.
+   Dropping the key makes an absent measurement look unrecorded; coercing to 0.0 makes it look
+   measured. `persistence/encoding.py` tags it and decodes it back.
+7. **Absent is not zero, anywhere.** The gate counts a field present on one side only as missing
+   and fails; NaN against NaN is an agreement; NaN against a number is a mismatch, never a skip;
+   and an empty comparison does not pass — `all([])` is `True`.
+8. **`assay_selftest` does not exist.** A2.1 cites it as an existing reference. It is registered as
+   a named gap so it shows up in every self-test report; D5 specifies it and G2 builds it.
+9. **Reading must not write.** SQLite's `BEGIN IMMEDIATE` takes the *write* lock even to read, so
+   every read path uses `read_only_session_factory`. Three separate M11 defects were this one fact
+   wearing different hats.
+10. **The engine is untouched (A1.8).** `civitas_g/world/engine.py` is the whole of Civitas's
+    contact with it: build a `Config`, call `run()`, take what comes out. No callback, no subclass,
+    no monkeypatch — and `touches_world_only_at_era_boundaries()` checks that rather than promising
+    it. If you find yourself wanting a per-step hook, that is cognition arriving, and A1.1 forbids
+    it.
+11. **`type_spawn_w` is `None` and five observation inputs are dead.** Both are recorded facts, not
+    oversights. Changing the layout changes every genome and voids the reproduction; changing the
+    spawn weights changes the world. They are G4 candidates with their own specs.
 
 ## What is built
 
-| milestone | what | committed measurement |
+### Civitas-G
+
+| milestone | gate | state |
 |---|---|---|
-| M1 | audit; **no Civitas prototype existed** — the repo was the research lineage only | — |
-| M2 | 44 tables, two backends, immutable events, durable leases | — |
-| M3 | bounded episodes, nine enforced arms, hardened sandbox, nine providers | — |
-| M4 | frozen mode, manifests, credit assignment, newcomer benchmark | `results/m4_newcomer_benchmark.json` |
-| M5 | hybrid retrieval, graph, provenance, versioning, staleness, consolidation | `results/m5_knowledge_system.json` |
-| M6 | tool ecology: creation, sandboxed validation, versioning, reuse | `results/m6_tool_ecology.json` |
-| M7 | scheduler, specialization, six §28 roles, hypothesis state machine | `results/m7_scheduler.json` |
-| M8 | A2.2 gate, reputation, procedures, meta-learning | `results/m8_institutions.json` |
-| M9 | distributed knowledge, cumulative culture, capability frontier | `results/m9_advanced_benchmarks.json` |
-| M10 | long-horizon projects, request decomposition, domain adapters, versioned API, CLI | `results/m10_domain_transfer.json` |
-| M11 | the web UI: fourteen screens, live updates over the event log, browser-driven tests | — (a null on the newcomer benchmark, expected and explained in `docs/milestones/M11.md`) |
-| M12 | hardening: CSP, rate limiting, redaction, metrics, tracing, quotas, CI, Docker, Kubernetes | `results/m12_hardening.json` |
-| M13 | acceptance: §65's six levels in one campaign, §64 preflight, §63 survival | `results/m13_acceptance.json` |
+| **G0** | audit and removal (B§1) | **audit delivered** (`docs/G0_G1.md`): the removal list against the tree, the reference hashes, nine findings. **The removal itself is not carried out.** |
+| **G1** | reproduction diff = 0 | **MET.** `precheck_v3_13.txt` reproduced **182/182 fields on SQLite and on PostgreSQL**, backends agreeing, from rows recomputed out of the database. `docs/G1_WRITEUP.md` |
+| G2 | the record as the artifact store | not started; needs an agreed spec (A3) |
+| G3 | the store outlives the run | not started |
+| G4 | a world that hardens | not started |
+| G5 | frozen-LLM reference arm | not started |
+
+144 G tests green on both backends; ruff clean; `nbcheck` green on all eight notebooks; eleven
+available self-tests green.
+
+Three measurements the build produced, beyond the reproduction:
+
+- **the modulator is identical under a 4× change in the economics** (400 steps) — so G4's
+  per-mechanic claim lines are safe from their own economics changes;
+- **129 shared log fields identical between `sim_v3_13.py` @ `3d7b228` and HEAD** across a mapping
+  remap — so the reference and a run today are numbers about the same world;
+- **the recovered invocation reproduces exactly**: 5 arms, seed 0, 3000-step phases, `prep_every`
+  700 — a configuration that appears nowhere in the repository, inferred from what the summary
+  happened to print.
+
+### Civitas M1–M13 (history)
+
+M1–M13 complete, 778 tests green on both backends, `results/m4…m13`. B§1 moves those results to
+`results/legacy/` as history and takes `acceptance.py`'s six levels off the acceptance path. The
+milestone notes are in `docs/milestones/`. Two limitations recorded at the time and now superseded
+by A1.1: the agents were deterministic policies, not learners, and two domains is two.
 
 ## What remains
 
-**Where to run it.** A Codespace (`.devcontainer/`) is the strongest configuration available:
-Docker-in-Docker for container isolation, PostgreSQL for the two-backend run, and a non-root user
-so `RLIMIT_NPROC` is enforced. Colab gives none of those three and says so in every manifest it
-produces. `.github/workflows/acceptance.yml` runs §65's six levels on demand from the Actions tab.
-
-All thirteen milestones are complete. `civitas acceptance` re-runs §65's six levels and exits
-non-zero if any fails; `civitas preflight` checks §64's production criteria against a deployment.
-
-Two limitations to carry forward rather than rediscover: the agents are deterministic policies,
-not language models — the strongest instrument for measuring the *platform's* contribution (§20),
-and not a measurement of what a model would do; and two domains is two.
-
-## Things a resumed session should know
-
-1. **Every milestone reports its effect on the newcomer benchmark, including nulls.** M5, M6 and
-   M7 each moved it by exactly 0.000, and each null was diagnosed and produced its own instrument
-   rather than being hidden. Keep doing this.
-2. **Gates precede rows.** `BenchmarkResult.metrics()` raises when a gate failed; `raw_metrics()`
-   is the diagnostic escape hatch and calling it is a statement that you are reading an unlicensed
-   number.
-3. **A metric that cannot be computed reports `None` with a reason, never 0.0.** This is enforced
-   throughout and is worth preserving; several tests assert it directly.
-4. **The benchmarks are reproducible across processes.** Anything seeded uses `hashlib`, never
-   `hash()`, which Python randomises per process.
-5. **The arm regression (`tests/test_arms.py`) must stay green** — Part A §A4.2.
-6. **`scripts/start_test_postgres.sh`** brings up the test cluster.
-7. **There is one implementation of §22.** `run_newcomer_benchmark` and `run_repair_benchmark`
-   both call `run_newcomer_procedure(domain=...)`. If you change it, verify with
-   `scripts/newcomer_snapshot.py` on the tree before and after and diff — that is how the M10
-   refactor was shown to leave the M4 result untouched.
-8. **Reading must not write.** The engine's `BEGIN IMMEDIATE` takes SQLite's *write* lock even to
-   read, so every read path uses `read_only_session_factory` and API GETs get a read-only session.
-   Three separate defects in M11 were this one fact wearing different hats. If you add a read path,
-   do not give it a writing session.
-9. **Four settings did nothing for eleven milestones.** `log_json`, `metrics_enabled`,
-   `otel_endpoint` and `rate_limit_per_minute` were read from the environment, printed into the
-   manifest, and honoured by no code until M12. When you add a setting, add the code that reads
-   it in the same change — a control that exists only in configuration is worse than no control.
-10. **The browser tests are not decoration.** `tests/test_web_ui.py` drives the real page in
-   Chromium and found four defects the API tests structurally could not — they issue one request
-   at a time, and the bugs only appear when three arrive at once. They skip with a stated reason
-   when no Chromium is available; they never silently pass.
-11. **A new domain cannot be added without stating its §47 argument.** `check_no_leak` runs in a
-   test parametrized over the registry, in `create_domain_task`, and in the CLI. It has already
-   caught a real leak (a description ending "the corrected function source" — "the correct" is a
-   marker word).
+1. **Carry out G0's removal.** `docs/G0_G1.md` §1 lists every path and line. One judgement call is
+   already made and should be honoured: the four leak-check tests in `tests/test_domains.py` are
+   the only executable statement of the §47 rule B§1 *keeps*, so they are re-homed to the vector
+   adapter rather than deleted with the file.
+2. **Agree the G2 spec.** A3: no milestone starts until the previous gate is met and the next spec
+   is agreed. G1's gate is met.
+3. **Build `assay_selftest`** with G2's store (D5): with `record='none'` the frozen assay's
+   store-visible, store-hidden and label-permuted arms must be identical, and with `sym_gain = 0`
+   the permuted arm must equal the visible arm.
 
 ## Open issues
 
-- `shared_memory` underperforms `solo` on the capability frontier, because it filters to validated
-  artifacts and the accumulated findings are self-reported. This is a real property of §21's arm
-  and is reported, not patched — but if a later milestone adds routine external validation, the
-  arm should be re-measured.
-- The four reasoned allocation strategies are indistinguishable on the current task pool, which is
-  symmetric. Distinguishing them needs a heterogeneous pool (M9 built the families; the scheduler
-  benchmark has not been re-run against them).
-- The subprocess sandbox declares `max_processes` unenforceable under uid 0. Running workers as an
-  unprivileged user restores it; the container backend does not have the problem.
+- **Standing food cover is measured nowhere** (D10). It is consumption-limited, not derivable from
+  the parameters, and not in the engine's log — and A1.8 forbids adding it in Civitas. Until a
+  versioned engine change lands, the provider reports it as `None` with the reason, and the `sr_w`
+  lesson stays half-applied.
+- **`v3_12_finding.md` is required reading and does not exist**; there is **no v3.12 grid** despite
+  A3 naming one; and **`precheck_v3_12.txt` has no producing code at its own commit**, so it is
+  recorded and never gated on.
+- **Five of the 31 observation inputs are dead** and `type_spawn_w` is `None`, so type C
+  accumulates to roughly half of standing food. Both are recorded facts and G4 candidates; neither
+  can be changed without voiding the reproduction or changing the world.
+- **The G1 result is one seed.** Nothing in it is a claim.

@@ -78,3 +78,12 @@ def test_the_grid_summary_parses_nothing_it_does_not_contain():
 
     p = parse_summary(V3_11_GRID.summary.path)
     assert p.tables_missing, "the v3.11 grid should not carry v3.13's record tables"
+
+
+def test_an_arm_with_no_record_contributes_no_permutation_row(parsed):
+    """`v313_precheck` prints "--  (no record)" and moves on. There is no label axis to permute,
+    so the row is an ABSENCE. Emitting five cells here would compare against a reference that
+    prints none -- which cost five fields on the first reproduction."""
+    assert not any(k.startswith("gate_r_perm/plastic/") for k in parsed.fields)
+    # the same arm DOES have a pooled Gate R row, printed as nan
+    assert math.isnan(parsed.fields["gate_r/plastic/pooled"])

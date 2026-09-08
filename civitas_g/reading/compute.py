@@ -109,6 +109,11 @@ def _compute_fields(results: dict[str, list[dict[str, Any]]]) -> dict[str, float
     # epoch, and permuting within an era would destroy structure the design intends to keep.
     for n in names:
         gp = A.gate_r_permutation(results[n][0])
+        if not np.isfinite(gp["z"]):
+            # `v313_precheck` prints "--   (no record)" and moves on: an arm with no record has no
+            # label axis to permute, so the row is an ABSENCE, not a row of zeros and NaNs. Emitting
+            # fields here would compare five cells against a reference that prints none.
+            continue
         out[key("gate_r_perm", n, "observed")] = _finite(gp["obs"])
         out[key("gate_r_perm", n, "null")] = _finite(gp["null"])
         out[key("gate_r_perm", n, "sd")] = _finite(gp["sd"])
