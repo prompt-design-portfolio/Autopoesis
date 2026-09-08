@@ -32,7 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from civitas.domain.enums import ExperimentArm, TaskStatus
-from civitas.experiments.runner import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION, ensure_profile
+from civitas.legacy.runner import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION, ensure_profile
 from civitas.persistence.models import Episode, Task, ToolRun, ToolVersion, Workspace
 from civitas.runtime.budgets import Budgets
 from civitas.runtime.episode import EpisodeRunner, EpisodeSpec
@@ -303,7 +303,7 @@ def run_tool_benchmark(
     tool_padding_lines: int = 0,
 ) -> ToolBenchmarkResult:
     """Both arms, identical except for whether discovery is available."""
-    from civitas.experiments.evaluation import evaluate_episode
+    from civitas.legacy.evaluation import evaluate_episode
 
     result = ToolBenchmarkResult()
 

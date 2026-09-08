@@ -43,16 +43,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from civitas.domain.enums import ExperimentArm, TaskStatus
-from civitas.experiments.evaluation import evaluate_episode
-from civitas.experiments.runner import (
+from civitas.legacy.evaluation import evaluate_episode
+from civitas.legacy.runner import (
     DEFAULT_BUDGETS,
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_VERSION,
     ensure_profile,
     run_benchmark_episode,
 )
-from civitas.experiments.tasks.hidden_rule import build_device, era_instances
-from civitas.experiments.tasks.probe_tool import ProbeDeviceTool, ensure_definition
+from civitas.legacy.tasks.hidden_rule import build_device, era_instances
+from civitas.legacy.tasks.probe_tool import ProbeDeviceTool, ensure_definition
 from civitas.persistence.models import Artifact, Episode, Task, Workspace
 from civitas.persistence.types import utcnow
 from civitas.runtime.budgets import Budgets
@@ -169,7 +169,7 @@ class ChainPolicy(Provider):
     def complete(self, request: CompletionRequest) -> Completion:
         import re
 
-        from civitas.experiments.policy_agent import ID_RE
+        from civitas.legacy.policy_agent import ID_RE
 
         chain_re = re.compile(
             r"CHAIN\s+env=(?P<env>\S+)\s+generation=(?P<gen>\d+)\s+result=(?P<res>\S+)"

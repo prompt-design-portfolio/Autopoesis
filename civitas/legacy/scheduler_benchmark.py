@@ -24,8 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from civitas.domain.enums import AllocationStrategy, ExperimentArm, TaskStatus
-from civitas.experiments.runner import DEFAULT_BUDGETS, create_task, run_benchmark_episode
-from civitas.experiments.tasks.hidden_rule import build_device, era_instances
+from civitas.legacy.runner import DEFAULT_BUDGETS, create_task, run_benchmark_episode
+from civitas.legacy.tasks.hidden_rule import build_device, era_instances
 from civitas.persistence.models import AgentProfile, Task, Workspace
 from civitas.runtime.budgets import Budgets
 from civitas.scheduler import allocation

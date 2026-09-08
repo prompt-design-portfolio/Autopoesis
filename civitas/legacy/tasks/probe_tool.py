@@ -16,8 +16,8 @@ from typing import Any
 from sqlalchemy import select
 
 from civitas.domain.enums import EventType
-from civitas.experiments.tasks.hidden_rule import DeviceSpec
 from civitas.knowledge.duplicate import record_failure
+from civitas.legacy.tasks.hidden_rule import DeviceSpec
 from civitas.persistence.events import emit
 from civitas.persistence.models import ToolDefinition, ToolRun
 from civitas.persistence.types import utcnow

@@ -548,7 +548,7 @@ def test_the_retrieval_benchmark_separates_the_two_query_conditions(db, org):
     paraphrases — what an agent produces when it does not already know the answer's vocabulary —
     the hybrid policy must do better, or the semantic component is not earning its weight.
     """
-    from civitas.experiments.retrieval_benchmark import run_retrieval_benchmark
+    from civitas.legacy.retrieval_benchmark import run_retrieval_benchmark
 
     result = run_retrieval_benchmark(db, organization_id=org.id, distractors=120)
     db.commit()
@@ -567,8 +567,8 @@ def test_the_retrieval_benchmark_separates_the_two_query_conditions(db, org):
 
 def test_a_paraphrase_query_shares_no_content_word_with_its_target():
     """Otherwise the paraphrase condition is indistinguishable from the exact one."""
-    from civitas.experiments.retrieval_benchmark import PROBES
     from civitas.knowledge.retrieval import tokenize
+    from civitas.legacy.retrieval_benchmark import PROBES
 
     for statement, _exact, paraphrase in PROBES:
         shared = set(tokenize(statement)) & set(tokenize(paraphrase))

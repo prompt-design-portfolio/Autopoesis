@@ -555,7 +555,7 @@ def test_the_meta_learning_loop_can_say_no(db, workspace):
     Both proposals go through the identical path under one shared configuration hash; only the
     measured outcome differs.
     """
-    from civitas.experiments.meta_learning import active_configuration, evaluate_proposal
+    from civitas.legacy.meta_learning import active_configuration, evaluate_proposal
 
     helped = evaluate_proposal(
         db, workspace_id=workspace.id, kind="scheduler", name="better",
@@ -580,7 +580,7 @@ def test_the_meta_learning_loop_can_say_no(db, workspace):
 
 def test_a_refused_proposal_is_kept_as_evidence(db, workspace):
     """A documented change that did not help is what stops the next agent proposing it (§12)."""
-    from civitas.experiments.meta_learning import evaluate_proposal
+    from civitas.legacy.meta_learning import evaluate_proposal
 
     outcome = evaluate_proposal(
         db, workspace_id=workspace.id, kind="retrieval", name="no_better",
@@ -597,7 +597,7 @@ def test_a_refused_proposal_is_kept_as_evidence(db, workspace):
 def test_both_arms_of_a_matched_experiment_share_one_configuration_hash(db, workspace):
     """Two independently computed hashes that happen to agree prove nothing about whether the
     arms were actually matched."""
-    from civitas.experiments.meta_learning import run_matched_experiment
+    from civitas.legacy.meta_learning import run_matched_experiment
 
     treatment, control = run_matched_experiment(
         db, workspace_id=workspace.id, name="x", metric="m",

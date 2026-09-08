@@ -204,87 +204,53 @@ def cmd_domain_tasks(args: argparse.Namespace) -> int:
 
 
 def cmd_benchmark(args: argparse.Namespace) -> int:
-    """Run the newcomer benchmark and print the gated result (§22, §46).
+    """Retired at G0.
 
-    If a gate fails the metrics are absent rather than caveated — `metrics()` raises, and this
-    prints the failed gates instead of a number. A gated-out run that still printed a success rate
-    would be the exact failure mode the gates exist to prevent.
+    §22's newcomer benchmark measured a hand-written policy against another hand-written policy.
+    A1.1 removed the reason for it: the learner is the only thing that thinks, and no policy stands
+    in for one. The machinery is kept as history in `civitas/legacy/`, and the measurements it
+    produced are in `results/legacy/`.
+
+    Its successor is not a like-for-like replacement and should not be read as one. `civitas_g g3`
+    asks whether a record left by one population raises the competence of a population that never
+    met it -- a claim about a grown learner and an externalised store, not about an agent's
+    success rate on a task.
     """
-    from civitas.experiments.benchmark import run_newcomer_benchmark
-    from civitas.persistence.engine import session_scope
-    from civitas.persistence.models import Organization
-
-    settings = _settings(args)
-    with session_scope(settings) as session:
-        organization = session.execute(
-            select(Organization).where(Organization.slug == args.org)
-        ).scalar_one_or_none()
-        if organization is None:
-            print(f"no organization with slug {args.org!r}", file=sys.stderr)
-            return 2
-        result = run_newcomer_benchmark(
-            session, organization_id=organization.id,
-            seeds=[int(s) for s in args.seeds.split(",")],
-            accumulation_passes=args.passes, settings=settings,
-        )
-        session.commit()
-
-    payload: dict[str, Any] = {
-        "benchmark": result.name,
-        "config_hash": result.config_hash,
-        "gates": [{"name": g.name, "passed": g.passed, "detail": g.detail}
-                  for g in result.gates],
-    }
-    try:
-        payload["metrics"] = result.metrics()
-    except Exception as exc:
-        payload["metrics"] = None
-        payload["unreadable_because"] = str(exc)
-    _emit(payload)
-    if args.out:
-        with open(args.out, "w") as fh:
-            json.dump(payload, fh, indent=2, default=str)
-    return 0 if payload["metrics"] is not None else 1
+    print("`civitas benchmark` is retired at G0.")
+    print()
+    print("§22's newcomer benchmark measured a hand-written policy against another one. A1.1")
+    print("removed the reason for it. The machinery is history in civitas/legacy/; the numbers")
+    print("it produced are in results/legacy/.")
+    print()
+    print("  python -m civitas_g g3     the live claim: a record raises a population that")
+    print("                             never met it")
+    return 2
 
 
 def cmd_acceptance(args: argparse.Namespace) -> int:
-    """Run §65's six levels in one campaign and report whether the system is accepted.
+    """Retired at G0.
 
-    Exits non-zero when any level fails, so this is usable as a release gate rather than as a
-    report someone has to read carefully.
+    §65's six levels were the M1-M13 acceptance, and B§1 takes them off the acceptance path along
+    with the `m4`-`m13` results (both kept as history, in `civitas/legacy/` and `results/legacy/`).
+    A1.2 says why they could not simply be carried forward: every one of them was met by a
+    hand-written policy, and a level a policy can satisfy is a level that measures the policy.
+
+    The live acceptance is the G lineage's: `civitas_g reproduce` for G1 and G2's reproduction
+    diff, and `civitas_g g3` for the claim that a record raises the competence of a population
+    that never met it.
     """
-    from civitas.acceptance import acceptance_report
-    from civitas.persistence.engine import session_scope
-
-    settings = _settings(args)
-    include = (
-        {int(x) for x in args.levels.split(",")} if args.levels else None
-    )
-    with session_scope(settings) as session:
-        organization = session  # kept explicit: the report creates its own orgs per level
-        del organization
-        report = acceptance_report(
-            session, seeds=[int(s) for s in args.seeds.split(",")],
-            accumulation_passes=args.passes, settings=settings, include=include,
-        )
-        session.commit()
-
-    if args.out:
-        with open(args.out, "w") as fh:
-            json.dump(report, fh, indent=1, sort_keys=True, default=str)
-
-    for level in report["levels"]:
-        mark = "PASS" if level["passed"] else "FAIL"
-        value = level["value"]
-        rendered = "withheld" if value is None else f"{value}"
-        print(f"  {mark}  L{level['level']} {level['name']:34s} {rendered:>10s} "
-              f"({level['unit']})")
-        if level["withheld_reason"]:
-            print(f"        withheld: {level['withheld_reason']}")
-    print(f"\naccepted: {report['accepted']}")
-    if report["failing_levels"]:
-        print(f"failing levels: {report['failing_levels']}")
-    return 0 if report["accepted"] else 1
+    print("`civitas acceptance` is retired at G0.")
+    print()
+    print("§65's six levels are off the acceptance path (B§1). They are kept as history in")
+    print("civitas/legacy/acceptance.py, with their results in results/legacy/. Every one of them")
+    print("was met by a hand-written policy, and A1.2 is explicit that a level a policy can")
+    print("satisfy is the wrong level.")
+    print()
+    print("The live acceptance:")
+    print("  python -m civitas_g reproduce   G1/G2 -- reproduction diff = 0")
+    print("  python -m civitas_g g3          G3 -- a record raises a population that")
+    print("                                       never met it")
+    return 2
 
 
 def cmd_preflight(args: argparse.Namespace) -> int:

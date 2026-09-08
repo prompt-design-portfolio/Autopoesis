@@ -13,7 +13,7 @@ import uuid
 from sqlalchemy.orm import sessionmaker
 
 from civitas.config import Settings
-from civitas.experiments.benchmark import run_newcomer_benchmark
+from civitas.legacy.benchmark import run_newcomer_benchmark
 from civitas.persistence.engine import create_db_engine
 from civitas.persistence.models import Base, Organization
 from civitas.persistence.session import install_guards

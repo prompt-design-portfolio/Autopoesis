@@ -32,13 +32,13 @@ from sqlalchemy.orm import Session
 
 from civitas.config import Settings, get_settings
 from civitas.domain.enums import ExperimentArm
-from civitas.experiments.runner import (
+from civitas.legacy.runner import (
     DEFAULT_BUDGETS,
     RunResult,
     create_task,
     run_benchmark_episode,
 )
-from civitas.experiments.tasks.hidden_rule import (
+from civitas.legacy.tasks.hidden_rule import (
     DeviceSpec,
 )
 from civitas.persistence.models import Artifact, Workspace
@@ -364,7 +364,7 @@ def run_newcomer_procedure(
     sharing a workspace would make `memory_reset` a deletion that races the other arms rather than
     a condition.
     """
-    from civitas.experiments.procedure import (
+    from civitas.legacy.procedure import (
         archive_episode_artifacts,
         create_domain_task,
         reset_memory,
@@ -472,7 +472,7 @@ def _accumulate_domain(
     retrieval_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Let N agents work, so the environment matures (§22 step 8)."""
-    from civitas.experiments.procedure import create_domain_task, run_domain_episode
+    from civitas.legacy.procedure import create_domain_task, run_domain_episode
 
     episodes = 0
     successes = 0

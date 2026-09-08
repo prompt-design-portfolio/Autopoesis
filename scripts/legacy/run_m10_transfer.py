@@ -19,13 +19,13 @@ import uuid
 from sqlalchemy.orm import sessionmaker
 
 from civitas.config import Settings
-from civitas.experiments.benchmark import run_newcomer_benchmark, run_repair_benchmark
 from civitas.experiments.manifest import (
     dependency_versions,
     environment_facts,
     git_commit,
     schema_version,
 )
+from civitas.legacy.benchmark import run_newcomer_benchmark, run_repair_benchmark
 from civitas.persistence.engine import create_db_engine
 from civitas.persistence.models import Base, Organization
 from civitas.persistence.session import install_guards
@@ -106,7 +106,7 @@ def main() -> int:
             "seeds": SEEDS,
             "accumulation_passes": PASSES,
             "retrieval_options": RETRIEVAL,
-            "procedure": "civitas.experiments.benchmark.run_newcomer_procedure",
+            "procedure": "civitas.legacy.benchmark.run_newcomer_procedure",
         },
         "results": out,
         "comparison": {

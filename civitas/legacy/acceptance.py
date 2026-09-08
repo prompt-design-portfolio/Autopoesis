@@ -108,7 +108,7 @@ def run_levels(
     include: set[int] | None = None,
 ) -> list[LevelResult]:
     """Run §65's six levels in one campaign. Returns one `LevelResult` per level."""
-    from civitas.experiments.benchmark import run_newcomer_procedure
+    from civitas.legacy.benchmark import run_newcomer_procedure
 
     settings = settings or get_settings()
     seeds = seeds or [0, 1, 2, 3, 4]
@@ -255,7 +255,7 @@ def _level_four(session: Session, seeds: list[int], settings: Settings,
     reshape three result classes at the acceptance stage, the prerequisites each level needs to be
     *readable* are stated here, next to the claim they license.
     """
-    from civitas.experiments.distributed_benchmark import run_distributed_benchmark
+    from civitas.legacy.distributed_benchmark import run_distributed_benchmark
 
     name, control = lookup[4]
     out = LevelResult(
@@ -313,7 +313,7 @@ def _level_four(session: Session, seeds: list[int], settings: Settings,
 def _level_five(session: Session, seeds: list[int], settings: Settings,
                 lookup: dict[int, tuple[str, str]]) -> LevelResult:
     """§24. The control is the same chain with inheritance broken."""
-    from civitas.experiments.cumulative_benchmark import run_cumulative_benchmark
+    from civitas.legacy.cumulative_benchmark import run_cumulative_benchmark
 
     name, control = lookup[5]
     out = LevelResult(
@@ -358,7 +358,7 @@ def _level_five(session: Session, seeds: list[int], settings: Settings,
 def _level_six(session: Session, seeds: list[int], settings: Settings,
                lookup: dict[int, tuple[str, str]]) -> LevelResult:
     """§25. The model is held constant; only the collective environment varies."""
-    from civitas.experiments.cumulative_benchmark import run_capability_frontier
+    from civitas.legacy.cumulative_benchmark import run_capability_frontier
 
     name, control = lookup[6]
     out = LevelResult(

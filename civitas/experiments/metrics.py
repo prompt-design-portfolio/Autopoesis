@@ -312,14 +312,15 @@ def collect(
         "slope",
     )
 
-    from civitas.experiments.credit import calibration
-
-    cal = calibration(session, workspace_id)
-    metrics["confidence_calibration"] = (
-        Metric("confidence_calibration", cal["correlation"], "correlation",
-               detail={"n": cal["n"]})
-        if cal["correlation"] is not None
-        else _unavailable("confidence_calibration", str(cal["reason"]), "correlation")
+    # §A2.1's credit assignment is retired at G0: "credit here is the modulator, and it is the
+    # world's". Confidence calibration measured how well a hand-written policy's self-reported
+    # confidence tracked its outcomes, which is a fact about the policy. The grown learner reports
+    # no confidence; its credit arrives as a +/-1 modulator from the world's own accounting.
+    metrics["confidence_calibration"] = _unavailable(
+        "confidence_calibration",
+        "retired at G0 with §A2.1's credit assignment: credit here is the modulator, and it is "
+        "the world's. See civitas/legacy/credit.py.",
+        "correlation",
     )
 
     return metrics

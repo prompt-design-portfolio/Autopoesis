@@ -24,7 +24,7 @@ from sqlalchemy.orm import sessionmaker
 
 from civitas.config import Settings
 from civitas.domain.enums import ExperimentArm, TerminationReason
-from civitas.experiments.evaluation import is_readable
+from civitas.legacy.evaluation import is_readable
 from civitas.persistence.engine import create_db_engine
 from civitas.persistence.models import AgentProfile, Base, Episode, Organization, Workspace
 from civitas.persistence.session import install_guards

@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from civitas.domain.enums import EventType
-from civitas.experiments.tasks.distributed import SplitDevice
+from civitas.legacy.tasks.distributed import SplitDevice
 from civitas.persistence.events import emit
 from civitas.runtime.tools.base import Tool, ToolContext, ToolResult
 

@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 from civitas.config import Settings
 from civitas.domain.enums import ExperimentArm, TaskStatus
 from civitas.domains.base import DomainTask
-from civitas.experiments.procedure import RunResult
-from civitas.experiments.tasks.hidden_rule import DeviceSpec, TaskInstance
+from civitas.legacy.procedure import RunResult
+from civitas.legacy.tasks.hidden_rule import DeviceSpec, TaskInstance
 from civitas.persistence.models import AgentProfile, Task
 from civitas.runtime.budgets import Budgets
 from civitas.runtime.providers.base import Provider
@@ -114,7 +114,7 @@ def run_benchmark_episode(
     two copies of §22 that have drifted apart.
     """
     from civitas.domains import get_domain
-    from civitas.experiments.procedure import create_domain_task, run_domain_episode
+    from civitas.legacy.procedure import create_domain_task, run_domain_episode
 
     spec = _domain_task_for(instance)
     task = task or create_domain_task(session, workspace_id=workspace_id, spec=spec)

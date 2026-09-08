@@ -278,70 +278,108 @@ def _result_with(nfc, stale, controls, seed=0, alignment=True, gate="PASS"):
     return r
 
 
+def _seed(nfc, ratio, seed=0, aligned=True, gate="PASS"):
+    """A result with the four arms' nfc and stale ratios set directly."""
+    from civitas_g.g3 import BArmResult, G3Result
+
+    arms = [BArmResult(arm=name, seed=seed, aligned=aligned, stale=0.2, stale_n=100, null=0.1,
+                       ratio=ratio.get(name, float("nan")), nfc_mean=nfc[name],
+                       nfc_censored=0.0, nfc_n=50, prep_hit=0.4, pop=300.0, store_sha256=None,
+                       store_density=0.3, sym_gain=0.0, claim_window=700,
+                       marks_surviving_at_window_end=0.06)
+            for name in B_ARMS]
+    r = G3Result(succession=Succession(seed, 100, 2100, aligned, claim_window=700),
+                 a_store_sha256="x", a_mapping=(0, 1, 2), a_pi=(0, 1, 2, 3, 4),
+                 b_mapping=(0, 1, 2), arms=arms)
+    r.gate_r = {"verdict": gate}
+    return r
+
+
+#: the numbers seed 0 actually produced, aligned
+SEED0_NFC = {"fresh store": 2.035, "inherited store": 1.841,
+             "inherited scrambled": 1.972, "inherited gain-zero": 1.960}
+SEED0_RATIO = {"fresh store": float("nan"), "inherited store": 1.79,
+               "inherited scrambled": 1.44, "inherited gain-zero": 1.48}
+
+
 def test_one_seed_is_a_pre_check_not_an_acceptance():
     """B§5.2 asks for 3/3. Fewer is a pre-check and says so."""
     from civitas_g.g3 import acceptance
 
-    a = acceptance([_result_with(-0.2, 0.3, (-0.02, -0.02))])
+    a = acceptance([_seed(SEED0_NFC, SEED0_RATIO)])
     assert not a["accepted"]
     assert "pre-check" in a["why_not"]
 
 
-def test_the_claim_line_is_content_with_presence_held():
-    """A store changes the world by existing. `inherited scrambled` has the marks, the channels
-    and the decay with the labels destroyed, so the difference against IT is content alone."""
+def test_the_two_contrasts_each_hold_everything_but_one_factor():
+    """content varies what the labels SAY; reading varies whether the agent can SEE them. Neither
+    is the comparison against `fresh store`, which differs in the presence of marks AND their
+    content at once."""
     from civitas_g.g3 import acceptance
 
-    # treatment nfc 1.80, scrambled 1.94, fresh 2.00 -> content -0.14, presence -0.06
-    a = acceptance([_result_with(-0.20, 0.3, (-0.06, -0.02), seed=s) for s in (0, 1, 2)])
-    d = a["per_seed"][0]
-    assert d["content_vs_scrambled"] == pytest.approx(-0.14)
-    assert d["presence_vs_fresh"] == pytest.approx(-0.06)
-    assert d["total_vs_fresh"] == pytest.approx(-0.20)
-    assert "content" in a["claim_line"]
+    d = acceptance([_seed(SEED0_NFC, SEED0_RATIO)])["per_seed"][0]
+    assert d["content_vs_scrambled"] == pytest.approx(-0.131, abs=1e-3)
+    assert d["reading_vs_gain_zero"] == pytest.approx(-0.119, abs=1e-3)
+    assert d["total_vs_fresh"] == pytest.approx(-0.194, abs=1e-3)
 
 
-def test_three_seeds_moving_the_right_way_with_a_flat_gain_zero_is_accepted():
+def test_the_two_ways_of_removing_the_information_must_agree():
+    """The load-bearing check, and it is not in B§5.2's sentence. `inherited scrambled` and
+    `inherited gain-zero` remove the same thing by different routes -- meaningless labels, and
+    labels that cannot be seen -- so a design measuring what it thinks it is must land them
+    together. If they disagree, something other than label information is moving the metric and
+    neither contrast means what it says."""
     from civitas_g.g3 import acceptance
 
-    a = acceptance([_result_with(-0.20, 0.3, (-0.06, -0.02), seed=s) for s in (0, 1, 2)])
+    d = acceptance([_seed(SEED0_NFC, SEED0_RATIO)])["per_seed"][0]
+    assert d["controls_disagreement"] == pytest.approx(0.012, abs=1e-3)
+    assert d["controls_agree"] is True
+
+    # a run where the two controls diverge as much as the effect itself is not accepted
+    split = dict(SEED0_NFC, **{"inherited gain-zero": 1.84})
+    a = acceptance([_seed(split, SEED0_RATIO, seed=s) for s in (0, 1, 2)])
+    assert not a["accepted"]
+    assert a["per_seed"][0]["controls_agree"] is False
+
+
+def test_three_seeds_of_the_measured_shape_are_accepted():
+    from civitas_g.g3 import acceptance
+
+    a = acceptance([_seed(SEED0_NFC, SEED0_RATIO, seed=s) for s in (0, 1, 2)])
     assert a["accepted"] and a["passing_seeds"] == [0, 1, 2]
 
 
-def test_a_gain_zero_arm_that_drifts_is_not_flat():
-    """It cannot read the store -- its channels are sym_gain * marks with sym_gain exactly zero --
-    so a drift as large as the content effect means the effect is not about reading."""
+def test_a_treatment_that_beats_only_one_control_is_not_accepted():
+    """Both contrasts have to move: an effect that shows up against the scrambled labels but not
+    against the arm that cannot read is not an effect of reading labels."""
     from civitas_g.g3 import acceptance
 
-    a = acceptance([_result_with(-0.20, 0.3, (-0.06, -0.13), seed=s) for s in (0, 1, 2)])
+    only_content = dict(SEED0_NFC, **{"inherited gain-zero": 1.80})
+    a = acceptance([_seed(only_content, SEED0_RATIO, seed=s) for s in (0, 1, 2)])
     assert not a["accepted"]
-    assert a["per_seed"][0]["gain_zero_flat"] is False
-
-
-def test_a_scrambled_arm_that_explains_the_whole_effect_leaves_no_content():
-    """If the labels carried nothing, scrambled helps as much as the real store and the content
-    line goes to zero -- which is not "moving the right way"."""
-    from civitas_g.g3 import acceptance
-
-    a = acceptance([_result_with(-0.20, 0.3, (-0.20, -0.02), seed=s) for s in (0, 1, 2)])
-    assert not a["accepted"]
-    assert a["per_seed"][0]["content_vs_scrambled"] == pytest.approx(0.0)
+    assert a["per_seed"][0]["reading_moves_the_right_way"] is False
 
 
 def test_a_treatment_moving_the_wrong_way_is_not_accepted():
     from civitas_g.g3 import acceptance
 
-    assert not acceptance([_result_with(+0.20, 0.3, (-0.06, -0.02), seed=s)
-                           for s in (0, 1, 2)])["accepted"]
-    assert not acceptance([_result_with(-0.20, -0.3, (-0.06, -0.02), seed=s)
-                           for s in (0, 1, 2)])["accepted"]
+    worse = dict(SEED0_NFC, **{"inherited store": 2.10})
+    assert not acceptance([_seed(worse, SEED0_RATIO, seed=s) for s in (0, 1, 2)])["accepted"]
 
 
-def test_the_flatness_threshold_is_reported_beside_the_verdict_not_hidden_in_it():
+def test_the_stale_line_must_move_against_both_controls_too():
     from civitas_g.g3 import acceptance
 
-    a = acceptance([_result_with(-0.20, 0.3, (-0.06, -0.02), seed=s) for s in (0, 1, 2)])
-    assert a["flat_within"] == 0.35
+    flat = dict(SEED0_RATIO, **{"inherited store": 1.40})
+    a = acceptance([_seed(SEED0_NFC, flat, seed=s) for s in (0, 1, 2)])
+    assert not a["accepted"]
+    assert a["per_seed"][0]["stale_moves_the_right_way"] is False
+
+
+def test_the_agreement_threshold_is_reported_beside_the_verdict():
+    from civitas_g.g3 import acceptance
+
+    assert acceptance([_seed(SEED0_NFC, SEED0_RATIO)])["agree_within"] == 0.35
 
 
 def test_the_surviving_fraction_travels_into_the_acceptance():

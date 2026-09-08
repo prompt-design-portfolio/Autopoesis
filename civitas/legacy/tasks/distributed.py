@@ -27,7 +27,7 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
-from civitas.experiments.tasks.hidden_rule import CLASS_POOL, OP_POOL
+from civitas.legacy.tasks.hidden_rule import CLASS_POOL, OP_POOL
 
 FAMILY_POOL = ["ferrous", "saline", "vitric", "amber", "basalt", "nitre"]
 

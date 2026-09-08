@@ -81,8 +81,8 @@ class HiddenRuleDomain:
         domain object. A domain instance holding a device would be exactly the hidden cross-episode
         state §4 forbids — and worse, a single mutable one shared between arms.
         """
-        from civitas.experiments.tasks.hidden_rule import build_device
-        from civitas.experiments.tasks.probe_tool import ProbeDeviceTool
+        from civitas.legacy.tasks.hidden_rule import build_device
+        from civitas.legacy.tasks.probe_tool import ProbeDeviceTool
 
         device = build_device(
             seed=task.meta["device_seed"], era=task.meta["era"],
@@ -103,7 +103,7 @@ class HiddenRuleDomain:
         self, *, seed: int, count: int, era: int = 1, n_classes: int = 6, n_ops: int = 10,
         **kwargs: Any,
     ) -> list[DomainTask]:
-        from civitas.experiments.tasks.hidden_rule import build_device, era_instances
+        from civitas.legacy.tasks.hidden_rule import build_device, era_instances
 
         device = build_device(seed=seed, era=era, n_classes=n_classes, n_ops=n_ops)
         tasks = []
@@ -136,8 +136,8 @@ class HiddenRuleDomain:
     def build_agent(
         self, task: DomainTask, *, record_findings: bool, probe_order_seed: int
     ) -> Any:
-        from civitas.experiments.policy_agent import PolicyAgentProvider
-        from civitas.experiments.tasks.hidden_rule import build_device
+        from civitas.legacy.policy_agent import PolicyAgentProvider
+        from civitas.legacy.tasks.hidden_rule import build_device
 
         device = build_device(
             seed=task.meta["device_seed"], era=task.meta["era"],
@@ -152,7 +152,7 @@ class HiddenRuleDomain:
         )
 
     def naive_probe_ceiling(self, task: DomainTask, tool_calls: int) -> float:
-        from civitas.experiments.tasks.hidden_rule import probes_needed_by_chance
+        from civitas.legacy.tasks.hidden_rule import probes_needed_by_chance
 
         return probes_needed_by_chance(task.meta.get("n_ops", 10), max(0, tool_calls - 2))
 

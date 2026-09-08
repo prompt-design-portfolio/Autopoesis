@@ -27,8 +27,8 @@ from sqlalchemy.orm import Session
 from civitas.config import Settings, get_settings
 from civitas.domain.enums import ExperimentArm, TaskStatus
 from civitas.domains.base import Domain, DomainTask, check_no_leak
-from civitas.experiments import credit as credit_module
-from civitas.experiments.evaluation import evaluate_episode, is_readable
+from civitas.legacy import credit as credit_module
+from civitas.legacy.evaluation import evaluate_episode, is_readable
 from civitas.persistence.models import AgentProfile, Artifact, Episode, Task, ToolDefinition
 from civitas.persistence.types import utcnow
 from civitas.runtime.budgets import Budgets

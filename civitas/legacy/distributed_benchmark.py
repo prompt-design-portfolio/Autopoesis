@@ -35,16 +35,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from civitas.domain.enums import ExperimentArm, TaskStatus
-from civitas.experiments.evaluation import evaluate_episode
-from civitas.experiments.runner import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION, ensure_profile
-from civitas.experiments.tasks.distributed import (
+from civitas.legacy.evaluation import evaluate_episode
+from civitas.legacy.runner import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION, ensure_profile
+from civitas.legacy.tasks.distributed import (
     SplitDevice,
     SplitTaskInstance,
     assert_unsolvable_alone,
     build_split_device,
     partition_instances,
 )
-from civitas.experiments.tasks.split_tools import FAMILY_FINDING, TABLE_FINDING, registry_for
+from civitas.legacy.tasks.split_tools import FAMILY_FINDING, TABLE_FINDING, registry_for
 from civitas.persistence.models import Artifact, Episode, Task, Workspace
 from civitas.persistence.types import utcnow
 from civitas.runtime.budgets import Budgets
@@ -203,7 +203,7 @@ class IntegratorPolicy(Provider):
                          version="integrator-v1")
 
     def complete(self, request: CompletionRequest) -> Completion:
-        from civitas.experiments.policy_agent import ID_RE
+        from civitas.legacy.policy_agent import ID_RE
 
         searched = False
         ranked: list[str] = []

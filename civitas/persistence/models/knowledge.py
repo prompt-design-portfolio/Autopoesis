@@ -122,7 +122,7 @@ class Artifact(Base, UUIDPrimaryKey, Timestamped, Metadataed, SoftDeletable):
     last_retrieved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)
 
     #: Denormalised fold of `ArtifactUtilityMetric` events, for ranking. The events are the truth;
-    #: this is a cache and is rebuilt by `civitas.experiments.credit.recompute`.
+    #: this is a cache and is rebuilt by `civitas.legacy.credit.recompute` (retired at G0).
     downstream_utility: Mapped[float] = mapped_column(Float(), nullable=False, default=0.0)
 
     structured: Mapped[dict] = mapped_column(JSONVariant(), default=dict, nullable=False)

@@ -486,78 +486,87 @@ def acceptance(results: list[G3Result], *, alignment: str = "aligned") -> dict[s
     > the stale-mark ratio with the matched null, and preparations-to-first-correct, both against
     > `fresh store`, 3/3 seeds, with the scrambled and gain-zero arms flat
 
-    Three departures from that sentence, each forced by something the pre-check showed, and each
-    recorded here rather than made quietly.
+    The four arms form a 2x2 that the wording above does not use, and using it gives two clean
+    one-factor contrasts instead of one confounded comparison:
 
-    **1. The claim is about CONTENT, so its baseline is `inherited scrambled`, not `fresh store`.**
-    A store changes the world by existing -- marks in cells, channels carrying values, decay
-    running -- and `inherited scrambled` has all of that with the labels destroyed per cell. The
-    difference between `inherited store` and `fresh store` is presence *plus* content; the
-    difference between `inherited store` and `inherited scrambled` is content alone. A2.3 exists
-    to separate those two, and the pre-check measured them as roughly -0.13 and -0.06, so the
-    presence half is a third of the total and not negligible. The total effect is still reported,
-    as `nfc_vs_fresh`, but the claim is the content one.
+    |                | labels meaningful | labels unusable        |
+    |----------------|-------------------|------------------------|
+    | **can read**   | `inherited store` | `inherited scrambled`  |
+    | **cannot read**| `inherited gain-zero` | (`fresh store`: no marks at all) |
 
-    **2. `inherited gain-zero` does not control for presence, and describing it that way was
-    wrong.** Its read channels are `sym_gain * marks` with `sym_gain` pinned to exactly zero, so
-    its world is *perceptually identical* to `fresh store`'s -- the marks are there and multiply
-    by nothing. What differs between those two arms is the GENE, free at 0.05 versus pinned at 0,
-    not what an agent can see. So gain-zero is a strong control for "did reading happen at all"
-    and no control at all for "did the store's presence matter". It is required to be flat against
-    `fresh store`, which is what its construction predicts.
+    * **content** = `inherited store` − `inherited scrambled`. Marks, channels and decay held;
+      only what the labels *say* varies.
+    * **reading** = `inherited store` − `inherited gain-zero`. Marks and labels held; only whether
+      the agent can *see* them varies.
 
-    **3. "Flat" is a threshold and the threshold is stated.** A control does not land at exactly
-    zero in a finite sample. `flat_within` is reported beside the verdict rather than folded into
-    it, so a reader can disagree with the number without having to re-derive the result.
+    Both hold everything but one factor, and both should move the same way if the claim is true.
+    The claim is not "the treatment beats the baseline" but **"the treatment beats both ways of
+    removing the information, and those two agree with each other"** -- because scrambled and
+    gain-zero remove the same thing by different routes, so a design that is measuring what it
+    thinks it is must land them together.
+
+    That last quantity, `controls_agree`, is the load-bearing one and it is not in B§5.2's
+    sentence. It is what makes the arms a design rather than four numbers: if the arm that cannot
+    read and the arm with nothing worth reading disagree, then something other than label
+    information is moving the metric and neither contrast means what it says.
+
+    `fresh store` is reported as the total effect and is not a claim baseline: it differs from the
+    treatment in the presence of marks *and* their content at once.
     """
     picked = [r for r in results if r.succession.alignment == alignment]
     seeds = sorted({r.succession.seed for r in picked})
-    flat_within = 0.35     # gain-zero must move less than this fraction of the content effect
+    #: how close the two information-removing arms must land, as a fraction of the content effect
+    agree_within = 0.35
 
     per_seed: dict[int, dict[str, Any]] = {}
     for r in picked:
         by_arm = {a.arm: a for a in r.arms}
-        fresh = by_arm.get("fresh store")
-        treat = by_arm.get("inherited store")
-        scram = by_arm.get("inherited scrambled")
-        gain0 = by_arm.get("inherited gain-zero")
+        fresh, treat = by_arm.get("fresh store"), by_arm.get("inherited store")
+        scram, gain0 = by_arm.get("inherited scrambled"), by_arm.get("inherited gain-zero")
         if not (fresh and treat and scram and gain0):
             continue
 
-        content = treat.nfc_mean - scram.nfc_mean          # THE claim line
-        presence = scram.nfc_mean - fresh.nfc_mean         # what a store buys by existing
-        total = treat.nfc_mean - fresh.nfc_mean
-        stale = treat.ratio - gain0.ratio                  # reading, against not-reading
-        gain0_drift = gain0.nfc_mean - fresh.nfc_mean      # must be flat: it cannot read
+        content = treat.nfc_mean - scram.nfc_mean          # labels vary, everything else held
+        reading = treat.nfc_mean - gain0.nfc_mean          # gain varies, everything else held
+        disagreement = scram.nfc_mean - gain0.nfc_mean     # must be ~0: both remove the same thing
+        total = treat.nfc_mean - fresh.nfc_mean            # presence AND content: not a claim
+        stale_content = treat.ratio - scram.ratio
+        stale_reading = treat.ratio - gain0.ratio
 
-        gain0_flat = (np.isfinite(content) and content != 0
-                      and abs(gain0_drift) <= flat_within * abs(content))
+        scale = max(abs(content), abs(reading))
+        controls_agree = bool(np.isfinite(disagreement) and scale > 0
+                              and abs(disagreement) <= agree_within * scale)
         per_seed[r.succession.seed] = {
             "content_vs_scrambled": content,
-            "presence_vs_fresh": presence,
+            "reading_vs_gain_zero": reading,
+            "controls_disagreement": disagreement,
             "total_vs_fresh": total,
-            "stale_ratio_vs_unreading": stale,
-            "gain_zero_drift_vs_fresh": gain0_drift,
+            "stale_content": stale_content,
+            "stale_reading": stale_reading,
             "content_moves_the_right_way": bool(np.isfinite(content) and content < 0),
-            "stale_moves_the_right_way": bool(np.isfinite(stale) and stale > 0),
-            "gain_zero_flat": bool(gain0_flat),
+            "reading_moves_the_right_way": bool(np.isfinite(reading) and reading < 0),
+            "stale_moves_the_right_way": bool(np.isfinite(stale_content) and stale_content > 0
+                                              and np.isfinite(stale_reading)
+                                              and stale_reading > 0),
+            "controls_agree": controls_agree,
             "gate_r": r.gate_r.get("verdict", ""),
             "marks_surviving": (r.arms[0].marks_surviving_at_window_end if r.arms else None),
         }
 
     n = len(per_seed)
     passing = [s for s, d in per_seed.items()
-               if d["content_moves_the_right_way"] and d["stale_moves_the_right_way"]
-               and d["gain_zero_flat"]]
+               if d["content_moves_the_right_way"] and d["reading_moves_the_right_way"]
+               and d["stale_moves_the_right_way"] and d["controls_agree"]]
     return {
         "alignment": alignment,
         "seeds": seeds,
         "n_seeds": n,
         "passing_seeds": passing,
         "accepted": bool(n >= 3 and len(passing) == n),
-        "flat_within": flat_within,
-        "claim_line": "preparations-to-first-correct, `inherited store` minus `inherited "
-                      "scrambled` -- content, with presence held",
+        "agree_within": agree_within,
+        "claim_line": "preparations-to-first-correct: `inherited store` beats BOTH "
+                      "`inherited scrambled` (content) and `inherited gain-zero` (reading), and "
+                      "those two agree with each other",
         "per_seed": per_seed,
         "why_not": ("" if n >= 3 else
                     f"{n} seed(s): B§5.2 asks for 3/3, and fewer is a pre-check."),

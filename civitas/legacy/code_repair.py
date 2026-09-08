@@ -540,7 +540,7 @@ class CodeRepairDomain:
         )
 
     def build_tools(self, task: DomainTask) -> list[Any]:
-        from civitas.experiments.tasks.patch_tool import TryPatchTool
+        from civitas.legacy.tasks.patch_tool import TryPatchTool
 
         return [TryPatchTool(self._presented(task))]
 
@@ -550,7 +550,7 @@ class CodeRepairDomain:
     def build_agent(
         self, task: DomainTask, *, record_findings: bool, probe_order_seed: int
     ) -> Any:
-        from civitas.experiments.repair_policy_agent import RepairPolicyAgentProvider
+        from civitas.legacy.repair_policy_agent import RepairPolicyAgentProvider
 
         presented = self._presented(task)
         return RepairPolicyAgentProvider(
