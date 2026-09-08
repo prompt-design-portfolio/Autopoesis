@@ -41,6 +41,18 @@ Full data, including the difficulty sweep that justifies the budget, is in
 `results/m4_newcomer_benchmark.json`. Read the gates first: a failed gate withholds the numbers
 rather than annotating them.
 
+### The other three scientific criteria
+
+| §65 level | measurement | result |
+|---|---|---|
+| 4 distributed cognition | a two-factor device split across populations, provably unsolvable alone | **+0.417** over the best single partition |
+| 5 cumulative culture | a chain where each generation's question is set by the last one's answer | **4 generations** reached, vs **1** with the chain broken |
+| 6 capability growth | frontier across difficulty, model held constant | collective **14**, solo **6**, independent **6** |
+
+`independent` tracking `solo` exactly is the check that matters: repeated sampling without
+transmission buys nothing, so the collective's gain is transmission. Data in
+`results/m9_advanced_benchmarks.json`.
+
 ---
 
 ## Quick start
@@ -117,8 +129,8 @@ These are load-bearing, and each has a test that drives the real mechanism:
 
 | milestone | state |
 |---|---|
-| M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions | complete |
-| M9–M13 | see `docs/ARCHITECTURE.md` §5 |
+| M1 audit · M2 persistence · M3 runtime · M4 experiments · M5 knowledge · M6 tools · M7 orchestration · M8 institutions · M9 advanced benchmarks | complete |
+| M10–M13 | see `docs/ARCHITECTURE.md` §5 |
 
 Each milestone reports its effect on the M4 benchmark. A feature that moves no number is reported
 as such rather than hidden (Part A §A1.5) — M5's hybrid retrieval moved it by exactly 0.000, and
