@@ -117,6 +117,7 @@ def retrieve(
     task_id: uuid.UUID | None = None,
     use_vector: bool = True,
     expose_contradictions: bool = True,
+    exclude_types: list[ArtifactType] | None = None,
     embedder=None,
 ) -> RetrievalResult:
     """Rank the workspace's artifacts for this query under this arm's policy."""
@@ -139,6 +140,21 @@ def retrieve(
 
     candidates = _candidates(session, workspace_id, types, policy)
     suppressed: list[dict[str, Any]] = []
+
+    # A *role* may withhold types from itself, on top of whatever the arm withholds. This is how
+    # the replicator works (§28): an agent shown the conclusion it is asked to independently
+    # reproduce is agreeing, not replicating, and the `reproduces` edge it then writes would be
+    # worthless while looking like the strongest evidence in the graph.
+    if exclude_types:
+        excluded_set = {t for t in exclude_types}
+        removed = [a for a in candidates if a.type in excluded_set]
+        if removed:
+            candidates = [a for a in candidates if a.type not in excluded_set]
+            suppressed.append({
+                "reason": "role_excluded_type",
+                "types": sorted(t.value for t in excluded_set),
+                "count": len(removed),
+            })
 
     # Exclusions applied in SQL are still exclusions. Recording them as an aggregate keeps the
     # ablation auditable without loading rows the arm has already ruled out — an arm whose effect

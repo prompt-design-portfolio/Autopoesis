@@ -187,6 +187,14 @@ class SearchKnowledgeTool(Tool):
                     return ToolResult(ok=False, error=f"unknown artifact type {raw!r}")
 
         options = ctx.retrieval_options or {}
+        role_excluded = None
+        if options.get("exclude_types"):
+            role_excluded = []
+            for raw in options["exclude_types"]:
+                try:
+                    role_excluded.append(ArtifactType(raw))
+                except ValueError:
+                    continue
         results = retrieve(
             ctx.session,
             workspace_id=ctx.workspace_id,
@@ -198,6 +206,7 @@ class SearchKnowledgeTool(Tool):
             task_id=ctx.task_id,
             use_vector=options.get("use_vector", True),
             expose_contradictions=options.get("expose_contradictions", True),
+            exclude_types=role_excluded,
             weights=options.get("weights"),
             config_hash=ctx.config_hash,
         )
