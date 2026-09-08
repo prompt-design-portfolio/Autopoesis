@@ -30,12 +30,14 @@ ui-tests = ["playwright>=1.40"]
 
 [project.scripts]
 civitas = "civitas.cli:main"
+civitas-g = "civitas_g.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["civitas*"]
+include = ["civitas*", "civitas_g*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+markers = ["slow: exercises the engine for more than a few seconds"]
+testpaths = ["tests", "tests_g"]
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.ruff]

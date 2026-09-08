@@ -11,3 +11,6 @@ __pycache__/
 *.db-wal
 *.db-shm
 civitas_data/
+
+# G lineage local artifacts
+var/
