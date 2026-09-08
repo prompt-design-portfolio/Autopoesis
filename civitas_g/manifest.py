@@ -218,6 +218,17 @@ ENGINE_VERSIONS: tuple[EngineVersion, ...] = (
         "engine_store_selftest (trajectory-neutrality, unchanged) plus "
         "store_decodes_selftest, which checks that the pi stored with a record actually decodes "
         "that record's marks -- the check that would have caught (1)."),
+    EngineVersion(
+        "G3-mapping", "383f24dd6abd5c223c22537262d5e6b6c7f7c163aaaed538c9ab36837f9b74fb",
+        "added for G3",
+        "adds run(..., init_mapping=...): start the world in a NAMED era and then let the clock "
+        "run normally. Unlike force_mapping, which pins the mapping and stops every redraw. A "
+        "population born into another's record needs it, because a record says which preparation "
+        "succeeded on which type and that is only true of the era it was written in.",
+        "the mapping is DRAWN first and then overwritten, so the RNG stream is untouched: "
+        "measured, a run with init_mapping set to the mapping the world would have drawn anyway "
+        "is identical across all 133 shared log fields. That matching is what makes B's arms "
+        "differ in the store and in nothing else."),
 )
 
 CURRENT_ENGINE = ENGINE_VERSIONS[-1]

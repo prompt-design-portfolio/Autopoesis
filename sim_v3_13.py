@@ -926,7 +926,8 @@ def resolve_action(a, action, world, cfg, rng, t=0):
 # the run
 # --------------------------------------------------------------------------
 
-def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None):
+def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None,
+        init_mapping=None):
     """phases: a list of {"n_steps": int, "chain": bool} run back to back on ONE population.
     The agents list, their H, their eligibility traces and the world are all carried across a
     phase boundary untouched -- only cfg.chain flips.  phases=None runs a single phase of
@@ -936,7 +937,15 @@ def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None):
     step 0, so a population can be born into a record it did not write.  The frozen assay's store
     arms and G3's population B both need it: without it World.__init__ zeroes the marks and redraws
     pi, so a replay never sees the store the population actually left.  None -- the default --
-    leaves the world exactly as it was, byte for byte."""
+    leaves the world exactly as it was, byte for byte.
+
+    init_mapping starts the world in a NAMED era instead of a freshly drawn one, and then lets the
+    clock run normally -- unlike force_mapping, which pins the mapping and stops every redraw.  A
+    population born into another's record needs this: the record says which preparation succeeded
+    on which type, and that is only true of the era it was written in.  The mapping is still DRAWN
+    first and then overwritten, so the RNG stream is untouched and a run with init_mapping is
+    matched step for step with one without it.  That matching is the whole point: the arms of a
+    G3 comparison differ in the store and in nothing else."""
     if phases is None:
         phases = [dict(n_steps=cfg.n_steps, chain=cfg.chain)]
     schedule, bounds, acc = [], [], 0
@@ -950,6 +959,10 @@ def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None):
     g, v = cfg.grid, cfg.view
     win = 2 * v + 1
     world = World(cfg, rng)
+    if init_mapping is not None:
+        # Overwritten, not drawn: World.__init__ already consumed the RNG for its own draw, so
+        # this leaves the stream exactly where a run without init_mapping would leave it.
+        world.mapping = tuple(int(x) for x in init_mapping)
     if init_store is not None:
         # Written, not drawn: no RNG is consumed here, so init_store=None is bit-identical to the
         # unpatched engine.

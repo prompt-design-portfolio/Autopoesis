@@ -102,21 +102,32 @@ class RunResult:
         return len(self.raw.get("era_snaps") or [])
 
 
-def run(spec: RunSpec, *, verbose: bool = False,
-        init_genomes: Any = None) -> RunResult:
+def run(spec: RunSpec, *, verbose: bool = False, init_genomes: Any = None,
+        init_store: dict[str, Any] | None = None,
+        init_mapping: tuple[int, ...] | None = None,
+        phases: list[dict[str, Any]] | None = None) -> RunResult:
     """Run the engine. Byte-identical, hash recorded.
 
-    `init_genomes` exists for G3 -- population B born into population A's record -- and is passed
-    straight through. At G1 it is always None, and a caller that passes one is told so rather than
-    quietly getting a founder-seeded run under a G1 manifest.
+    `init_store` and `init_mapping` are G3's mechanism: a population born into a record it did not
+    write, started in the era that record was written in. Both are passed straight through.
+
+    `init_genomes` is NOT. G3's whole claim is that nothing but the externalised record crosses
+    between populations, so a G-lineage run never seeds a population from another's genomes; the
+    refusal is the enforcement rather than a convention. The frozen assay replays A's own genomes
+    and calls `sim_v3_13.run` directly for exactly that reason.
+
+    `phases` overrides the two-phase staging. B runs chain-on from step 0 (G3-D1): a record injected
+    before an identical 3000-step food-only phase decays to 6e-6 of itself before B's first
+    preparation, so identical staging would measure `mark_decay` and call it transmission.
     """
     from civitas_g.manifest import engine_identity
 
     if init_genomes is not None:
         raise EngineRefusal(
-            "init_genomes is G3's mechanism (population B born into population A's record). "
-            "At G1 every run starts from fresh founders, and a run that did not would not be a "
-            "reproduction of anything committed."
+            "a G-lineage run never seeds a population from another population's genomes. G3's "
+            "claim is that nothing but the externalised record crosses, so B's founders are "
+            "fresh; use init_store to hand it a record. (The frozen assay replays a population's "
+            "OWN genomes and calls sim_v3_13.run directly.)"
         )
     identity = engine_identity()
     if identity["engine_tree_clean"] == "no":
@@ -126,7 +137,8 @@ def run(spec: RunSpec, *, verbose: bool = False,
             "reader could resolve. Commit or stash before running."
         )
     t0 = time.time()
-    raw = _sim.run(spec.config(), verbose=verbose, phases=spec.phases())
+    raw = _sim.run(spec.config(), verbose=verbose, phases=phases or spec.phases(),
+                   init_store=init_store, init_mapping=init_mapping)
     return RunResult(
         arm=spec.arm, seed=spec.seed, phase_steps=spec.phase_steps, raw=raw,
         wall_seconds=time.time() - t0, engine_sha256=identity["sim_v3_13.py"],

@@ -68,7 +68,7 @@ recorded so the next reader does not trust the comment over the code.
 
 ## 2. The proposed engine change
 
-`docs/patches/g2-store-capture-and-injection.diff`, against `sim_v3_13.py` @
+`docs/patches/engine-store-capture-injection-and-init-mapping.diff`, against `sim_v3_13.py` @
 `3b51b191d953a71691831095e1f631eb69ab07d1d17b180376547ea4fceb84f5`. **Unapplied.**
 
 Four additions, and nothing removed:

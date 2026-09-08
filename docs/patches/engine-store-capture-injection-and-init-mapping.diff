@@ -1,5 +1,5 @@
---- /dev/fd/63	2026-09-08 22:01:21.901671341 +0000
-+++ sim_v3_13.py	2026-09-08 22:00:37.423394480 +0000
+--- /dev/fd/63	2026-09-08 22:07:12.953685720 +0000
++++ sim_v3_13.py	2026-09-08 22:05:57.693696890 +0000
 @@ -114,6 +114,11 @@
                                    # -- it is simply not lethal.  Nothing about the POPULATION can
                                    # change, so the only thing that can move a hit rate over the
@@ -12,12 +12,13 @@
      era_snap_keep: int = 2        # era-boundary snapshots retained (rolling, most recent last)
      era_snap_max: int = 300       # agents sampled per snapshot, to bound the pickle
      # --- v3.13 record ---
-@@ -921,11 +926,17 @@
+@@ -921,11 +926,26 @@
  # the run
  # --------------------------------------------------------------------------
  
 -def run(cfg, verbose=True, init_genomes=None, phases=None):
-+def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None):
++def run(cfg, verbose=True, init_genomes=None, phases=None, init_store=None,
++        init_mapping=None):
      """phases: a list of {"n_steps": int, "chain": bool} run back to back on ONE population.
      The agents list, their H, their eligibility traces and the world are all carried across a
      phase boundary untouched -- only cfg.chain flips.  phases=None runs a single phase of
@@ -28,14 +29,26 @@
 +    step 0, so a population can be born into a record it did not write.  The frozen assay's store
 +    arms and G3's population B both need it: without it World.__init__ zeroes the marks and redraws
 +    pi, so a replay never sees the store the population actually left.  None -- the default --
-+    leaves the world exactly as it was, byte for byte."""
++    leaves the world exactly as it was, byte for byte.
++
++    init_mapping starts the world in a NAMED era instead of a freshly drawn one, and then lets the
++    clock run normally -- unlike force_mapping, which pins the mapping and stops every redraw.  A
++    population born into another's record needs this: the record says which preparation succeeded
++    on which type, and that is only true of the era it was written in.  The mapping is still DRAWN
++    first and then overwritten, so the RNG stream is untouched and a run with init_mapping is
++    matched step for step with one without it.  That matching is the whole point: the arms of a
++    G3 comparison differ in the store and in nothing else."""
      if phases is None:
          phases = [dict(n_steps=cfg.n_steps, chain=cfg.chain)]
      schedule, bounds, acc = [], [], 0
-@@ -939,6 +950,11 @@
+@@ -939,6 +959,15 @@
      g, v = cfg.grid, cfg.view
      win = 2 * v + 1
      world = World(cfg, rng)
++    if init_mapping is not None:
++        # Overwritten, not drawn: World.__init__ already consumed the RNG for its own draw, so
++        # this leaves the stream exactly where a run without init_mapping would leave it.
++        world.mapping = tuple(int(x) for x in init_mapping)
 +    if init_store is not None:
 +        # Written, not drawn: no RNG is consumed here, so init_store=None is bit-identical to the
 +        # unpatched engine.
@@ -44,7 +57,7 @@
      world.chain_on = schedule[0][1]
      for _ in range(100):
          world.step(-1)
-@@ -982,7 +998,13 @@
+@@ -982,7 +1011,13 @@
      # because rng.shuffle reorders the list every step.
      _frozen_e = {id(a): float(a.energy) for a in agents} if cfg.frozen else {}
      era_snaps = []                                   # rolling era-boundary genome snapshots
@@ -58,7 +71,7 @@
      t0 = time.time()
  
      track_recency = (cfg.trace_recency and cfg.mode == "plastic"
-@@ -1010,7 +1032,15 @@
+@@ -1010,7 +1045,15 @@
                  era_snaps.append(dict(t=t, mapping=prev_mapping, n_pop=len(agents),
                                        genomes=snapshot(samp)))
                  del era_snaps[:-cfg.era_snap_keep]
@@ -74,7 +87,7 @@
              for a in agents:
                  a.since_recipe = 0
                  # SURVIVOR-CONDITIONED SINCE-REMAP: an agent qualifies only if it made SR_W
-@@ -1360,7 +1390,17 @@
+@@ -1360,7 +1403,17 @@
                  # re-seeds the world does NOT get this mapping, so a genome test has to pin it.
                  final_mapping=tuple(int(x) for x in world.mapping),
                  era_snaps=era_snaps,     # genomes at era boundaries, with the mapping just lived

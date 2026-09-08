@@ -222,7 +222,7 @@ def _engine_drift_selftest() -> SelfTestResult:
 
 #: Kept for the record: the change that produced the current engine, applied at G2 under G2-D1.
 #: The engine now carries it, so this file is history rather than a pending action.
-PATCH_PATH = "docs/patches/g2-store-capture-and-injection.diff"
+PATCH_PATH = "docs/patches/engine-store-capture-injection-and-init-mapping.diff"
 
 
 def _engine_at(commit: str, tmp: str):
@@ -386,6 +386,19 @@ def _store_decodes_selftest() -> SelfTestResult:
         f"{checked} (snapshot, type) pairs across {len(snaps)} captures: the positively marked "
         f"labels decode, through the stored pi, to the preparation that era's mapping made "
         f"correct.", milestone="G2")
+
+
+def _b_founders_selftest() -> SelfTestResult:
+    """B§6's `B-founders-carry-no-H`, run before any B number is read.
+
+    G3's whole claim is that nothing but the externalised record crosses between populations. This
+    is that claim as a check rather than as a convention.
+    """
+    from civitas_g.g3 import b_founders_carry_no_h
+
+    ok, detail = b_founders_carry_no_h()
+    return SelfTestResult("b_founders_carry_no_h", "pass" if ok else "fail", detail,
+                          milestone="G3")
 
 
 def _assay_selftest() -> SelfTestResult:
@@ -641,12 +654,8 @@ def _registry() -> list[SelfTest]:
                  milestone="G2", source="sim_v3_13 (engine G2-store-fix)"),
         SelfTest("store_decodes", _store_decodes_selftest,
                  milestone="G2", source="sim_v3_13 (engine G2-store-fix)"),
-        SelfTest("b_founders_carry_no_h",
-                 _g2_g3_unavailable(
-                     "b_founders_carry_no_h", "G3",
-                     "NOT AVAILABLE at G1. There is no population B until G3; at G1 every run "
-                     "starts from fresh founders and the engine refuses init_genomes."),
-                 milestone="G3"),
+        SelfTest("b_founders_carry_no_h", _b_founders_selftest,
+                 milestone="G3", source="civitas_g.g3"),
     ]
 
 
