@@ -3,6 +3,7 @@
 [![Open in Codespaces](https://img.shields.io/badge/Open-Codespaces-24292e?logo=github)](https://github.com/prompt-design-portfolio/Autopoesis/codespaces/new?ref=claude%2Fmaster-prompt-init-ehmsbe)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/prompt-design-portfolio/Autopoesis/blob/claude/master-prompt-init-ehmsbe/notebooks/Civitas_Colab.ipynb)
 [![Acceptance](https://img.shields.io/badge/Actions-run%20acceptance-2088FF?logo=githubactions&logoColor=white)](https://github.com/prompt-design-portfolio/Autopoesis/actions/workflows/acceptance.yml)
+[![Run from a phone](https://img.shields.io/badge/Tap%20to-run%20acceptance-30a14e?logo=github)](https://github.com/prompt-design-portfolio/Autopoesis/issues/new?labels=run&title=Run+acceptance&body=levels%3A%0Aseeds%3A+0%2C1%2C2%2C3%2C4%0Apasses%3A+3%0A%0ALeave+levels+blank+for+all+six.+Submit%2C+and+the+result+table+is+posted+here.)
 
 A persistent artificial civilization for cumulative collective intelligence.
 
@@ -136,6 +137,19 @@ a deployment is one artifact and a Colab or air-gapped runtime renders exactly w
 does. Two rules are enforced on screen and tested in a real browser: a metric the platform reports
 as `null` renders as "not available" with its reason, never as `0`, and a benchmark whose gates
 failed shows the gates and withholds the numbers.
+
+### Starting a run from a phone
+
+GitHub has no URL that starts a workflow by being visited — triggering the API needs an
+authenticated POST, so a bare link cannot do it. What a link *can* do is open a pre-filled issue,
+and an issue can trigger a workflow. Tap **Tap to run acceptance** above, then Submit. The run
+acknowledges within seconds and posts the result table back as a comment on that issue, gates
+included.
+
+Edit `levels:` in the body to run a subset (`1,2,3` is a few minutes; all six is about an hour).
+Only people who can already push can trigger it — an issue is something a stranger can open, and
+a workflow that spends an hour of compute for anyone who asks is a way to spend someone else's
+Actions minutes.
 
 ### Running it in GitHub
 

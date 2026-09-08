@@ -1,0 +1,166 @@
+# Start a run from a phone (Part B §63, §65).
+#
+# GitHub has no URL that starts a workflow by being visited: triggering the API needs an
+# authenticated POST, so a bare link cannot do it. What a link *can* do is open a pre-filled issue
+# form, and an issue can trigger a workflow. That is the whole mechanism — one tap to open, one to
+# submit, and the results come back as a comment on the same issue.
+#
+# The link that opens the form lives in the README.
+
+name: run
+
+on:
+  issues:
+    types: [opened, labeled]
+
+# The workflow writes back to the issue that started it, and reads nothing else.
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  guard:
+    # Two conditions, and the second is the one that matters: an issue is something a stranger can
+    # open, and a workflow that runs an hour of compute for anyone who asks is a way to spend
+    # someone else's Actions minutes. Only people who can already push may start a run.
+    # The title marker matters as much as the label: a `?labels=run` link only applies the label
+    # if that label already exists in the repository, so a first-time user would tap the link, get
+    # an issue with no label, and nothing would happen. Matching the title too means the link
+    # works before anyone has created a label.
+    if: |
+      (contains(github.event.issue.labels.*.name, 'run')
+       || startsWith(github.event.issue.title, 'Run acceptance'))
+      && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    outputs:
+      levels: ${{ steps.parse.outputs.levels }}
+      seeds: ${{ steps.parse.outputs.seeds }}
+      passes: ${{ steps.parse.outputs.passes }}
+    steps:
+      - name: Read the request out of the issue
+        id: parse
+        env:
+          # Through the environment, never interpolated into the script: an issue body is written
+          # by whoever opened it, and `${{ }}` inside a shell line makes it executable text.
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, re
+
+          text = f"{os.environ.get('TITLE', '')}\n{os.environ.get('BODY', '')}"
+
+          def field(name, default, pattern):
+              match = re.search(rf"{name}\s*[:=]\s*({pattern})", text, re.I)
+              return match.group(1).strip() if match else default
+
+          # Defaults are the committed configuration, so an issue with an empty body reproduces
+          # `results/m13_acceptance.json` rather than something arbitrary.
+          print(f"levels={field('levels', '', r'[1-6](?:\s*,\s*[1-6])*')}")
+          print(f"seeds={field('seeds', '0,1,2,3,4', r'\d+(?:\s*,\s*\d+)*')}")
+          print(f"passes={field('passes', '3', r'\d+')}")
+          PY
+
+      - name: Acknowledge, so the phone shows something within seconds
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                        `/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              ...context.repo, issue_number: context.issue.number,
+              body: [
+                `Started. [Watch it run](${run}).`,
+                ``,
+                `Levels \`${{ steps.parse.outputs.levels }}\` (blank means all six) · ` +
+                `seeds \`${{ steps.parse.outputs.seeds }}\` · ` +
+                `\`${{ steps.parse.outputs.passes }}\` accumulation passes.`,
+                ``,
+                `The full six-level campaign takes about an hour. The result table will be ` +
+                `posted here when it finishes, including the gates — a level whose gate fails ` +
+                `withholds its number rather than reporting a zero.`,
+              ].join("\n"),
+            });
+
+  acceptance:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11", cache: pip}
+      - run: pip install -e ".[dev]"
+
+      - name: Run
+        id: run
+        continue-on-error: true          # a failed acceptance must still report, not vanish
+        env:
+          CIVITAS_JWT_SECRET: ci-acceptance-not-a-real-key
+        run: |
+          export CIVITAS_DATABASE_URL="sqlite:///$RUNNER_TEMP/acceptance.db"
+          python -m civitas.cli init-db --alembic
+          LEVELS=""
+          if [ -n "${{ needs.guard.outputs.levels }}" ]; then
+            LEVELS="--levels ${{ needs.guard.outputs.levels }}"
+          fi
+          python -m civitas.cli acceptance \
+            --seeds "${{ needs.guard.outputs.seeds }}" \
+            --passes "${{ needs.guard.outputs.passes }}" \
+            $LEVELS --out acceptance.json
+
+      - name: Post the result back to the issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+                        `/actions/runs/${context.runId}`;
+            let body;
+            if (!fs.existsSync('acceptance.json')) {
+              body = `The run produced no result file. [Logs](${run}).`;
+            } else {
+              const r = JSON.parse(fs.readFileSync('acceptance.json', 'utf8'));
+              const rows = r.levels.map(l => {
+                const value = l.value === null ? '_withheld_' : l.value;
+                const failed = Object.entries(l.gates)
+                  .filter(([, g]) => !g.passed).map(([n]) => n);
+                const gates = failed.length ? `**gate failed: ${failed.join(', ')}**` : 'gates ok';
+                return `| ${l.passed ? 'PASS' : 'FAIL'} | ${l.level} ${l.name} | ${value} ` +
+                       `| ${l.control_value} | ${gates} |`;
+              });
+              const m = r.manifest;
+              const unenforced = m.sandbox_unenforced_limits || [];
+              body = [
+                `### ${r.accepted ? 'Accepted' : 'NOT accepted'}`,
+                ``,
+                `| | level | value | control | |`,
+                `|---|---|---|---|---|`,
+                ...rows,
+                ``,
+                `Code \`${m.code_version}\` · schema \`${m.schema_version}\` · ` +
+                `seeds ${JSON.stringify(m.seeds)} · ${m.accumulation_passes} passes`,
+                ``,
+                `Sandbox **${m.sandbox.backend}**, isolation **${m.sandbox.isolation_level}**.` +
+                (unenforced.length
+                  ? ` Limits it could **not** enforce here: \`${unenforced.join(', ')}\` — ` +
+                    `these numbers were produced under weaker isolation than a container gives, ` +
+                    `and the manifest says so rather than leaving it to be assumed.`
+                  : ``),
+                ...r.levels.filter(l => l.withheld_reason)
+                  .map(l => `\n> Level ${l.level} withheld: ${l.withheld_reason}`),
+                ``,
+                `[Full logs and the JSON artifact](${run}).`,
+              ].join("\n");
+            }
+            await github.rest.issues.createComment({
+              ...context.repo, issue_number: context.issue.number, body,
+            });
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acceptance-issue-${{ github.event.issue.number }}
+          path: acceptance.json
+          if-no-files-found: warn
