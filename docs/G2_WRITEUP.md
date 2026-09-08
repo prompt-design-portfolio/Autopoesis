@@ -119,3 +119,63 @@ job: births, deaths and injection off, energy pinned by identity, so nothing but
 
 ## 4. Reproduction through the store (gate clause 4)
 
+G2-D1's recommendation made the ruling conditional on the G1 reproduction being re-run against the
+patched engine and still giving 182/182. That re-run is in flight; what is already measured is
+stronger than the smoke test the spec proposed, so it is recorded here first.
+
+### 4.1 Row-identity at full reference length
+
+Rather than an 800-step probe, the same arm's **stored rows** were compared between the two
+databases: the G1 campaign (engine `G0`, capture **off**) and the G2 campaign (engine `G2-store`,
+capture **on**), same seed, same 3000-step phases.
+
+```
+log rows:            120 vs 120
+shared log fields:   133   differing: []
+final_mapping:       (3, 2, 4) vs (3, 2, 4)
+```
+
+**Row-identical.** Not "the summary statistics agree" — every field of every era row, at the length
+the reference itself was produced at, with capture running. That is the trajectory-neutrality claim
+at full strength, on real data rather than on a probe.
+
+It is worth being precise about what this does and does not show. It shows that turning capture on
+does not perturb the run. It does **not** by itself show that the reading still reproduces the
+reference — identical rows must produce identical fields, but the field-level diff is what the gate
+asks for, and it is what the re-run is for.
+
+### 4.2 The field-level diff
+
+*(pending — the five-arm campaign)*
+
+---
+
+## 5. DECISIONs, and how each was ruled
+
+| | decision | ruled |
+|---|---|---|
+| G2-D1 | apply the engine patch? | **applied**, under all four conditions. The engine is versioned, not re-pinned: `verify_engine()` names the version on disk and fails on an unrecorded hash |
+| G2-D2 | which scramble for the inherited-store control? | **per-cell**. A global permutation is isomorphic to the real store, so the arm would read as a null while information had passed. Global is the assay's arm, where the question is different |
+| G2-D3 | where does the assay live? | **in Civitas**, calling `sim_v3_13.run` directly. Exactly one research file changed, so `frozen_replay` and `frozen_knockout` are untouched and the G1 reproduction stays a valid regression test for the engine change |
+| G2-D4 | how many store snapshots? | **the same rolling window of 2** as the genomes, so a record and the genomes at one boundary are always both present or both absent |
+| G2-D5 | per-mark provenance? | **no, not at G2.** It would triple the store's memory and serve no claim line here or at G3. Provenance is at the artifact level and the gap is recorded rather than papered over |
+
+---
+
+## 6. What G2 leaves for G3
+
+The engine can now hand a record to a population that did not write it. That is precisely what
+B§5.2 needs — *"Population B — fresh founders, staged identically, no genomes crossing — is born
+into A's record"* — and the pieces are in place: `init_store` on the engine, `ScrambleMode.PER_CELL`
+for the `inherited scrambled` arm, `sym_gain_lock` for the gain-zero arm, and the store as a
+durable artifact with its own hash.
+
+Two things G3 will need that do not exist yet:
+
+* **`b_founders_carry_no_H`** (B§6). At G1 the engine refuses `init_genomes` outright; G3 must
+  allow it for population B while proving that nothing learned crossed. `snapshot()` already saves
+  genomes only — *"Nothing learned (H) is saved"* — so the self-test is a check on that promise
+  rather than a new mechanism.
+* **Era-clock alignment between A and B** is flagged in B§5.2 as a DECISION, with a pre-registered
+  reading attached: *a null under a misaligned clock is stale culture, not absent culture, and is
+  reported as such.* That has to be settled before B's arms are run, not after.
