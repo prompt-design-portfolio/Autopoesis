@@ -230,6 +230,20 @@ def report(directory: str | pathlib.Path = "var/g3") -> str:
         rows.append(f"    {alignment:<12} content {t['mean']:+.4f} +/- {t['se']:.4f} (se)"
                     f"   t = {t['t']:+.2f} on {t['df']} df"
                     f"   {'all one sign' if t['all_same_sign'] else 'signs mixed'}")
+    # The unbalanced-seeds warning. This is not hypothetical: the alignment contrast was once
+    # reported here at n=5 while the aligned column showed n=6, and the missing seed was the one
+    # that had just moved every other number. A reader comparing the two columns would have been
+    # comparing different seed sets. The tool now says so rather than relying on anyone noticing.
+    by_seed: dict[int, set[str]] = {}
+    for c in cells:
+        by_seed.setdefault(c["seed"], set()).add(c["alignment"])
+    half = sorted(s for s, al in by_seed.items() if len(al) < 2)
+    if half:
+        rows += [f"    !! seeds {half} have only one alignment on disk. The per-alignment means",
+                 "       above and the paired contrast below are over DIFFERENT seed sets, and a",
+                 "       half-finished seed can move either one. Do not compare them until this",
+                 "       line is gone.", ""]
+
     ac = alignment_contrast(cells)
     if ac.get("t") is not None:
         rows += ["",
