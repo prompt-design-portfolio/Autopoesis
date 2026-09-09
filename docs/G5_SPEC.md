@@ -209,7 +209,34 @@ in this lineage — G2-store's `init_store` and G3-mapping's `init_mapping`. Its
   proposes an illegal action has told us something, and clipping it to a legal one would record
   that as a choice it did not make.
 
-### 7.1 The equivalence check, which needs no model at all
+### 7.1 The equivalence check, which needs no model at all — **RUN, and it passes**
+
+Results first, method below. `docs/patches/g5-equivalence-check.py`:
+
+```
+1. external_policy=None reproduces the unpatched engine
+   8 rows, 133 shared fields, 0 differing -- PASS
+2. a policy returning the network's own choice reproduces it too
+   8 rows, 133 shared fields, 0 differing -- PASS
+   policy called 231,557 times, returned an action 231,557 times
+3. an illegal action is refused, not clipped
+   PASS -- "an external policy returned action 999; legal actions are 0..9 here."
+```
+
+The second is the one worth having: **231,557 actions all arrived through the hook** and the
+trajectory is bit-identical to the engine with no hook at all. That is the whole loop — hook,
+observation, action, modulator, statistics — exercised against a stand-in whose answers are
+known, and it confirms the RNG discipline held, since a stream disturbed by even one extra draw
+would not reproduce 133 fields exactly.
+
+**It was run on a patched copy in the scratchpad, not on the tree.** Seed campaigns were in
+flight, and editing the engine mid-campaign is what killed a two-hour run earlier in this
+project. Both staged patches apply cleanly in sequence, parse, and coexist, so applying them for
+real is now a known-good operation rather than a hopeful one. Nothing about the check requires
+the patch to be applied to the tree first — which is the point.
+
+(The reasoning, written before the check was run:)
+
 
 Every engine version in this lineage carries one (`docs/G2_SPEC.md`, `docs/ARCHITECTURE.md`), and
 this one gets two — the second is the interesting one:
