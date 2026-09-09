@@ -198,3 +198,64 @@ Four, and the order matters: each was found before it could contaminate a number
 Two more were found earlier and are recorded in `docs/G2_WRITEUP.md`: the engine could neither hand
 out the store nor take one in, and `assay_selftest` — cited by A2.1 as an existing reference — did
 not exist.
+
+
+---
+
+## 5. Corroboration at seed 1: **seed 0 does not reproduce**
+
+Added after §4.4's one-seed acceptance, from the resumable campaign in `var/g3/`. It is recorded
+here rather than folded into §1's numbers, because §4.4's acceptance was read on seed 0 and a
+second seed does not get to quietly replace the number a gate was read on.
+
+| run | content | reading | total | stale content | stale reading | controls agree | Gate R |
+|---|---:|---:|---:|---:|---:|---|---|
+| seed 0 aligned | **−0.131** | −0.119 | −0.194 | +0.35 | +0.31 | yes | PASS |
+| seed 1 aligned | **−0.005** | −0.008 | −0.033 | **−0.08** | **−0.22** | **no** | PASS |
+| seed 0 misaligned | +0.018 | +0.011 | +0.009 | −0.46 | +0.30 | no | PASS |
+| seed 1 misaligned | +0.018 | +0.132 | −0.027 | +0.17 | −0.24 | no | PASS |
+
+**Aligned, 1 of 2 seeds passes.** Seed 1 fails on two of the four criteria: the stale-mark ratio
+moves the *wrong way* on both contrasts, and the two information-removing controls do not agree —
+which is the load-bearing check, the one that says the four arms are a design rather than four
+numbers. Its content effect is −0.005: not a smaller effect, no effect.
+
+`acceptance` returns **`accepted: false`**, and it does so at *any* `min_seeds`. The rule is
+`n >= min_seeds and len(passing) == n`: the bar is a floor on how many seeds must be **run**, not
+a licence to drop the ones that disagree. Relaxing the bar to one seed, which is on record as the
+project owner's decision, does not turn a disagreeing second seed into an absent one.
+
+What holds up and what does not:
+
+* **The alignment contrast holds.** Both misaligned seeds fail, and both put content the wrong way
+  (+0.018 each). The record does not help a population whose world it is not true of — which was
+  the sharpest internal check in the milestone and is the one thing here that reproduces.
+* **The magnitude does not.** Seed 0's −0.131 is the number every downstream comparison has been
+  built on, G4's compounding baseline included, and seed 1 says the expected value of that number
+  across seeds is much closer to zero.
+* **Gate R passes everywhere, including where nothing else does**, so it is not carrying the
+  claim and never was.
+
+### 5.1 What this does to G4
+
+G4 mechanic 1's compounding number is `content(hardened) − content(baseline)` with the baseline
+being seed 0's −0.131. If the baseline's own reproducibility is this weak, **+0.166 is not a
+measurement of hardening**; it is mostly the distance between one draw and zero.
+
+This does not change mechanic 1's *diagnosis* — `fresh store` is better in the harder world
+(hit 0.474 → 0.544 against a chance that fell 0.200 → 0.143), and that is a within-run comparison
+that does not depend on the baseline at all. It does mean the compounding number should not be
+quoted as a magnitude, and `docs/G4_WRITEUP.md` §1 should be read with this section next to it.
+
+### 5.2 What would settle it
+
+Seed 2 is running. Three outcomes and what each means:
+
+* **seed 2 passes** → 2 of 3, and the honest statement is a positive effect at roughly two thirds
+  of draws, with the magnitude unresolved. Still not B§5.2's 3/3.
+* **seed 2 fails** → 1 of 3, and seed 0 is the outlier. G3's gate is not met, and the milestone
+  should be reopened rather than carrying an acceptance its own campaign contradicts.
+* **seed 2 passes with a small effect** → the direction is real and the magnitude is seed 0's
+  alone, which is the most likely reading of the two seeds already in hand.
+
+None of these is decided by averaging. The per-seed table above is the result.

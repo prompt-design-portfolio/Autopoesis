@@ -622,6 +622,43 @@ def acceptance(results: list[G3Result], *, alignment: str = "aligned",
                       "`inherited scrambled` (content) and `inherited gain-zero` (reading), and "
                       "those two agree with each other",
         "per_seed": per_seed,
-        "why_not": ("" if n >= min_seeds else
-                    f"{n} seed(s) against a bar of {min_seeds} ({min_seeds_basis})."),
+        "why_not": _why_not(n, passing, per_seed, min_seeds, min_seeds_basis),
     }
+
+
+#: The four things a seed must do. Named here so `why_not` reports the same criteria the verdict
+#: is computed from, rather than a prose restatement that could drift from it.
+CRITERIA = {
+    "content_moves_the_right_way": "content (store - scrambled) did not go the right way",
+    "reading_moves_the_right_way": "reading (store - gain-zero) did not go the right way",
+    "stale_moves_the_right_way": "the stale-mark ratio moved the wrong way",
+    "controls_agree": "the two information-removing controls did not agree",
+}
+
+
+def _why_not(n: int, passing: list[int], per_seed: dict[int, dict[str, Any]],
+             min_seeds: int, min_seeds_basis: str) -> str:
+    """Why the acceptance is False, in every way it can be.
+
+    `accepted` requires *every* seed present to pass, not `min_seeds` of them -- otherwise
+    lowering the bar would let a failing seed be dropped rather than reported, which is precisely
+    the move a recorded acceptance basis exists to prevent. So there are two distinct failures,
+    and this used to report only the first: too few seeds, and enough seeds with one of them
+    disagreeing. The second returned an empty string, so a reader saw `accepted: false` with no
+    reason at all next to it.
+    """
+    if n == 0:
+        return "no seeds at this alignment."
+    if n < min_seeds:
+        return f"{n} seed(s) against a bar of {min_seeds} ({min_seeds_basis})."
+    failing = [s for s in per_seed if s not in passing]
+    if not failing:
+        return ""
+    parts = []
+    for seed in sorted(failing):
+        d = per_seed[seed]
+        why = [text for key, text in CRITERIA.items() if not d[key]]
+        parts.append(f"seed {seed}: " + "; ".join(why))
+    return (f"{len(passing)} of {n} seeds pass, and acceptance needs all of them -- a bar of "
+            f"{min_seeds} ({min_seeds_basis}) is a floor on how many seeds must be RUN, not a "
+            f"licence to drop the ones that disagree. " + " | ".join(parts))
