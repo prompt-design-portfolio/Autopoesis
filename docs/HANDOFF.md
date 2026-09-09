@@ -173,7 +173,21 @@ by A1.1: the agents were deterministic policies, not learners, and two domains i
    to fix the design so the two information-removing controls land together (the criterion seeds
    1 and 2 fail), or to restate the claim as the alignment contrast, which is what the three seeds
    actually support. Neither is a decision to make silently — B§5.2's claim line is what it is.
-1. **Seeds, before anything else.** This is the blocking item for G4 too. The
+1. **Seeds, before anything else.** This is the blocking item for G4 too. Seeds 3-7 are running,
+   both alignments, which takes the campaign to 8 seeds and makes a between-seed spread estimate
+   worth quoting.
+2. **Two engine changes are written and staged, unapplied**, in `docs/patches/`. Both are additive
+   and trajectory-neutral by construction, so each one's equivalence check is bit-identity against
+   G4-k rather than an argument. They are staged rather than applied because editing the engine
+   while a campaign is in flight is what killed the first three-seed run — the dirty-tree guard
+   was right and the cost was avoidable. Apply them when nothing is running, one version at a
+   time, each with its own check:
+   * `apply-g3-nfc-variance.py` — logs `nfc_sumsq` beside `nfc_sum`. Without it the standard error
+     of `nfc_mean` is not recoverable **from any run ever made**, so the principled fix to §5.6's
+     coherence defect is not computable at all. This is the higher priority of the two: it unblocks
+     a milestone, where the other completes one.
+   * `apply-g5-policy-hook.py` — G5-D7's `external_policy`, then §7.1's equivalence check, which
+     needs no provider. The
    between-seed spread in content at a fixed world is ~0.13 — larger than every difference either
    milestone set out to measure — so no further one-seed paired comparison is worth running until
    there is an estimate of that spread. Several seeds per condition, reported with the spread.
