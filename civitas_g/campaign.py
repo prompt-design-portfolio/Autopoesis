@@ -156,6 +156,38 @@ def _aligned_sd(cells: list[dict[str, Any]], key: str = "content") -> float:
     return st.stdev(xs) if len(xs) > 1 else float("nan")
 
 
+def seeds_for_significance(mean: float, sd: float, target_t: float = 2.0) -> int | None:
+    """Roughly how many seeds this effect would need to reach `target_t`: `n >= (t*sd/mean)^2`.
+
+    Not a power calculation in the proper sense -- it treats the current mean and sd as the truth,
+    so it understates what is needed about half the time and is worthless when the mean is near
+    zero. It is here because "how many more seeds?" is the question every one of these tables
+    raises, and an approximate answer with its limits stated beats leaving a reader to guess.
+    """
+    if not mean or not math.isfinite(mean) or not math.isfinite(sd) or sd <= 0:
+        return None
+    return max(2, math.ceil((target_t * sd / abs(mean)) ** 2))
+
+
+def running_estimate(cells: list[dict[str, Any]], alignment: str = "aligned",
+                     key: str = "content") -> list[tuple[int, float, float]]:
+    """The estimate after each seed, in seed order: `(n, mean, t)`.
+
+    Shows whether an effect is settling or drifting. Under a true null the t wanders and crosses
+    +/-2 from time to time, so any single reading can look decisive on its own -- which is the
+    point of printing the trajectory. This campaign has twice now reported a result at n-1 seeds
+    that weakened at n, and a reader who sees only the latest row cannot tell that happened.
+    """
+    xs = [c[key] for c in sorted((c for c in cells if c["alignment"] == alignment),
+                                 key=lambda c: c["seed"])]
+    out = []
+    for i in range(2, len(xs) + 1):
+        head = xs[:i]
+        se = st.stdev(head) / math.sqrt(i)
+        out.append((i, st.mean(head), st.mean(head) / se if se else float("nan")))
+    return out
+
+
 def paired_test(cells: list[dict[str, Any]], alignment: str,
                 key: str = "content") -> dict[str, Any]:
     """The contrast across seeds, with the error term the design actually supports.
@@ -165,8 +197,10 @@ def paired_test(cells: list[dict[str, Any]], alignment: str,
     differ only in the store they are handed — common random numbers, a variance-reduction design.
     The consequence is that the spread of a SINGLE arm's `nfc_mean` over RNG seeds is *not* the
     yardstick for the contrast: measured directly, one arm replicated over B's seed has sd 0.144,
-    while the paired contrast across seeds has sd 0.061. Reading the first as the noise floor for
-    the second understates the design by a factor of about two and would reject a real effect.
+    while the paired contrast across seeds is smaller (`_aligned_sd` computes it; it was 0.061 at
+    five seeds and 0.100 at six, which is why it is computed and not written down here). Reading
+    the single-arm figure as the noise floor for the contrast understates the design and could
+    reject a real effect.
 
     So the error term is the between-seed spread of the paired difference, and the statistic is a
     one-sample t on the per-seed contrasts. Reported with its df, because at these n the t is
@@ -271,8 +305,20 @@ def report(directory: str | pathlib.Path = "var/g3") -> str:
              f"    seeds (measured, 8 replicates: sd {SINGLE_ARM_SD:.3f}) is therefore the wrong "
              f"yardstick for the",
              f"    contrast (this campaign: sd {_aligned_sd(cells):.3f}) -- the pairing is what "
-             f"makes the difference.", "",
-             "  CONTROLS AGREE? by criterion, aligned seeds only", ""]
+             f"makes the difference.", ""]
+
+    rows += ["  HOW THE ESTIMATE MOVED AS SEEDS ARRIVED (aligned content)", ""]
+    for n, mean, t in running_estimate(cells):
+        rows.append(f"    n={n:<3} mean {mean:+.4f}   t {t:+.2f}")
+    t_al = paired_test(cells, "aligned")
+    if t_al.get("t") is not None:
+        need = seeds_for_significance(t_al["mean"], t_al["sd"])
+        rows += ["", f"    at the current estimate, t = 2 would need about n = {need} seeds "
+                     f"(have {t_al['n']}).",
+                 "    That treats the current mean and sd as true, so it is a rough guide, and it",
+                 "    is worthless if the effect is actually zero.", ""]
+
+    rows += ["  CONTROLS AGREE? by criterion, aligned seeds only", ""]
     aligned = sorted((c for c in cells if c["alignment"] == "aligned"), key=lambda c: c["seed"])
     head = f"    {'seed':>5}{'content':>10}{'gap':>10}" + "".join(
         f"{c.name.split(' (')[0][:22]:>24}" for c in CRITERIA)
