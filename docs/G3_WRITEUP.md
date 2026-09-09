@@ -215,7 +215,7 @@ the corrections are visible rather than tidied away.
 | content contrast, aligned | **−0.063 ± 0.026 (se) at ten seeds, negative in 9 of 10.** Three tests agree for the first time: t = −2.45 on 9 df; sign test p = 0.011 one-tailed / **0.021 two-tailed**; exact paired permutation **p = 0.0186** one-tailed over all 1024 assignments. See §5.8 for why this is reported differently from the earlier crossings at n = 4 and n = 5. |
 | content contrast, misaligned | +0.054 ± 0.049, signs mixed — the record does not help a world it is not true of |
 | out-of-sample seeds (3, 4, 5) | −0.141, −0.135, **+0.113**. Two large negatives and one clear positive: the out-of-sample seeds are the most variable of the set, which is the opposite of corroboration. |
-| **alignment contrast** | **−0.100 ± 0.066, t = −1.51 on 5 df, negative in 5 of 6 — NOT significant.** Recomputed once seed 5's misaligned run landed; at n = 5 it read −0.145 ± 0.058, t = −2.51. It is still the sharpest check the design contains — same A, same record, same draws, differing only in whether the record is *true* of B's world, which no control arm can supply — but it no longer separates from zero. |
+| **alignment contrast** | **−0.117 ± 0.048 at ten balanced seeds, negative in 8 of 10.** t = −2.45 on 9 df; exact paired permutation **p = 0.0176**; sign test p = 0.055 one-tailed / 0.109 two-tailed. The sharpest check the design contains — same A, same record, same draws, differing only in whether the record is *true* of B's world — and no control arm can supply it. Note the sign test does **not** clear 0.05: two seeds go the other way, and a test that ignores magnitudes cannot see that theirs are small (+0.129 and +0.003) while the negatives include −0.339 and −0.347. |
 | `g3.acceptance` verdict | **false** — and the reason is the coherence criterion, not the claim |
 | coherence defect 1 (§5.6) | the tolerance scales with the effect, so a seed with no effect cannot pass however well its controls agree |
 | coherence defect 2 (§5.6a) | the two arms it asks to agree **provably do not remove the same thing** — a scramble preserves the per-cell multiset exactly, so `inherited scrambled` keeps presence and `inherited gain-zero` does not |
@@ -449,12 +449,37 @@ Four things are different now, and none of them is the t:
    is not getting bigger; it is getting better measured, which is what should happen.
 4. **Most seeds are now out of sample.** Seven of ten (3–9) were fixed before being read.
 
-**What still holds it back.** Two seeds have only one alignment on disk, so the alignment
-contrast — the discriminating test, and the one that separates *the record helps* from *a store
-changes behaviour by existing* — cannot yet be computed over the same ten. Until it is, this is
-the claim-line statistic passing on its own, and §5.6a's finding still stands: the coherence
-criterion that `g3.acceptance` reads is comparing two arms that provably do not remove the same
-thing, so **the gate is still not met and would not be met by this number alone.**
+**The campaign is now complete at ten balanced seeds, and the alignment contrast agrees.**
+
+| seed | aligned | misaligned | difference |
+|---|---:|---:|---:|
+| 0 | −0.1305 | +0.0176 | −0.1482 |
+| 1 | −0.0049 | +0.0184 | −0.0233 |
+| 2 | −0.0510 | −0.0206 | −0.0304 |
+| 3 | −0.1406 | +0.1987 | −0.3393 |
+| 4 | −0.1352 | +0.0506 | −0.1858 |
+| 5 | **+0.1134** | −0.0157 | **+0.1291** |
+| 6 | −0.1038 | +0.0610 | −0.1648 |
+| 7 | −0.1311 | +0.2157 | −0.3468 |
+| 8 | −0.0272 | −0.0299 | **+0.0027** |
+| 9 | −0.0205 | +0.0415 | −0.0620 |
+
+mean **−0.1169 ± 0.0477**, t = −2.45 on 9 df, exact permutation **p = 0.0176**, negative in 8 of
+10. Aligned content is −0.063 (exact p = 0.019); misaligned content is **+0.054** (t = +1.96),
+which is the direction the design predicts for a record that is not true of B's world.
+
+**The sign test on the contrast does not clear 0.05** (p = 0.055 one-tailed, 0.109 two-tailed),
+and the disagreement between it and the permutation test is informative rather than awkward: the
+two positive seeds are +0.129 and **+0.003**, while the negatives include −0.339 and −0.347. A
+test that discards magnitudes cannot see that one of the two "disagreeing" seeds disagrees by
+three thousandths. Both are reported; neither is chosen after the fact.
+
+**The gate is still not met, and the reason is unchanged.** §5.6a stands: `g3.acceptance`'s
+coherence criterion compares `inherited scrambled` and `inherited gain-zero`, and a scramble
+provably preserves the per-cell multiset, so those two arms do not remove the same thing and have
+no reason to agree. Every seed but one fails it. **What the campaign has established is that the
+claim-line statistic and its sharpest corroboration both point the same way at ten seeds, while
+the apparatus that would certify them is broken in a way that has nothing to do with the data.**
 
 ### 5.6a Why the controls disagree: they do not remove the same thing
 
