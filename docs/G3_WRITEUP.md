@@ -220,6 +220,19 @@ the corrections are visible rather than tidied away.
 | coherence defect 1 (§5.6) | the tolerance scales with the effect, so a seed with no effect cannot pass however well its controls agree |
 | coherence defect 2 (§5.6a) | the two arms it asks to agree **provably do not remove the same thing** — a scramble preserves the per-cell multiset exactly, so `inherited scrambled` keeps presence and `inherited gain-zero` does not |
 
+**The noise floor, measured (8 replicates, same A, same record, same arm, only B's RNG seed):**
+
+| arm | sd of `nfc_mean` | se of an unpaired 2-run difference |
+|---|---:|---:|
+| `inherited store` | **0.144** | 0.204 |
+| `inherited gain-zero` | **0.088** | 0.125 |
+
+Two things follow. First, the arm that can read the record is **1.6× as variable** as the arm
+that cannot (variance ratio 2.65 on 7 and 7 df, F ≈ 0.11 — suggestive, not established). If that
+holds up it is a result in its own right and not one the claim line asks for: a record does not
+only shift competence, it disperses it. Second, and immediately: these are *unpaired* figures and
+the G3 contrast is paired, so neither is the yardstick for it — see below.
+
 **The error term matters and is easy to get wrong.** The four arms of a succession share one
 seed, so they consume the same draws in the same order and differ only in the store — common
 random numbers. One arm replicated over B's RNG seed has sd **0.144**; the paired contrast across
