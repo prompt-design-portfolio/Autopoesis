@@ -203,3 +203,44 @@ def test_the_matched_null_reads_k_off_the_run():
     src = pathlib.Path("civitas_g/reading/compute.py").read_text()
     assert 'get("n_preps"' in src, "the null is computed from the module's K, not the run's"
     assert "(1.0 - hit) / (k - 1)" in src
+
+
+# ---------------------------------------------------------------------------------------------
+# Mechanic 1's confound is a choice, not a necessity (G4 §2.1)
+# ---------------------------------------------------------------------------------------------
+
+
+def test_both_hold_modes_are_ev_neutral_and_differ():
+    """EV-neutrality fixes `prep_value = (K-1) * prep_fail`, which constrains the RATIO and not
+    either term. So raising K can be absorbed by raising the reward or by lowering the penalty,
+    and mechanic 1 took the first without there being a reason to."""
+    fail_mode = spec.world_at_k(7, hold="fail")
+    value_mode = spec.world_at_k(7, hold="value")
+    for w in (fail_mode, value_mode):
+        spec.check_chance_ev_is_zero(w)          # raises if not exactly zero
+        assert w["n_preps"] == 7
+    assert fail_mode["prep_value"] == 1.5 and fail_mode["prep_fail"] == 0.25
+    assert value_mode["prep_value"] == 1.0
+    assert value_mode["prep_fail"] == pytest.approx(1.0 / 6)
+    assert fail_mode != value_mode
+
+
+def test_the_default_hold_mode_is_unchanged_so_mechanic_1_stays_reproducible():
+    """`hold` was added after mechanic 1 ran. If its default moved, the stored mechanic-1 results
+    would silently stop matching the world their own manifest names."""
+    assert spec.world_at_k(7) == spec.world_at_k(7, hold="fail")
+
+
+def test_an_unknown_hold_mode_is_refused():
+    with pytest.raises(spec.WorldMismatch, match="hold must be one of"):
+        spec.world_at_k(7, hold="whatever")
+
+
+def test_both_hold_modes_pass_the_hardened_world_check_by_declaration():
+    """Not by accident. `HARDENING_PARAMETERS['K']` names both economics terms; before it did,
+    the value-holding variant passed only by borrowing the economics diagnostic's allowance."""
+    assert "prep_fail" in spec.HARDENING_PARAMETERS["K"]
+    assert "prep_value" in spec.HARDENING_PARAMETERS["K"]
+    for hold in spec.HOLD_MODES:
+        moved = spec.check_hardened_world(spec.world_at_k(7, hold=hold))
+        assert moved["n_preps"] == (5, 7)

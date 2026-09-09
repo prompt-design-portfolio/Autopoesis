@@ -124,6 +124,45 @@ compounding effect that turns out to be presence rather than content is visible 
 
 ---
 
+## 1.3 The confound in mechanic 1, and the variant that removes it
+
+Added after mechanic 1 ran. `docs/G4_WRITEUP.md` §2.1 found that raising K drags `prep_value`
+from 1.0 to 1.5, so a correct preparation becomes 50% more valuable in the same step the mapping
+space grows — and that feeds the genetic channel v3.11 named as dominant.
+
+**It was treated as structural. It is not.** EV-neutrality requires
+
+    prep_value = (K - 1) * prep_fail
+
+which constrains the **ratio** and neither term. Raising K can be absorbed either way, and both
+are exactly EV-neutral:
+
+| mode | at K = 7 | what moves | what it costs |
+|---|---|---|---|
+| `hold="fail"` | `prep_value` 1.0 → **1.5**, `prep_fail` 0.25 | the reward for being right | §2.1's confound: feeds the genetic channel |
+| `hold="value"` | `prep_value` **1.0**, `prep_fail` 0.25 → **0.167** | the penalty for being wrong | mistakes get cheaper, so search gets cheaper |
+
+Mechanic 1 took the first, and nothing in its design considered the second. **Neither is
+confound-free** — each moves one economic term — but they move *different* terms in *opposite*
+directions, so running both is how the confound separates:
+
+* if the content effect collapses under **both**, the collapse follows K and the mechanic worked;
+* if it collapses under `hold="fail"` only, the collapse follows the reward, and mechanic 1
+  measured the economics rather than the mapping space;
+* if it collapses under `hold="value"` only, cheaper mistakes are doing it, which is a result
+  about search cost and not about K either.
+
+**Ruled (G4-D1):** `world_at_k` takes `hold`, defaulting to `"fail"` so mechanic 1's stored
+results still describe the world their manifest names. `HARDENING_PARAMETERS["K"]` names both
+economics terms, because a K mechanic may legitimately absorb the change in either — before it
+did, the value-holding variant passed `check_hardened_world` only by borrowing the economics
+diagnostic's allowance, which is an accident and not a statement.
+
+**This is not a mechanic 1 that will pass.** It is the same mechanic with a lever the original
+did not know it was pulling, and the honest expectation after §5.6b is that neither variant
+resolves anything at one seed. It is worth running because a confound that can be removed should
+be, not because the number is expected to change.
+
 ## 2. Mechanic 2 — a second era clock
 
 *Specified after mechanic 1 reports.* The shape: a second slow fact on a period that is not a

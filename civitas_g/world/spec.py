@@ -115,7 +115,11 @@ REFERENCE_SEEDS: tuple[int, ...] = (0,)
 #: The parameters a G4 mechanic is allowed to move, and nothing else. A mechanic that changed a
 #: parameter outside this set would be two mechanics, and A5 says one change per experiment.
 HARDENING_PARAMETERS: dict[str, tuple[str, ...]] = {
-    "K": ("n_preps", "prep_value"),
+    # Both economics terms, because EV-neutrality fixes only their RATIO and a K mechanic may
+    # absorb the change in either one -- see HOLD_MODES. Declaring only `prep_value` would have
+    # meant the `hold="value"` variant passed this check by borrowing the diagnostic's allowance
+    # below, which is an accident rather than a statement.
+    "K": ("n_preps", "prep_value", "prep_fail"),
     # NOT a mechanic and it has no claim line. It exists because mechanic 1 returned a negative
     # result with a confound in it: raising K forces `prep_value` up to hold the chance EV at
     # zero, so K and the size of a correct preparation's payoff move together and no contrast
@@ -125,7 +129,16 @@ HARDENING_PARAMETERS: dict[str, tuple[str, ...]] = {
 }
 
 
-def world_at_k(k: int, world: dict[str, Any] | None = None) -> dict[str, Any]:
+#: The two EV-neutral ways to raise K, and why there is a choice at all. The invariant is
+#: `prep_value = (K-1) * prep_fail`, which fixes the RATIO and not either term -- so raising K
+#: can be absorbed by raising the reward or by lowering the penalty, and the two are different
+#: worlds. `docs/G4_WRITEUP.md` §2.1 found that mechanic 1 took the first without noticing there
+#: was a second, and that the first is exactly the confound that spoiled it.
+HOLD_MODES = ("fail", "value")
+
+
+def world_at_k(k: int, world: dict[str, Any] | None = None,
+               hold: str = "fail") -> dict[str, Any]:
     """G4 mechanic 1: the world of record with K raised, and the economics kept honest.
 
     `prep_value` moves with K because the invariant is `prep_value = (K-1) * prep_fail`, which is
@@ -143,8 +156,20 @@ def world_at_k(k: int, world: dict[str, Any] | None = None) -> dict[str, Any]:
         raise WorldMismatch(
             f"K = {k} with T = {N_TYPES}: a mapping sends each type to a DISTINCT preparation, so "
             f"K must exceed T for the mapping space to be non-trivial.")
+    if hold not in HOLD_MODES:
+        raise WorldMismatch(f"hold must be one of {HOLD_MODES}; got {hold!r}")
     base["n_preps"] = int(k)
-    base["prep_value"] = (int(k) - 1) * float(base["prep_fail"])
+    if hold == "fail":
+        # `prep_fail` fixed, so `prep_value` rises: 1.0 -> 1.5 at K = 7. This is what mechanic 1
+        # ran, and G4 §2.1 is the cost: a correct preparation becomes 50% more valuable in the
+        # same step the mapping space grows, which feeds the genetic channel v3.11 found dominant.
+        base["prep_value"] = (int(k) - 1) * float(base["prep_fail"])
+    else:
+        # `prep_value` fixed, so `prep_fail` falls: 0.25 -> 0.1667 at K = 7. What being RIGHT is
+        # worth no longer moves with K, which is the confound removed. It is not confound-free --
+        # mistakes get cheaper, and a cheaper mistake is a cheaper search -- but that is a
+        # different lever pointing the other way, and running both is how they separate.
+        base["prep_fail"] = float(base["prep_value"]) / (int(k) - 1)
     return base
 
 
