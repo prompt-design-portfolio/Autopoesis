@@ -151,7 +151,7 @@ def paired_test(cells: list[dict[str, Any]], alignment: str,
     under one `succession.seed`, so they consume the same random draws in the same order and
     differ only in the store they are handed — common random numbers, a variance-reduction design.
     The consequence is that the spread of a SINGLE arm's `nfc_mean` over RNG seeds is *not* the
-    yardstick for the contrast: measured directly, one arm replicated over B's seed has sd 0.103,
+    yardstick for the contrast: measured directly, one arm replicated over B's seed has sd 0.144,
     while the paired contrast across seeds has sd 0.061. Reading the first as the noise floor for
     the second understates the design by a factor of about two and would reject a real effect.
 
@@ -170,6 +170,34 @@ def paired_test(cells: list[dict[str, Any]], alignment: str,
             "mean": mean, "sd": sd, "se": se,
             "t": mean / se if se else float("nan"),
             "all_same_sign": all(x < 0 for x in xs) or all(x > 0 for x in xs)}
+
+
+def alignment_contrast(cells: list[dict[str, Any]], key: str = "content") -> dict[str, Any]:
+    """Aligned minus misaligned, paired **within** seed.
+
+    The sharpest check the design contains, and one no control arm can supply. Both sides share
+    the seed, the A population, and the record A left. The only difference is whether B's era
+    clock matches A's — that is, whether the record is TRUE of the world B lives in. A store
+    effect that appeared in both would be the store changing behaviour by existing; an effect
+    that appears only when aligned is the record's *content* being used.
+
+    Pairing within seed removes the between-seed variation that both sides share, which is why
+    this is computed as a difference per seed rather than as two independent means.
+    """
+    by_seed: dict[int, dict[str, float]] = {}
+    for c in cells:
+        by_seed.setdefault(c["seed"], {})[c["alignment"]] = c[key]
+    diffs = [(s, d["aligned"] - d["misaligned"]) for s, d in sorted(by_seed.items())
+             if "aligned" in d and "misaligned" in d]
+    n = len(diffs)
+    if n < 2:
+        return {"n": n, "t": None, "note": "fewer than two complete seed pairs"}
+    xs = [d for _, d in diffs]
+    mean, sd = st.mean(xs), st.stdev(xs)
+    se = sd / math.sqrt(n)
+    return {"n": n, "df": n - 1, "per_seed": diffs, "mean": mean, "sd": sd, "se": se,
+            "t": mean / se if se else float("nan"),
+            "n_negative": sum(1 for x in xs if x < 0)}
 
 
 def report(directory: str | pathlib.Path = "var/g3") -> str:
@@ -202,10 +230,18 @@ def report(directory: str | pathlib.Path = "var/g3") -> str:
         rows.append(f"    {alignment:<12} content {t['mean']:+.4f} +/- {t['se']:.4f} (se)"
                     f"   t = {t['t']:+.2f} on {t['df']} df"
                     f"   {'all one sign' if t['all_same_sign'] else 'signs mixed'}")
+    ac = alignment_contrast(cells)
+    if ac.get("t") is not None:
+        rows += ["",
+                 f"    alignment    aligned - misaligned {ac['mean']:+.4f} +/- {ac['se']:.4f} (se)"
+                 f"   t = {ac['t']:+.2f} on {ac['df']} df"
+                 f"   negative in {ac['n_negative']} of {ac['n']}",
+                 "    (paired within seed: same A, same record, same draws -- only whether the",
+                 "     record is TRUE of B's world differs. No control arm can supply this.)"]
     rows += ["",
              "    The four arms of a succession share one seed, so they consume the same draws",
              "    in the same order and differ only in the store. The spread of ONE arm over RNG",
-             "    seeds (measured: sd 0.103) is therefore the wrong yardstick for the contrast",
+             "    seeds (measured: sd 0.144) is therefore the wrong yardstick for the contrast",
              "    (measured: sd 0.061); using it would understate the design about twofold.", "",
              "  CONTROLS AGREE? by criterion, aligned seeds only", ""]
     aligned = sorted((c for c in cells if c["alignment"] == "aligned"), key=lambda c: c["seed"])

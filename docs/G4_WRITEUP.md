@@ -174,7 +174,7 @@ error of about `0.061 * sqrt(2)` = **0.086**, so mechanic 1's +0.166 is about **
 Suggestive and unresolved — not noise, and not a measurement either.
 
 The figure to use is the **paired** contrast's between-seed spread (0.061), not the spread of a
-single arm over RNG seeds (0.103, measured). The four arms share a seed, so common random numbers
+single arm over RNG seeds (0.144, measured). The four arms share a seed, so common random numbers
 cancel most of the single-arm noise; using the larger number here would understate the design.
 `civitas_g.campaign.paired_test` carries the explanation.
 

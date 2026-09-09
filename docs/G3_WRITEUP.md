@@ -215,13 +215,14 @@ the corrections are visible rather than tidied away.
 | content contrast, aligned | **−0.092 ± 0.027 (se), t = −3.38 on 4 df, negative in 5 of 5 seeds** |
 | content contrast, misaligned | +0.054 ± 0.049, signs mixed — the record does not help a world it is not true of |
 | out-of-sample seeds (3, 4) | the two **largest** effects (−0.141, −0.135), so the pattern is not an artifact of the seeds read first |
+| **alignment contrast** | **−0.145 ± 0.058, t = −2.51 on 4 df, negative in 5 of 5** — paired within seed, so the same A, the same record and the same draws, differing only in whether the record is *true* of B's world. No control arm can supply this check. |
 | `g3.acceptance` verdict | **false** — and the reason is the coherence criterion, not the claim |
 | coherence defect 1 (§5.6) | the tolerance scales with the effect, so a seed with no effect cannot pass however well its controls agree |
 | coherence defect 2 (§5.6a) | the two arms it asks to agree **provably do not remove the same thing** — a scramble preserves the per-cell multiset exactly, so `inherited scrambled` keeps presence and `inherited gain-zero` does not |
 
 **The error term matters and is easy to get wrong.** The four arms of a succession share one
 seed, so they consume the same draws in the same order and differ only in the store — common
-random numbers. One arm replicated over B's RNG seed has sd **0.103**; the paired contrast across
+random numbers. One arm replicated over B's RNG seed has sd **0.144**; the paired contrast across
 seeds has sd **0.061**. Both are measured. Reading the first as the noise floor for the second
 understates the design about twofold and would reject a real effect, which is a mistake this
 write-up made before catching it (§5.4, and `campaign.paired_test` carries the warning at the
