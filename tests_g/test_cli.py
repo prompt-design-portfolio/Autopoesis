@@ -34,11 +34,18 @@ def test_pins_verifies_the_g0_hashes(capsys):
 
 
 @pytest.mark.slow
-def test_selftest_reports_the_gaps_and_still_exits_zero(capsys):
-    """The G2/G3 tests are not available and must not be reported as failures."""
+def test_selftest_reports_no_named_gaps_and_still_exits_zero(capsys):
+    """This test used to assert the opposite, and the change is the point.
+
+    It was written when `assay_selftest` was a named gap reported as `N/A` -- unavailable, and
+    therefore not a failure. It is now a measurement, and it was the last one: there are no named
+    gaps left at G1, G2 or G3. So the assertion inverts. A self-test suite with nothing missing
+    should say so, and a test still demanding an `N/A` would quietly require the gap to come back.
+    """
     code = main(["selftest", "--only", "world", "no_self_echo", "assay_selftest"])
     out = capsys.readouterr().out
-    assert "N/A" in out and "assay_selftest" in out
+    assert "assay_selftest" in out
+    assert "N/A" not in out, "a self-test went unavailable again; find out which and why"
     assert code == 0
 
 
@@ -47,7 +54,11 @@ def test_store_names_the_blocker_and_the_two_scrambles(capsys):
     two scrambles are different controls."""
     assert main(["store"]) == 0
     out = capsys.readouterr().out
-    assert "engine G2-store" in out
+    # The CURRENT engine version, read from the manifest rather than spelled out here. The engine
+    # has moved twice since this test was written (G3-mapping, then G4-k), and a hard-coded
+    # `G2-store` would fail on every future version while checking nothing about this one.
+    from civitas_g.manifest import CURRENT_ENGINE
+    assert f"engine {CURRENT_ENGINE.label}" in out
     assert "versioned, not silent" in out
     assert "checked by:" in out
     assert "per_cell" in out and "global" in out

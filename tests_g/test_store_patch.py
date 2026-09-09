@@ -77,11 +77,34 @@ def test_the_change_is_additive():
     diff = (REPO_ROOT / PATCH_PATH).read_text().splitlines()
     removed = [ln[1:].strip() for ln in diff
                if ln.startswith("-") and not ln.startswith("---") and ln[1:].strip()]
+    # A MODIFIED line shows up in a unified diff as a removal and an addition, so this list has
+    # to cover both. `cfg=asdict(cfg), final=snapshot(agents))` is the return dict's last line:
+    # G2-store-fix appended `store_snaps` and `final_store` to it, which moved the closing paren
+    # off that line. Nothing on it was dropped -- both `cfg` and `final` are still returned, and
+    # `test_the_return_dict_only_grew` is what actually holds that to account.
     for body in removed:
         assert any(k in body for k in (
             "era_snap_keep", "def run(", "notebook did.", "era_snaps=era_snaps",
             "era_snaps = []", "era_snaps.append", "del era_snaps", "genomes=snapshot",
-            "world = World")), f"the change removes a line it should not: {body!r}"
+            "world = World",
+            "cfg=asdict(cfg), final=snapshot(agents))",
+        )), f"the change removes a line it should not: {body!r}"
+
+
+def test_the_return_dict_only_grew():
+    """What `test_the_change_is_additive` is really claiming, checked against the engine itself.
+
+    The diff test works on text, and a modified line reads as a removal there -- which is exactly
+    what the return dict's last line is: G2-store-fix appended `store_snaps` and `final_store` to
+    `cfg=asdict(cfg), final=snapshot(agents))`. Text cannot tell that apart from a deletion, so
+    this asserts the thing that matters directly: every key the run dict carried before the store
+    changes is still a key it carries now.
+    """
+    src = inspect.getsource(sim_v3_13.run)
+    for key in ("log=", "cfg=", "final=", "era_snaps=", "final_mapping="):
+        assert key in src, f"the run dict no longer returns {key.rstrip('=')!r}"
+    for added in ("store_snaps=", "final_store="):
+        assert added in src, f"the store change did not add {added.rstrip('=')!r}"
 
 
 def test_analysis_v3_13_was_not_touched():

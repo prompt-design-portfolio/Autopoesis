@@ -145,8 +145,16 @@ FORBIDDEN = (
 
 #: `read_channel_j` is the only place a channel index may appear. Anything that puts a channel
 #: index next to the word `preparation` has decoded the store.
+#:
+#: The gap is `[^\n]` and not `\D`, which is what it was first written as. `\D` excludes digits,
+#: so `read_channel_3 is preparation 3` -- the single most likely way this leak actually appears,
+#: because a channel is always named with its index -- did not match, and the check passed the
+#: one sentence it exists to reject. Caught by the parametrised test rather than by reading it.
+#: Bounded to a single line so the match stays local: the read block renders 5 adjacent lines and
+#: an unbounded gap would join them.
 _CHANNEL_MEANS_PREP = re.compile(
-    r"(channel|read)\D{0,24}\bprepar\w*|prepar\w*\D{0,24}\b(channel|read)\b", re.IGNORECASE)
+    r"(channel|read)[^\n]{0,24}\bprepar\w*|prepar\w*[^\n]{0,24}\b(channel|read)\b",
+    re.IGNORECASE)
 
 
 def check_presentation_no_leak(text: str, *, marks_are_labels: bool = True,
