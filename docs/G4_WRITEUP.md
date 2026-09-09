@@ -191,6 +191,50 @@ in §1 as measurements of hardening while leaving the machinery that produced th
 correct. It also applies backwards: `docs/G3_WRITEUP.md` §5 reaches the same conclusion from the
 seed-1 corroboration, independently.
 
+## 2.6 Three seeds at K=7: the effect **reverses**, consistently
+
+`hold="fail"`, seeds 0-2, each paired against its own K=5 baseline:
+
+| seed | baseline (K=5) | hardened (K=7) | compounding |
+|---|---:|---:|---:|
+| 0 | −0.1305 | **+0.0350** | +0.1656 |
+| 1 | −0.0049 | **+0.1943** | +0.1992 |
+| 2 | −0.0510 | **+0.1012** | +0.1522 |
+| | | | **mean +0.1723, sd 0.0242** |
+
+Content is negative in 3 of 3 baselines and **positive in 3 of 3 hardened worlds**. This is not
+the effect shrinking under hardening; it is the effect changing sign. And the compounding number
+is far more consistent than anything else in this project — sd 0.024 on a mean of 0.172, a
+signal-to-noise of seven, against a G3 content effect whose sd is larger than its mean.
+
+**And it is still p = 0.125.** The t is +12.33, which looks overwhelming. The exact paired
+permutation test over all 2³ = 8 sign assignments gives **p = 0.125 one-tailed — the smallest
+value three observations can produce.** No amount of consistency can beat the floor set by n.
+
+That gap between t = 12.33 and p = 0.125 is the clearest illustration in this project of why the
+exact test was added. A t of 12 on three points invites exactly the reporting error this write-up
+has already made three times at n = 4, 5 and 6.
+
+### 2.7 What it would mean, if it survives more seeds
+
+Read against §2.1 and G4-D1, there are two live readings and this run cannot separate them:
+
+1. **A larger mapping space makes an inherited record actively harmful.** Plausible: at K = 7 a
+   stale mark endorses one of seven preparations rather than one of five, so following it costs
+   more when the mapping has moved, and there are more ways to be wrong.
+2. **The record is fine and the economics did it.** `hold="fail"` raises `prep_value` from 1.0 to
+   1.5 alongside K, and §2 already showed the K=7 population is *better* without any record at
+   all. A population that has solved the world genetically has nothing to gain from a record and
+   something to lose from attending to it.
+
+**G4-D1 is the experiment that separates them**, and it now has a specific prediction to test
+rather than a general worry: `hold="value"` holds `prep_value` at 1.0 and lowers `prep_fail` to
+0.167 instead. If the sign flip survives there, reading 1 is live. If it disappears, the flip was
+the economics and mechanic 1 never tested K at all.
+
+That run is the next thing G4 needs, ahead of mechanics 2 and 3 — a mechanic whose own result
+cannot be attributed is not a foundation for designing two more.
+
 ## 3. What this does not license
 
 * **It is not a null result about B§2.** It is one seed, one mechanic, and a mechanic with a
