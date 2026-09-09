@@ -143,3 +143,33 @@ def test_the_report_warns_when_a_seed_has_only_one_alignment(tmp_path):
     text = report(tmp_path)
     assert "have only one alignment on disk" in text
     assert "[0]" in text
+
+
+def test_the_exact_permutation_test_is_exact():
+    """Checked against hand-computable cases rather than trusted. With n=3 there are 8 sign
+    assignments; if every value is negative, only the all-positive flip beats the observed mean,
+    so exactly one of the eight is at or below it."""
+    from civitas_g.campaign import exact_sign_permutation
+
+    r = exact_sign_permutation([-1.0, -1.0, -1.0])
+    assert r["arrangements"] == 8
+    assert r["p"] == pytest.approx(1 / 8)
+
+    # Symmetric data, enumerated by hand because I first asserted 1.0 here and was wrong.
+    # xs = [1, -1], observed mean 0. The four assignments give means 0, +1, -1, 0; three of the
+    # four are <= 0 (the two zeros count, being ties), so p = 3/4 and not 1.
+    r = exact_sign_permutation([1.0, -1.0])
+    assert r["p"] == pytest.approx(0.75)
+
+    assert exact_sign_permutation([])["p"] is None
+    assert exact_sign_permutation([1.0] * 25)["p"] is None, "must refuse 2^25 enumeration"
+
+
+def test_the_exact_test_and_the_sign_test_disagree_in_the_expected_direction():
+    """The permutation test uses magnitudes and the sign test does not, so on data where one
+    seed carries most of the effect the permutation test should be the more powerful of the two.
+    Both are reported because when they disagree that fact is the information."""
+    from civitas_g.campaign import exact_sign_permutation, sign_test
+
+    xs = [-1.0, -0.01, -0.01, 0.005]
+    assert exact_sign_permutation(xs)["p"] < sign_test(xs)["p_one_tailed"]

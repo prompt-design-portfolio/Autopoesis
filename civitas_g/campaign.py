@@ -15,6 +15,7 @@ its value.
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import pathlib
@@ -179,6 +180,35 @@ def sign_test(xs: list[float]) -> dict[str, Any]:
                                              / 2 ** n))}
 
 
+def exact_sign_permutation(xs: list[float], max_n: int = 20) -> dict[str, Any]:
+    """Exact paired permutation test: enumerate all 2^n sign assignments.
+
+    **The right test for this design.** Under the null the sign of each seed's contrast is
+    exchangeable, so enumerating every assignment gives an exact p with no distribution
+    assumption at all. At n = 8 that is 256 arrangements — cheap, and it does not ask the
+    normality question that a t-test at this n cannot answer.
+
+    It is also the test least able to be talked into a result, which is why it is here: this
+    campaign's t crossed ±2 three times and came back, and each crossing was reported as a
+    finding before the next seed withdrew it.
+
+    Uses the magnitudes, unlike `sign_test`, so it is more powerful than that and less
+    assumption-laden than the t. Returns None above `max_n`, where 2^n stops being free.
+    """
+    n = len(xs)
+    if n == 0:
+        return {"n": 0, "p": None}
+    if n > max_n:
+        return {"n": n, "p": None, "note": f"2^{n} is too many; exact enumeration stops at n = "
+                                           f"{max_n}"}
+    obs = st.mean(xs)
+    hits = 0
+    for signs in itertools.product((1.0, -1.0), repeat=n):
+        if st.mean([s * x for s, x in zip(signs, xs, strict=True)]) <= obs:
+            hits += 1
+    return {"n": n, "p": hits / 2 ** n, "arrangements": 2 ** n, "observed_mean": obs}
+
+
 def seeds_for_significance(mean: float, sd: float, target_t: float = 2.0) -> int | None:
     """Roughly how many seeds this effect would need to reach `target_t`: `n >= (t*sd/mean)^2`.
 
@@ -316,6 +346,14 @@ def report(directory: str | pathlib.Path = "var/g3") -> str:
                  "       above and the paired contrast below are over DIFFERENT seed sets, and a",
                  "       half-finished seed can move either one. Do not compare them until this",
                  "       line is gone.", ""]
+
+    for label, xs in (("aligned content", [c["content"] for c in cells
+                                           if c["alignment"] == "aligned"]),):
+        ex = exact_sign_permutation(xs)
+        if ex.get("p") is not None:
+            rows += ["", f"    {label}: exact paired permutation p = {ex['p']:.4f} one-tailed "
+                         f"over all {ex['arrangements']} sign assignments",
+                     "    (no normality assumption -- the t at this n cannot check one)"]
 
     ac = alignment_contrast(cells)
     if ac.get("t") is not None:
