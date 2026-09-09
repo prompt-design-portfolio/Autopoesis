@@ -212,9 +212,9 @@ the corrections are visible rather than tidied away.
 
 | | state |
 |---|---|
-| content contrast, aligned | **−0.092 ± 0.027 (se), t = −3.38 on 4 df, negative in 5 of 5 seeds** |
+| content contrast, aligned | **−0.058 ± 0.041 (se), t = −1.42 on 5 df, negative in 5 of 6 seeds — NOT significant.** At n = 5 this read −0.092 ± 0.027, t = −3.38. Seed 5 came in at **+0.113**, the only positive aligned seed, and it both moved the mean and doubled the spread. The n = 5 figure is superseded, not an alternative. |
 | content contrast, misaligned | +0.054 ± 0.049, signs mixed — the record does not help a world it is not true of |
-| out-of-sample seeds (3, 4) | the two **largest** effects (−0.141, −0.135), so the pattern is not an artifact of the seeds read first |
+| out-of-sample seeds (3, 4, 5) | −0.141, −0.135, **+0.113**. Two large negatives and one clear positive: the out-of-sample seeds are the most variable of the set, which is the opposite of corroboration. |
 | **alignment contrast** | **−0.145 ± 0.058, t = −2.51 on 4 df, negative in 5 of 5** — paired within seed, so the same A, the same record and the same draws, differing only in whether the record is *true* of B's world. No control arm can supply this check. |
 | `g3.acceptance` verdict | **false** — and the reason is the coherence criterion, not the claim |
 | coherence defect 1 (§5.6) | the tolerance scales with the effect, so a seed with no effect cannot pass however well its controls agree |
@@ -228,10 +228,26 @@ understates the design about twofold and would reject a real effect, which is a 
 write-up made before catching it (§5.4, and `campaign.paired_test` carries the warning at the
 point of use).
 
-**What is not claimed.** Five seeds and t = −3.38 is p ≈ 0.03 with four degrees of freedom, on a
-test chosen after the design was built. It is evidence, not a settled result, and B§5.2's own
-acceptance still returns false. The honest summary is that **the content effect survives every
-test that is well-posed, and the one that rejects it is not.**
+**The other two statistics B§5.2 names show nothing, and could not have.** The claim line asks for
+the stale-mark ratio *and* preparations-to-first-correct. Only the second moves at all:
+
+| statistic | effect (aligned) | se | t | an effect of the same *relative* size (3.4%) would be |
+|---|---:|---:|---:|---|
+| preparations-to-first-correct | −0.0581 | 0.0409 | −1.42 | — |
+| stale-mark ratio | +0.0890 | 0.1317 | +0.68 | +0.052 = **0.39 se**, below its resolution |
+| preparation hit vs fresh | +0.0125 | 0.0197 | +0.63 | +0.019 = **0.94 se**, below its resolution |
+
+So the two null results are *not* evidence against the claim — neither statistic has the power to
+see an effect the size the third one reports. But it does mean the claim rests on **one** of the
+three statistics its own claim line names, and that one is currently at t = −1.42.
+
+**What is claimed, as of six seeds: not much.** The content effect is not significant. The
+alignment contrast (−0.145 ± 0.058, t = −2.51, 5 of 5) is the strongest thing here and it has one
+fewer seed than the content figure — seed 5's misaligned run had not finished when it was
+computed, and seed 5 is the seed that moved everything. **It must be recomputed before it is
+quoted again.** B§5.2's acceptance returns false, and while §5.6 and §5.6a show its coherence
+criterion is ill-posed, that no longer rescues anything: the claim statistic does not reach
+significance on its own terms.
 
 ---
 
