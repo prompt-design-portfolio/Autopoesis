@@ -143,6 +143,35 @@ def summarise(cells: list[dict[str, Any]], alignment: str) -> dict[str, Any]:
     }
 
 
+def paired_test(cells: list[dict[str, Any]], alignment: str,
+                key: str = "content") -> dict[str, Any]:
+    """The contrast across seeds, with the error term the design actually supports.
+
+    **The G3 contrast is paired and this is easy to get wrong.** All four arms of a succession run
+    under one `succession.seed`, so they consume the same random draws in the same order and
+    differ only in the store they are handed — common random numbers, a variance-reduction design.
+    The consequence is that the spread of a SINGLE arm's `nfc_mean` over RNG seeds is *not* the
+    yardstick for the contrast: measured directly, one arm replicated over B's seed has sd 0.103,
+    while the paired contrast across seeds has sd 0.061. Reading the first as the noise floor for
+    the second understates the design by a factor of about two and would reject a real effect.
+
+    So the error term is the between-seed spread of the paired difference, and the statistic is a
+    one-sample t on the per-seed contrasts. Reported with its df, because at these n the t is
+    fragile and the number of seeds is the whole story.
+    """
+    xs = [c[key] for c in cells if c["alignment"] == alignment]
+    n = len(xs)
+    if n < 2:
+        return {"alignment": alignment, "key": key, "n": n, "t": None,
+                "note": "fewer than two seeds: no spread, so no test"}
+    mean, sd = st.mean(xs), st.stdev(xs)
+    se = sd / math.sqrt(n)
+    return {"alignment": alignment, "key": key, "n": n, "df": n - 1,
+            "mean": mean, "sd": sd, "se": se,
+            "t": mean / se if se else float("nan"),
+            "all_same_sign": all(x < 0 for x in xs) or all(x > 0 for x in xs)}
+
+
 def report(directory: str | pathlib.Path = "var/g3") -> str:
     cells = load(directory)
     seeds = sorted({c["seed"] for c in cells})
@@ -165,7 +194,20 @@ def report(directory: str | pathlib.Path = "var/g3") -> str:
                  f"    negative in {s['n_negative']} of {s['n']}"
                  f"  (unanimous would be p={s['sign_test_p_if_unanimous']:.3f} by sign test)", ""]
 
-    rows += ["  CONTROLS AGREE? by criterion, aligned seeds only", ""]
+    rows += ["  THE CONTRAST, with the error term the paired design supports", ""]
+    for alignment in ("aligned", "misaligned"):
+        t = paired_test(cells, alignment)
+        if t.get("t") is None:
+            continue
+        rows.append(f"    {alignment:<12} content {t['mean']:+.4f} +/- {t['se']:.4f} (se)"
+                    f"   t = {t['t']:+.2f} on {t['df']} df"
+                    f"   {'all one sign' if t['all_same_sign'] else 'signs mixed'}")
+    rows += ["",
+             "    The four arms of a succession share one seed, so they consume the same draws",
+             "    in the same order and differ only in the store. The spread of ONE arm over RNG",
+             "    seeds (measured: sd 0.103) is therefore the wrong yardstick for the contrast",
+             "    (measured: sd 0.061); using it would understate the design about twofold.", "",
+             "  CONTROLS AGREE? by criterion, aligned seeds only", ""]
     aligned = sorted((c for c in cells if c["alignment"] == "aligned"), key=lambda c: c["seed"])
     head = f"    {'seed':>5}{'content':>10}{'gap':>10}" + "".join(
         f"{c.name.split(' (')[0][:22]:>24}" for c in CRITERIA)
