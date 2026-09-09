@@ -48,7 +48,7 @@ class Mechanic:
         return f"{self.name}: {moves}"
 
 
-def mechanic_k(k: int = 7) -> Mechanic:
+def mechanic_k(k: int = 7, hold: str = "fail") -> Mechanic:
     """Mechanic 1 — K raised.
 
     It hardens the world along the one axis the research lineage already established as
@@ -64,14 +64,16 @@ def mechanic_k(k: int = 7) -> Mechanic:
     """
     from math import perm
 
-    world = world_at_k(k)
+    world = world_at_k(k, hold=hold)
     moved = check_hardened_world(world)
     return Mechanic(
-        name=f"K={k}",
+        name=f"K={k} hold={hold}",
         world=world, moved=moved,
         note=(f"mapping space P({k},3) = {perm(k, 3)} against P(5,3) = {perm(5, 3)}; "
-              f"chance hit {1.0 / k:.3f} against {1.0 / 5:.3f}; prep_value moved to "
-              f"{world['prep_value']} to hold the chance EV of a preparation at zero"),
+              f"chance hit {1.0 / k:.3f} against {1.0 / 5:.3f}; EV held at zero by "
+              f"prep_value={world['prep_value']:.4f}, prep_fail={world['prep_fail']:.4f} "
+              f"(hold={hold!r}: see G4-D1 -- 'fail' raises the reward and confounds K with the "
+              f"economics, 'value' lowers the penalty instead)"),
     )
 
 
