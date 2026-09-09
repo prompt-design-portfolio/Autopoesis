@@ -283,6 +283,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="run only the misaligned arm (B§5.2's pre-registered control)")
     s.set_defaults(func=cmd_g3)
 
+    s = sub.add_parser("campaign", help="a G3 campaign across seeds, under fixed criteria")
+    s.add_argument("--dir", default="var/g3", help="where the per-seed results are (var/g3)")
+    s.set_defaults(func=cmd_campaign)
+
     s = sub.add_parser("reproduce", help="the G1 gate: reproduction diff = 0")
     s.add_argument("--sqlite-url", default="sqlite:///var/civitas_g.db")
     s.add_argument("--postgres-url", default=None,
@@ -298,6 +302,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--out", default=None, help="write the report to this path")
     s.set_defaults(func=cmd_reproduce)
     return p
+
+
+def cmd_campaign(args) -> int:
+    """The campaign report. Reads stored results only -- it runs nothing and gates nothing."""
+    from civitas_g.campaign import report
+    print(report(args.dir))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
