@@ -464,6 +464,39 @@ store scrambled *and* gain-zeroed is just gain-zero, so the missing arm is the r
 kept, content removed, and reading disabled has no such arm. Either way it is a design change and
 the project owner's call.
 
+### 5.6b What this design can detect, which is barely this effect
+
+The per-seed spread of the paired contrast is sd ≈ 0.100. That fixes what the design can see:
+
+| seeds | se | minimum detectable effect (t = 2) |
+|---:|---:|---:|
+| 6 | 0.041 | 0.082 |
+| **12** | 0.029 | **0.058** |
+| 24 | 0.020 | 0.041 |
+| 48 | 0.014 | 0.029 |
+| 96 | 0.010 | 0.020 |
+
+**The observed effect is −0.058 and twelve seeds detect 0.058.** The campaign is powered to
+almost exactly the size of the thing it is measuring, which is the worst place to be: it will
+come out marginal either way, and whether it lands at t = 1.8 or t = 2.2 will be close to a coin
+flip. That is not a fact about this campaign's luck. It is a property of the design that was
+knowable before any seed was run, and was not computed until now.
+
+**The pairing is not the problem — it is already doing real work.** If the four arms did not share
+a seed, a two-run difference would have sd = √2 × 0.144 = **0.204**. The observed per-seed
+contrast sd is **0.100**, so common random numbers cut the sd twofold and the variance fourfold.
+Without it this campaign would need four times as many seeds.
+
+**What is left after pairing is seed-level variation** — a different A, a different record, a
+different world draw. Replicating B within a seed cannot touch it, because it is not B's noise.
+Only more seeds reduce it, and only as √n: going from 12 to 48 seeds buys a factor of two in the
+detectable effect and costs four times the compute.
+
+So the lever that matters is **not more seeds**. It is reducing the per-seed spread — a longer B,
+a larger population, a wider claim window — each of which changes what is being measured and needs
+its own justification. Anyone continuing this should decide that before buying another twelve
+seeds at √n.
+
 ### 5.7 What would settle it
 
 Seed 2 is running. Three outcomes and what each means:
