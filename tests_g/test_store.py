@@ -260,3 +260,33 @@ def test_provenance_carries_both_mappings_because_a_replay_gets_neither(record):
     assert len(record.provenance.mapping) == sim_v3_13.N_TYPES
     assert record.provenance.engine_sha256
     assert "run_seed" in record.provenance.as_dict()
+
+
+# ------------------------------------------------------- what a scramble does NOT remove
+
+def test_a_scramble_preserves_the_per_cell_multiset_exactly(record):
+    """The premise behind `docs/G3_WRITEUP.md`'s presence hypothesis, checked rather than argued.
+
+    An agent reads the K channels **at its own cell**, so what a scramble leaves it is whatever
+    survives per cell. Both modes permute the K axis, so at every `(ftype, y, x)` the sorted
+    vector of K values is unchanged: "is there a mark here", "how many", "how strong", and the
+    signs, all survive intact. Only which LABEL carries which value moves.
+
+    That makes `inherited scrambled` a control that removes content and keeps presence — so it
+    and `inherited gain-zero`, which removes both, are not two routes to the same removal. The
+    G3 coherence criterion assumes they are.
+    """
+    for mode in (ScrambleMode.PER_CELL, ScrambleMode.GLOBAL):
+        s = record.scrambled(np.random.default_rng(3), mode)
+        before = np.sort(record.marks, axis=1)
+        after = np.sort(s.marks, axis=1)
+        assert np.array_equal(before, after), (
+            f"{mode.value} changed a per-cell multiset, so it removes more than the labels' "
+            f"meaning and the content contrast is not a one-factor contrast")
+
+
+def test_a_scramble_does_move_the_labels_it_is_supposed_to_move(record):
+    """The other half: preserving the multiset would be trivially satisfied by doing nothing.
+    A PER_CELL scramble must actually destroy the cross-cell label binding."""
+    s = record.scrambled(np.random.default_rng(3), ScrambleMode.PER_CELL)
+    assert not np.array_equal(record.marks, s.marks), "the scramble was a no-op"

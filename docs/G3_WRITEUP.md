@@ -348,6 +348,46 @@ defect changes the 1-of-3 from *"two seeds show the design is incoherent"* to *"
 design is incoherent and one shows no effect"* — a different and more tractable problem, but not
 a passing one.
 
+### 5.6a Why the controls disagree: they do not remove the same thing
+
+§5.6 shows the criterion is defective. It does not explain why seeds 2 and 3 disagree for real.
+This does, and its premise is now checked rather than argued
+(`tests_g/test_store.py::test_a_scramble_preserves_the_per_cell_multiset_exactly`):
+
+**A scramble permutes the K channels within each cell, so at every `(ftype, y, x)` the sorted
+vector of K values is unchanged.** An agent reads the K channels *at its own cell*, so everything
+it could compute from that vector without the labels — is there a mark here, how many, how
+strong, what signs — survives a scramble exactly. Only which label carries which value moves.
+
+So the two arms called controls remove different things:
+
+| arm | content | presence, as the agent can read it |
+|---|---|---|
+| `inherited scrambled` | **removed** | **kept, exactly** |
+| `inherited gain-zero` | removed | **removed** — every channel is zero |
+
+`store_for_arm`'s docstring says gain-zero is A2.3's presence-versus-content separation because
+"the store still changes the world by existing". That is true *of the world* and not of the
+agent: with `sym_gain = 0` the agent reads zeros, so presence is gone from its observations
+entirely. The scrambled arm keeps it. **They were never two routes to the same removal**, and
+`controls_agree` — which the acceptance calls load-bearing — asks two arms to land together that
+the design gives no reason to.
+
+The supporting evidence is suggestive and no more. Across four aligned seeds the control gap
+tracks the scrambled arm's evolved `sym_gain` at r = −0.97 — which is what the mechanism predicts,
+since `sym_gain` is the gate on how much of that preserved presence the population lets in, it is
+heritable, and it evolves to a different value in every seed. At n = 4 that correlation is worth
+one sentence and not a conclusion, and the direction was predicted before it was computed rather
+than found by looking.
+
+**What follows, and what does not.** The two claim contrasts are unaffected: content
+(`store − scrambled`) and reading (`store − gain-zero`) each still hold everything but one factor.
+What is affected is the coherence check built on top of them. If this is right, the honest repairs
+are to drop `controls_agree` as specified, or to add the arm that would make it meaningful — a
+store scrambled *and* gain-zeroed is just gain-zero, so the missing arm is the reverse: presence
+kept, content removed, and reading disabled has no such arm. Either way it is a design change and
+the project owner's call.
+
 ### 5.7 What would settle it
 
 Seed 2 is running. Three outcomes and what each means:
