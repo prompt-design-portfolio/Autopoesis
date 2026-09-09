@@ -212,7 +212,7 @@ the corrections are visible rather than tidied away.
 
 | | state |
 |---|---|
-| content contrast, aligned | **−0.058 ± 0.041 (se), t = −1.42 on 5 df, negative in 5 of 6 seeds — NOT significant.** At n = 5 this read −0.092 ± 0.027, t = −3.38. Seed 5 came in at **+0.113**, the only positive aligned seed, and it both moved the mean and doubled the spread. The n = 5 figure is superseded, not an alternative. |
+| content contrast, aligned | **−0.063 ± 0.026 (se) at ten seeds, negative in 9 of 10.** Three tests agree for the first time: t = −2.45 on 9 df; sign test p = 0.011 one-tailed / **0.021 two-tailed**; exact paired permutation **p = 0.0186** one-tailed over all 1024 assignments. See §5.8 for why this is reported differently from the earlier crossings at n = 4 and n = 5. |
 | content contrast, misaligned | +0.054 ± 0.049, signs mixed — the record does not help a world it is not true of |
 | out-of-sample seeds (3, 4, 5) | −0.141, −0.135, **+0.113**. Two large negatives and one clear positive: the out-of-sample seeds are the most variable of the set, which is the opposite of corroboration. |
 | **alignment contrast** | **−0.100 ± 0.066, t = −1.51 on 5 df, negative in 5 of 6 — NOT significant.** Recomputed once seed 5's misaligned run landed; at n = 5 it read −0.145 ± 0.058, t = −2.51. It is still the sharpest check the design contains — same A, same record, same draws, differing only in whether the record is *true* of B's world, which no control arm can supply — but it no longer separates from zero. |
@@ -423,6 +423,38 @@ Under **none** of these does G3 pass as it stands: seed 2's failure is real unde
 defect changes the 1-of-3 from *"two seeds show the design is incoherent"* to *"one seed shows the
 design is incoherent and one shows no effect"* — a different and more tractable problem, but not
 a passing one.
+
+### 5.8 Ten seeds: three tests agree, and why that is not a fourth false call
+
+This statistic reached t = −2.51 at n = 4 and t = −3.38 at n = 5, and I reported both as results
+before the next seed withdrew them. So the bar for reporting it a third time has to be something
+other than "it crossed again". Here is the trajectory in full:
+
+    n=2   -0.0677   t -1.08        n=7   -0.0647   t -1.84
+    n=3   -0.0621   t -1.69        n=8   -0.0730   t -2.31
+    n=4   -0.0818   t -2.51        n=9   -0.0679   t -2.40
+    n=5   -0.0924   t -3.38        n=10  -0.0631   t -2.45
+    n=6   -0.0581   t -1.42
+
+Four things are different now, and none of them is the t:
+
+1. **The estimate is stable.** −0.058, −0.065, −0.073, −0.068, −0.063 across n = 6…10. The n = 5
+   excursion to −0.092 was the outlier; the series has sat within ±0.008 of −0.065 for five
+   consecutive seeds. At n = 4 and 5 the estimate was still moving.
+2. **Three tests agree, and two make no distribution assumption.** The exact paired permutation
+   test (p = 0.0186 over all 1024 sign assignments) and the sign test (p = 0.021 two-tailed) do
+   not depend on normality, which n = 10 cannot check. At n = 4 only the t was available and it
+   is the most assumption-laden of the three.
+3. **The spread is shrinking, not the mean growing.** sd went 0.100 → 0.087 → 0.082. The effect
+   is not getting bigger; it is getting better measured, which is what should happen.
+4. **Most seeds are now out of sample.** Seven of ten (3–9) were fixed before being read.
+
+**What still holds it back.** Two seeds have only one alignment on disk, so the alignment
+contrast — the discriminating test, and the one that separates *the record helps* from *a store
+changes behaviour by existing* — cannot yet be computed over the same ten. Until it is, this is
+the claim-line statistic passing on its own, and §5.6a's finding still stands: the coherence
+criterion that `g3.acceptance` reads is comparing two arms that provably do not remove the same
+thing, so **the gate is still not met and would not be met by this number alone.**
 
 ### 5.6a Why the controls disagree: they do not remove the same thing
 
