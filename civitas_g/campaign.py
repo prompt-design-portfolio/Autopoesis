@@ -156,6 +156,29 @@ def _aligned_sd(cells: list[dict[str, Any]], key: str = "content") -> float:
     return st.stdev(xs) if len(xs) > 1 else float("nan")
 
 
+def sign_test(xs: list[float]) -> dict[str, Any]:
+    """Exact binomial on the signs. Distribution-free, which is why it is here.
+
+    At these n the t-test's normality assumption cannot be checked and the estimate is visibly
+    heavy-tailed — one seed in six has flipped the verdict twice. The sign test throws away the
+    magnitudes and keeps only the direction, so it is much less powerful and much harder to
+    mislead. When the two disagree, the sign test is the one to believe at n < 10.
+
+    Both tails are reported. B§5.2 states the direction in advance, so one-tailed is defensible;
+    two-tailed is the conservative reading and is what `p_two` gives.
+    """
+    n = len(xs)
+    neg = sum(1 for x in xs if x < 0)
+    if n == 0:
+        return {"n": 0}
+    c = math.comb
+    # P(X >= neg) under p=0.5, the one-tailed probability of a run this negative or more so
+    p_one = sum(c(n, k) for k in range(neg, n + 1)) / 2 ** n
+    return {"n": n, "negative": neg, "p_one_tailed": p_one,
+            "p_two_tailed": min(1.0, 2 * min(p_one, sum(c(n, k) for k in range(0, neg + 1))
+                                             / 2 ** n))}
+
+
 def seeds_for_significance(mean: float, sd: float, target_t: float = 2.0) -> int | None:
     """Roughly how many seeds this effect would need to reach `target_t`: `n >= (t*sd/mean)^2`.
 
@@ -263,11 +286,14 @@ def report(directory: str | pathlib.Path = "var/g3") -> str:
         s = summarise(cells, alignment)
         if not s["n"]:
             continue
+        sg = sign_test([c["content"] for c in cells if c["alignment"] == alignment])
         rows += [f"  {alignment}: n={s['n']} seeds {s['seeds']}",
                  f"    content mean {s['mean']:+.4f}  sd {s['sd']:.4f}  se {s['se']:.4f}"
                  f"  range [{s['min']:+.4f}, {s['max']:+.4f}]",
-                 f"    negative in {s['n_negative']} of {s['n']}"
-                 f"  (unanimous would be p={s['sign_test_p_if_unanimous']:.3f} by sign test)", ""]
+                 f"    negative in {sg['negative']} of {sg['n']}"
+                 f"   sign test p = {sg['p_one_tailed']:.3f} one-tailed,"
+                 f" {sg['p_two_tailed']:.3f} two-tailed"
+                 f"   (unanimous would reach {s['sign_test_p_if_unanimous']:.3f})", ""]
 
     rows += ["  THE CONTRAST, with the error term the paired design supports", ""]
     for alignment in ("aligned", "misaligned"):
