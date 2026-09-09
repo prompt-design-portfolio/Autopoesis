@@ -168,13 +168,21 @@ instrument that can test it.
 This section first said the number *is* seed variance, on two seeds. Three seeds say that is too
 strong, and the correction matters more than the original claim.
 
-The aligned content effect across seeds 0, 1, 2 is −0.131, −0.005, −0.051: mean **−0.062**, sd
-**0.064**. So a one-seed paired difference carries a standard error of about `0.064 * sqrt(2)` =
-**0.090**, and mechanic 1's +0.166 is about **1.8 se**. That is suggestive and unresolved — not
-noise, and not a measurement either.
+The aligned content effect now runs to five seeds: −0.131, −0.005, −0.051, −0.141, −0.135, mean
+**−0.092**, sd **0.061**. A difference between two one-seed contrasts therefore carries a standard
+error of about `0.061 * sqrt(2)` = **0.086**, so mechanic 1's +0.166 is about **1.9 se**.
+Suggestive and unresolved — not noise, and not a measurement either.
 
-**No one-seed paired comparison in this design can resolve an effect of this size.** The
-between-seed spread in content at a fixed world is the same size as the effect being measured. Before any
+The figure to use is the **paired** contrast's between-seed spread (0.061), not the spread of a
+single arm over RNG seeds (0.103, measured). The four arms share a seed, so common random numbers
+cancel most of the single-arm noise; using the larger number here would understate the design.
+`civitas_g.campaign.paired_test` carries the explanation.
+
+**One seed at K=7 cannot resolve this.** What is missing is not a better statistic but seeds in
+the hardened world: mechanic 1 has n = 1 there, so its side of the difference has no error
+estimate at all. The baseline now has five seeds and a usable one. **The next run G4 needs is
+mechanic 1 at seeds 1-4**, which turns +0.166 from a direction check into a paired comparison
+with a spread. Before any
 difference of differences means anything, the design needs an estimate of that spread —
 several seeds per condition, reported with their spread, not a paired direction check.
 

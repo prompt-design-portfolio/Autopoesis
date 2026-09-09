@@ -202,6 +202,38 @@ not exist.
 
 ---
 
+## 5.0 Where this stands (read this before the subsections)
+
+§5 was written in layers as a campaign came in, and two of its conclusions were later corrected —
+in both directions. This is the current position; the subsections keep their original wording so
+the corrections are visible rather than tidied away.
+
+**The claim looks real. The apparatus built to certify it has two defects.**
+
+| | state |
+|---|---|
+| content contrast, aligned | **−0.092 ± 0.027 (se), t = −3.38 on 4 df, negative in 5 of 5 seeds** |
+| content contrast, misaligned | +0.054 ± 0.049, signs mixed — the record does not help a world it is not true of |
+| out-of-sample seeds (3, 4) | the two **largest** effects (−0.141, −0.135), so the pattern is not an artifact of the seeds read first |
+| `g3.acceptance` verdict | **false** — and the reason is the coherence criterion, not the claim |
+| coherence defect 1 (§5.6) | the tolerance scales with the effect, so a seed with no effect cannot pass however well its controls agree |
+| coherence defect 2 (§5.6a) | the two arms it asks to agree **provably do not remove the same thing** — a scramble preserves the per-cell multiset exactly, so `inherited scrambled` keeps presence and `inherited gain-zero` does not |
+
+**The error term matters and is easy to get wrong.** The four arms of a succession share one
+seed, so they consume the same draws in the same order and differ only in the store — common
+random numbers. One arm replicated over B's RNG seed has sd **0.103**; the paired contrast across
+seeds has sd **0.061**. Both are measured. Reading the first as the noise floor for the second
+understates the design about twofold and would reject a real effect, which is a mistake this
+write-up made before catching it (§5.4, and `campaign.paired_test` carries the warning at the
+point of use).
+
+**What is not claimed.** Five seeds and t = −3.38 is p ≈ 0.03 with four degrees of freedom, on a
+test chosen after the design was built. It is evidence, not a settled result, and B§5.2's own
+acceptance still returns false. The honest summary is that **the content effect survives every
+test that is well-posed, and the one that rejects it is not.**
+
+---
+
 ## 5. Corroboration at seed 1: **seed 0 does not reproduce**
 
 Added after §4.4's one-seed acceptance, from the resumable campaign in `var/g3/`. It is recorded
