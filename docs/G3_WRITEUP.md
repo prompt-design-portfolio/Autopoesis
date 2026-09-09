@@ -295,9 +295,64 @@ correct statement is that mechanic 1 is a one-seed measurement of a quantity who
 spread is comparable to the effect, so it cannot be resolved either way, and needs seeds at K=7
 before it means anything. It is not established that the number *is* seed variance.
 
-### 5.5 What would settle it
+### 5.6 The coherence criterion has a defect, and it changes how the 1-of-3 reads
+
+Diagnosing *why* seeds 1 and 2 fail turns up a structural problem in the criterion itself.
+
+`controls_agree` requires `|scrambled − gain-zero| ≤ 0.35 × max(|content|, |reading|)`. The
+tolerance is a **fraction of the effect**, so it shrinks as the effect shrinks:
+
+| seed | control gap | tolerance applied | gap ÷ tolerance | verdict |
+|---|---:|---:|---:|---|
+| 0 | **+0.0111** | 0.0457 | 0.24 | agree |
+| 1 | **−0.0034** | 0.0029 | 1.18 | disagree |
+| 2 | −0.0677 | 0.0415 | 1.63 | disagree |
+
+**Seed 1's controls are the closest of the three — 0.0034 apart, three times closer than seed 0's
+0.0111, which passes.** It fails because 0.35 of its own 0.005 effect is 0.0018, and its gap,
+though tiny, is larger than that. A seed with no effect cannot pass this check however well its
+controls agree, because the bar goes to zero with the effect.
+
+So `controls_agree` is not independent of `content_moves_the_right_way`: the acceptance counts
+effect size twice, once as the claim and once as the coherence check. That is a defect in the
+instrument, not a property of the world.
+
+It splits the two failures apart:
+
+* **Seed 2 fails for a real reason.** Its controls sit 0.068 apart while its whole effect is
+  0.051 — the two ways of removing the information disagree by more than the information is
+  worth. That is exactly what the check exists to catch.
+* **Seed 1 fails for an artifact.** Its controls agree to 0.003, better than the seed that
+  passed. What it lacks is an effect, and the claim line already measures that separately.
+
+**The criterion is left exactly as it is.** Changing an acceptance rule after seeing which seeds
+it rejects is how a gate gets fitted to a result, and the fix would flip a seed from fail to pass,
+which is the worst possible provenance for a change. What has been added is *reporting*: the
+absolute gap and the tolerance it was measured against now travel with every seed, so the defect
+is visible in the output rather than only in this document.
+
+**A corrected criterion is the project owner's decision, and it needs a scale that does not come
+from the effect.** The candidates, in the order I would argue for them:
+
+1. **The sampling noise of the statistic.** `nfc_n` is ~1400 preparations per arm; the standard
+   error of each arm's `nfc_mean` is estimable from the run, and two controls agree if their
+   difference is within a few of those. This is the principled answer and it is the one that
+   makes the check independent of the effect.
+2. **An absolute tolerance in preparations**, pre-registered before the seeds are read — simple,
+   defensible, and arbitrary in a way a reader can see and argue with.
+3. **Between-seed spread**, once there are enough seeds to estimate it. Currently sd = 0.064 on
+   three seeds, which is too few to set a bar with.
+
+Under **none** of these does G3 pass as it stands: seed 2's failure is real under all three. The
+defect changes the 1-of-3 from *"two seeds show the design is incoherent"* to *"one seed shows the
+design is incoherent and one shows no effect"* — a different and more tractable problem, but not
+a passing one.
+
+### 5.7 What would settle it
 
 Seed 2 is running. Three outcomes and what each means:
+
+(Written before seed 2 ran; seed 2 failed, so the second reading applies.)
 
 * **seed 2 passes** → 2 of 3, and the honest statement is a positive effect at roughly two thirds
   of draws, with the magnitude unresolved. Still not B§5.2's 3/3.

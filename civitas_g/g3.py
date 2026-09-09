@@ -577,6 +577,18 @@ def acceptance(results: list[G3Result], *, alignment: str = "aligned",
         # Seed 0 misaligned is why: its nfc controls agreed to 0.006 while its stale ratios sat
         # 0.76 apart (1.87 against 1.11). Checking only nfc would have called that design coherent
         # when one of its two instruments was not measuring label information at all.
+        # KNOWN DEFECT, reported and deliberately not fixed here. The tolerance below is a
+        # FRACTION of the effect, so the bar shrinks as the effect shrinks and a seed with no
+        # effect cannot pass the coherence check however well its controls actually agree. Seed 1
+        # aligned is the demonstration: its controls sit 0.0034 apart -- the CLOSEST of the three
+        # seeds, three times closer than seed 0's 0.0111, which passes -- and it fails, because
+        # 0.35 of its own 0.005 effect is 0.0018. So `controls_agree` is not independent of
+        # `content_moves_the_right_way`; the acceptance counts effect size twice.
+        #
+        # It is left alone because changing an acceptance criterion after seeing which seeds it
+        # rejects is how a gate gets fitted to a result. The absolute gaps are reported alongside
+        # the ratios so a reader can see the defect and its consequence, and `docs/G3_WRITEUP.md`
+        # §5.6 states what a corrected criterion would need and whose decision it is.
         stale_disagreement = scram.ratio - gain0.ratio
         nfc_scale = max(abs(content), abs(reading))
         stale_scale = max(abs(stale_content), abs(stale_reading))
@@ -592,6 +604,13 @@ def acceptance(results: list[G3Result], *, alignment: str = "aligned",
             "controls_disagreement_stale": stale_disagreement,
             "controls_agree_nfc": agrees_nfc,
             "controls_agree_stale": agrees_stale,
+            # The tolerance actually applied, and the gap as a fraction of it. Reported because
+            # the criterion is relative: a reader cannot tell a real disagreement from a small
+            # effect without seeing both the gap and the bar it was measured against.
+            "controls_tolerance_nfc": agree_within * nfc_scale,
+            "controls_tolerance_stale": agree_within * stale_scale,
+            "controls_gap_over_tolerance_nfc": (abs(disagreement) / (agree_within * nfc_scale)
+                                                if nfc_scale > 0 else float("inf")),
             "total_vs_fresh": total,
             "stale_content": stale_content,
             "stale_reading": stale_reading,
