@@ -191,37 +191,49 @@ in §1 as measurements of hardening while leaving the machinery that produced th
 correct. It also applies backwards: `docs/G3_WRITEUP.md` §5 reaches the same conclusion from the
 seed-1 corroboration, independently.
 
-## 2.6 Three seeds at K=7: the effect **reverses**, consistently
+## 2.6 Four seeds at K=7: the effect goes away, and the *difference* is what is consistent
 
-`hold="fail"`, seeds 0-2, each paired against its own K=5 baseline:
+`hold="fail"`, seeds 0-3, each paired against its own K=5 baseline:
 
 | seed | baseline (K=5) | hardened (K=7) | compounding |
 |---|---:|---:|---:|
-| 0 | −0.1305 | **+0.0350** | +0.1656 |
-| 1 | −0.0049 | **+0.1943** | +0.1992 |
-| 2 | −0.0510 | **+0.1012** | +0.1522 |
-| | | | **mean +0.1723, sd 0.0242** |
+| 0 | −0.1305 | +0.0350 | +0.1656 |
+| 1 | −0.0049 | +0.1943 | +0.1992 |
+| 2 | −0.0510 | +0.1012 | +0.1522 |
+| 3 | −0.1406 | **−0.0065** | +0.1341 |
 
-Content is negative in 3 of 3 baselines and **positive in 3 of 3 hardened worlds**. This is not
-the effect shrinking under hardening; it is the effect changing sign. And the compounding number
-is far more consistent than anything else in this project — sd 0.024 on a mean of 0.172, a
-signal-to-noise of seven, against a G3 content effect whose sd is larger than its mean.
+| | n | mean | sd | positive | exact p |
+|---|---:|---:|---:|---:|---:|
+| baseline K=5 | 4 | −0.082 | 0.065 | 0 of 4 | 0.0625 (the floor) |
+| hardened K=7 | 4 | **+0.081** | 0.088 | 3 of 4 | 0.1250 |
+| **compounding** | 4 | **+0.163** | **0.028** | **4 of 4** | 0.0625 (the floor) |
 
-**And it is still p = 0.125.** The t is +12.33, which looks overwhelming. The exact paired
-permutation test over all 2³ = 8 sign assignments gives **p = 0.125 one-tailed — the smallest
-value three observations can produce.** No amount of consistency can beat the floor set by n.
+**A correction to what this section said at three seeds.** It read "positive in 3 of 3 hardened
+worlds … the effect changes sign". Seed 3's hardened value is −0.0065, so it is 3 of 4, and the
+hardened mean of +0.081 has sd 0.088 and does not separate from zero (exact p = 0.125). The
+defensible statement is weaker and different: at K = 7 the content effect is **gone** — centred
+near zero with a spread that covers it — not reversed.
 
-That gap between t = 12.33 and p = 0.125 is the clearest illustration in this project of why the
-exact test was added. A t of 12 on three points invites exactly the reporting error this write-up
-has already made three times at n = 4, 5 and 6.
+**What is consistent is the difference, not either level.** Compounding is +0.163 with sd 0.028
+across four seeds, positive in 4 of 4: a signal-to-noise of six, where the K=5 baseline it is
+measured from has sd 0.065 and the K=7 side sd 0.088. The paired difference is much tighter than
+either thing being differenced, which is what common random numbers are for and is the strongest
+evidence in this project that the pairing works.
+
+**And it is still p = 0.0625.** The t is +11.84. The exact paired permutation test over all
+2⁴ = 16 sign assignments gives 0.0625 one-tailed, **which is the floor at n = 4** — four
+observations cannot produce a smaller number however consistent they are. The gap between
+t = 11.84 and p = 0.0625 is the clearest illustration in this project of why the exact test was
+added, and a t of 12 invites exactly the reporting error this write-up made at n = 4, 5 and 6.
 
 ### 2.7 What it would mean, if it survives more seeds
 
 Read against §2.1 and G4-D1, there are two live readings and this run cannot separate them:
 
-1. **A larger mapping space makes an inherited record actively harmful.** Plausible: at K = 7 a
-   stale mark endorses one of seven preparations rather than one of five, so following it costs
-   more when the mapping has moved, and there are more ways to be wrong.
+1. **A larger mapping space removes the record's value.** At K = 7 a stale mark endorses one of
+   seven preparations rather than one of five, so following it costs more when the mapping has
+   moved and there are more ways to be wrong. Note this is now "removes" and not "reverses":
+   the hardened level does not separate from zero (§2.6).
 2. **The record is fine and the economics did it.** `hold="fail"` raises `prep_value` from 1.0 to
    1.5 alongside K, and §2 already showed the K=7 population is *better* without any record at
    all. A population that has solved the world genetically has nothing to gain from a record and
