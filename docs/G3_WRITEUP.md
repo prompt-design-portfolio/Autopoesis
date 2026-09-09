@@ -215,7 +215,7 @@ the corrections are visible rather than tidied away.
 | content contrast, aligned | **−0.058 ± 0.041 (se), t = −1.42 on 5 df, negative in 5 of 6 seeds — NOT significant.** At n = 5 this read −0.092 ± 0.027, t = −3.38. Seed 5 came in at **+0.113**, the only positive aligned seed, and it both moved the mean and doubled the spread. The n = 5 figure is superseded, not an alternative. |
 | content contrast, misaligned | +0.054 ± 0.049, signs mixed — the record does not help a world it is not true of |
 | out-of-sample seeds (3, 4, 5) | −0.141, −0.135, **+0.113**. Two large negatives and one clear positive: the out-of-sample seeds are the most variable of the set, which is the opposite of corroboration. |
-| **alignment contrast** | **−0.145 ± 0.058, t = −2.51 on 4 df, negative in 5 of 5** — paired within seed, so the same A, the same record and the same draws, differing only in whether the record is *true* of B's world. No control arm can supply this check. |
+| **alignment contrast** | **−0.100 ± 0.066, t = −1.51 on 5 df, negative in 5 of 6 — NOT significant.** Recomputed once seed 5's misaligned run landed; at n = 5 it read −0.145 ± 0.058, t = −2.51. It is still the sharpest check the design contains — same A, same record, same draws, differing only in whether the record is *true* of B's world, which no control arm can supply — but it no longer separates from zero. |
 | `g3.acceptance` verdict | **false** — and the reason is the coherence criterion, not the claim |
 | coherence defect 1 (§5.6) | the tolerance scales with the effect, so a seed with no effect cannot pass however well its controls agree |
 | coherence defect 2 (§5.6a) | the two arms it asks to agree **provably do not remove the same thing** — a scramble preserves the per-cell multiset exactly, so `inherited scrambled` keeps presence and `inherited gain-zero` does not |
@@ -254,11 +254,25 @@ So the two null results are *not* evidence against the claim — neither statist
 see an effect the size the third one reports. But it does mean the claim rests on **one** of the
 three statistics its own claim line names, and that one is currently at t = −1.42.
 
-**What is claimed, as of six seeds: not much.** The content effect is not significant. The
-alignment contrast (−0.145 ± 0.058, t = −2.51, 5 of 5) is the strongest thing here and it has one
-fewer seed than the content figure — seed 5's misaligned run had not finished when it was
-computed, and seed 5 is the seed that moved everything. **It must be recomputed before it is
-quoted again.** B§5.2's acceptance returns false, and while §5.6 and §5.6a show its coherence
+**What is claimed, as of six balanced seeds: nothing reaches significance.** Every test the design
+supports now sits between t = −1.5 and t = +1.3:
+
+| test | n | estimate | se | t |
+|---|---:|---:|---:|---:|
+| content, aligned | 6 | −0.058 | 0.041 | −1.42 |
+| content, misaligned | 6 | +0.042 | 0.033 | +1.25 |
+| **alignment contrast** | 6 | −0.100 | 0.066 | −1.51 |
+| stale-mark ratio | 6 | +0.089 | 0.132 | +0.68 |
+| preparation hit | 6 | +0.013 | 0.020 | +0.63 |
+
+The alignment contrast was recomputed once seed 5's misaligned run landed, exactly as §5.0 said it
+must be: it fell from −0.145 ± 0.058 (t = −2.51) to −0.100 ± 0.066 (t = −1.51). The warning was
+written before the number was known, and the number went the way the warning allowed for.
+
+**The signs are still consistent and that is the whole of what is left.** Aligned content is
+negative in 5 of 6, the alignment contrast in 5 of 6, and misaligned content is positive in 4 of
+6. Consistency at n = 6 reaches p = 0.016 at best by a sign test, and only if unanimous, which
+none of these are. B§5.2's acceptance returns false, and while §5.6 and §5.6a show its coherence
 criterion is ill-posed, that no longer rescues anything: the claim statistic does not reach
 significance on its own terms.
 

@@ -143,6 +143,19 @@ def summarise(cells: list[dict[str, Any]], alignment: str) -> dict[str, Any]:
     }
 
 
+#: Measured, not assumed: `inherited store` replicated 8 times over B's RNG seed with A, the
+#: record and the arm all held fixed. The gain-zero arm gives 0.088 the same way.
+SINGLE_ARM_SD = 0.144
+
+
+def _aligned_sd(cells: list[dict[str, Any]], key: str = "content") -> float:
+    """The paired contrast's own spread, COMPUTED. It was once written into the prose as a
+    literal (0.061, from five seeds) and was wrong by the sixth. A number quoted in a sentence
+    beside numbers that update is a number that will go stale."""
+    xs = [c[key] for c in cells if c["alignment"] == "aligned"]
+    return st.stdev(xs) if len(xs) > 1 else float("nan")
+
+
 def paired_test(cells: list[dict[str, Any]], alignment: str,
                 key: str = "content") -> dict[str, Any]:
     """The contrast across seeds, with the error term the design actually supports.
@@ -255,8 +268,10 @@ def report(directory: str | pathlib.Path = "var/g3") -> str:
     rows += ["",
              "    The four arms of a succession share one seed, so they consume the same draws",
              "    in the same order and differ only in the store. The spread of ONE arm over RNG",
-             "    seeds (measured: sd 0.144) is therefore the wrong yardstick for the contrast",
-             "    (measured: sd 0.061); using it would understate the design about twofold.", "",
+             f"    seeds (measured, 8 replicates: sd {SINGLE_ARM_SD:.3f}) is therefore the wrong "
+             f"yardstick for the",
+             f"    contrast (this campaign: sd {_aligned_sd(cells):.3f}) -- the pairing is what "
+             f"makes the difference.", "",
              "  CONTROLS AGREE? by criterion, aligned seeds only", ""]
     aligned = sorted((c for c in cells if c["alignment"] == "aligned"), key=lambda c: c["seed"])
     head = f"    {'seed':>5}{'content':>10}{'gap':>10}" + "".join(
