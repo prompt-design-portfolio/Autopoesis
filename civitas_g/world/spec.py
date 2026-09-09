@@ -116,6 +116,12 @@ REFERENCE_SEEDS: tuple[int, ...] = (0,)
 #: parameter outside this set would be two mechanics, and A5 says one change per experiment.
 HARDENING_PARAMETERS: dict[str, tuple[str, ...]] = {
     "K": ("n_preps", "prep_value"),
+    # NOT a mechanic and it has no claim line. It exists because mechanic 1 returned a negative
+    # result with a confound in it: raising K forces `prep_value` up to hold the chance EV at
+    # zero, so K and the size of a correct preparation's payoff move together and no contrast
+    # between them separates the two. This control scales the payoff WITHOUT touching K. See
+    # `world_with_economics_scaled`.
+    "economics-diagnostic": ("prep_value", "prep_fail"),
 }
 
 
@@ -139,6 +145,40 @@ def world_at_k(k: int, world: dict[str, Any] | None = None) -> dict[str, Any]:
             f"K must exceed T for the mapping space to be non-trivial.")
     base["n_preps"] = int(k)
     base["prep_value"] = (int(k) - 1) * float(base["prep_fail"])
+    return base
+
+
+def world_with_economics_scaled(scale: float, world: dict[str, Any] | None = None
+                                ) -> dict[str, Any]:
+    """The diagnostic control for mechanic 1's negative result. **Not a mechanic.**
+
+    Mechanic 1 moved two things at once and could not have moved only one: the invariant
+    `prep_value = (K-1) * prep_fail` means raising K from 5 to 7 raises `prep_value` from 1.0 to
+    1.5, so a correct preparation becomes 50% more valuable in the same step that the mapping
+    space grows. The modulator is a table and does not move with the economics -- that is
+    measured -- but *energy* does, and energy is survival and reproduction. A larger payoff for
+    being right feeds the genetic channel, which is precisely what v3.11 found dominates:
+
+        "At six mappings the genetic baseline is large ... and cannot be removed by shortening
+        the era."
+
+    So this scales `prep_value` and `prep_fail` together at the world of record's K, holding
+    `prep_value = (K-1) * prep_fail` and therefore the chance EV at zero. If the content effect
+    collapses here too, the collapse is the economics and mechanic 1 never tested K at all.
+
+    **What it does not isolate, stated because it cannot be fixed.** Holding the chance EV at zero
+    at a fixed K forces `prep_value / prep_fail = K - 1`, so scaling one scales the other: this
+    control raises the reward for being right AND the penalty for being wrong. It separates *the
+    scale of the preparation economics* from *K*, which is the confound in mechanic 1. It does not
+    separate reward from penalty, and no EV-neutral world can.
+    """
+    base = dict(WORLD if world is None else world)
+    if scale <= 0:
+        raise WorldMismatch(f"scale must be positive; got {scale}")
+    k = int(base.get("n_preps", N_PREPS))
+    base["n_preps"] = k                       # stated, or it reads as "moved to None"
+    base["prep_fail"] = float(base["prep_fail"]) * float(scale)
+    base["prep_value"] = (k - 1) * base["prep_fail"]
     return base
 
 
