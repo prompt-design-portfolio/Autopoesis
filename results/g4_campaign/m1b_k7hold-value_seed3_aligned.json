@@ -1,0 +1,293 @@
+{
+ "mechanic": {
+  "name": "K=7 hold=value",
+  "world": {
+   "flip_every": 300,
+   "eta_init": 0.2,
+   "hidden": 24,
+   "spawn_per_patch": 6.0,
+   "food_value": 0.7,
+   "poison_value": 0.5,
+   "repro_threshold": 3.0,
+   "repro_cost": 1.5,
+   "max_energy": 5.0,
+   "max_pop": 1000,
+   "init_pop": 300,
+   "prep_value": 1.0,
+   "prep_fail": 0.16666666666666666,
+   "prep_every": 700,
+   "scaffold_food": false,
+   "scaffold_chain": false,
+   "goal_channel": false,
+   "n_preps": 7
+  },
+  "moved": {
+   "n_preps": [
+    5,
+    7
+   ],
+   "prep_fail": [
+    0.25,
+    0.16666666666666666
+   ]
+  },
+  "note": "mapping space P(7,3) = 210 against P(5,3) = 60; chance hit 0.143 against 0.200; EV held at zero by prep_value=1.0000, prep_fail=0.1667 (hold='value': see G4-D1 -- 'fail' raises the reward and confounds K with the economics, 'value' lowers the penalty instead)"
+ },
+ "seed": 3,
+ "aligned": true,
+ "compounding": {
+  "content_baseline": -0.140587672349626,
+  "content_hardened": 0.03379088856735524,
+  "content_compounding": 0.17437856091698123,
+  "reading_baseline": -0.026336797313217586,
+  "reading_hardened": 0.1680048543781658,
+  "reading_compounding": 0.1943416516913834,
+  "total_baseline": -0.17253047590126247,
+  "total_hardened": 0.04663992308897602,
+  "total_compounding": 0.2191703989902385
+ },
+ "verdict": {
+  "content_effect_grew": false,
+  "content_carries_the_growth": true,
+  "controls_still_agree": false,
+  "compounds": false,
+  "basis": "one seed, paired: a direction check, not a statistical test"
+ },
+ "baseline": {
+  "succession": {
+   "seed": 3,
+   "a_phase_steps": 1500,
+   "b_steps": 2100,
+   "aligned": true,
+   "scramble_seed": 0,
+   "claim_window": 700
+  },
+  "a_store_sha256": "fda1d8663efe13174567b9b79971e1942758b6f60b0fcd34b1d116834bedd54c",
+  "a_mapping": [
+   1,
+   0,
+   2
+  ],
+  "a_pi": [
+   2,
+   4,
+   1,
+   0,
+   3
+  ],
+  "b_mapping": [
+   1,
+   0,
+   2
+  ],
+  "arms": [
+   {
+    "arm": "fresh store",
+    "seed": 3,
+    "aligned": true,
+    "stale": NaN,
+    "stale_n": 0,
+    "null": 0.128625472887768,
+    "ratio": NaN,
+    "nfc_mean": 1.8332046332046332,
+    "nfc_censored": 0.07035175879396985,
+    "nfc_n": 1393,
+    "prep_hit": 0.4854981084489281,
+    "pop": 684.8571428571429,
+    "store_sha256": "fda1d8663efe13174567b9b79971e1942758b6f60b0fcd34b1d116834bedd54c",
+    "store_density": 0.0,
+    "sym_gain": 0.06039813130526365,
+    "claim_window": 700,
+    "marks_surviving_at_window_end": 0.060469572262120554
+   },
+   {
+    "arm": "inherited store",
+    "seed": 3,
+    "aligned": true,
+    "stale": 0.17424242424242425,
+    "stale_n": 264,
+    "null": 0.11430415698424992,
+    "ratio": 1.5243752181859256,
+    "nfc_mean": 1.6606741573033708,
+    "nfc_censored": 0.05453257790368272,
+    "nfc_n": 1412,
+    "prep_hit": 0.5427833720630003,
+    "pop": 731.1428571428571,
+    "store_sha256": "fda1d8663efe13174567b9b79971e1942758b6f60b0fcd34b1d116834bedd54c",
+    "store_density": 0.2300347222222222,
+    "sym_gain": 0.05003928360575876,
+    "claim_window": 700,
+    "marks_surviving_at_window_end": 0.060469572262120554
+   },
+   {
+    "arm": "inherited scrambled",
+    "seed": 3,
+    "aligned": true,
+    "stale": 0.1935483870967742,
+    "stale_n": 248,
+    "null": 0.12456798000744404,
+    "ratio": 1.553757129923821,
+    "nfc_mean": 1.8012618296529967,
+    "nfc_censored": 0.08115942028985507,
+    "nfc_n": 1380,
+    "prep_hit": 0.5017280799702238,
+    "pop": 703.4285714285714,
+    "store_sha256": "fda1d8663efe13174567b9b79971e1942758b6f60b0fcd34b1d116834bedd54c",
+    "store_density": 0.2300347222222222,
+    "sym_gain": 0.03805755770256402,
+    "claim_window": 700,
+    "marks_surviving_at_window_end": 0.060469572262120554
+   },
+   {
+    "arm": "inherited gain-zero",
+    "seed": 3,
+    "aligned": true,
+    "stale": 0.204,
+    "stale_n": 250,
+    "null": 0.11369620117135026,
+    "ratio": 1.7942551984877126,
+    "nfc_mean": 1.6870109546165883,
+    "nfc_censored": 0.07725631768953069,
+    "nfc_n": 1385,
+    "prep_hit": 0.5452151953145989,
+    "pop": 681.8571428571429,
+    "store_sha256": "fda1d8663efe13174567b9b79971e1942758b6f60b0fcd34b1d116834bedd54c",
+    "store_density": 0.2300347222222222,
+    "sym_gain": 0.0,
+    "claim_window": 700,
+    "marks_surviving_at_window_end": 0.060469572262120554
+   }
+  ],
+  "gate_r": {
+   "obs": 0.9577312089532899,
+   "null": 0.9117175470126032,
+   "sd": 0.12525994577837482,
+   "z": 0.3673453764869072,
+   "eras": 3.0,
+   "verdict": "PASS"
+  },
+  "assay": {},
+  "notes": []
+ },
+ "hardened": {
+  "succession": {
+   "seed": 3,
+   "a_phase_steps": 1500,
+   "b_steps": 2100,
+   "aligned": true,
+   "scramble_seed": 0,
+   "claim_window": 700
+  },
+  "a_store_sha256": "af0960cb2ffa4e4a90e64f06cab4caddcaebe52c99b97989f39614298e03a0dc",
+  "a_mapping": [
+   2,
+   3,
+   4
+  ],
+  "a_pi": [
+   3,
+   5,
+   4,
+   0,
+   2,
+   6,
+   1
+  ],
+  "b_mapping": [
+   2,
+   3,
+   4
+  ],
+  "arms": [
+   {
+    "arm": "fresh store",
+    "seed": 3,
+    "aligned": true,
+    "stale": NaN,
+    "stale_n": 0,
+    "null": 0.08453832595949785,
+    "ratio": NaN,
+    "nfc_mean": 1.9001597444089458,
+    "nfc_censored": 0.11394196744515216,
+    "nfc_n": 1413,
+    "prep_hit": 0.49277004424301285,
+    "pop": 724.0714285714286,
+    "store_sha256": "af0960cb2ffa4e4a90e64f06cab4caddcaebe52c99b97989f39614298e03a0dc",
+    "store_density": 0.0,
+    "sym_gain": 0.0689566211651402,
+    "claim_window": 700,
+    "marks_surviving_at_window_end": 0.060469572262120554
+   },
+   {
+    "arm": "inherited store",
+    "seed": 3,
+    "aligned": true,
+    "stale": 0.17307692307692307,
+    "stale_n": 52,
+    "null": 0.08782096203259482,
+    "ratio": 1.9707928388746805,
+    "nfc_mean": 1.9467996674979218,
+    "nfc_censored": 0.12889210716871832,
+    "nfc_n": 1381,
+    "prep_hit": 0.47307422780443104,
+    "pop": 675.4285714285714,
+    "store_sha256": "af0960cb2ffa4e4a90e64f06cab4caddcaebe52c99b97989f39614298e03a0dc",
+    "store_density": 0.2658316798941799,
+    "sym_gain": 0.07228696628279785,
+    "claim_window": 700,
+    "marks_surviving_at_window_end": 0.060469572262120554
+   },
+   {
+    "arm": "inherited scrambled",
+    "seed": 3,
+    "aligned": true,
+    "stale": 0.12280701754385964,
+    "stale_n": 171,
+    "null": 0.08731893717230961,
+    "ratio": 1.4064190600662045,
+    "nfc_mean": 1.9130087789305665,
+    "nfc_censored": 0.12377622377622377,
+    "nfc_n": 1430,
+    "prep_hit": 0.47608637696614237,
+    "pop": 706.0,
+    "store_sha256": "af0960cb2ffa4e4a90e64f06cab4caddcaebe52c99b97989f39614298e03a0dc",
+    "store_density": 0.2658316798941799,
+    "sym_gain": 0.0558097387873701,
+    "claim_window": 700,
+    "marks_surviving_at_window_end": 0.060469572262120554
+   },
+   {
+    "arm": "inherited gain-zero",
+    "seed": 3,
+    "aligned": true,
+    "stale": 0.13114754098360656,
+    "stale_n": 61,
+    "null": 0.07405694315962585,
+    "ratio": 1.7709013549333912,
+    "nfc_mean": 1.778794813119756,
+    "nfc_censored": 0.10328317373461013,
+    "nfc_n": 1462,
+    "prep_hit": 0.5556583410422449,
+    "pop": 786.0,
+    "store_sha256": "af0960cb2ffa4e4a90e64f06cab4caddcaebe52c99b97989f39614298e03a0dc",
+    "store_density": 0.2658316798941799,
+    "sym_gain": 0.0,
+    "claim_window": 700,
+    "marks_surviving_at_window_end": 0.060469572262120554
+   }
+  ],
+  "gate_r": {
+   "obs": 1.1469267615288885,
+   "null": 1.0214618775266477,
+   "sd": 0.10722169580046759,
+   "z": 1.17014455950895,
+   "eras": 3.0,
+   "verdict": "PASS"
+  },
+  "assay": {},
+  "notes": []
+ },
+ "notes": [
+  "the hardened A left an empty record, so its arms are identical by construction"
+ ]
+}

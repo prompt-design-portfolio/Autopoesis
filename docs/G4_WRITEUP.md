@@ -1,4 +1,4 @@
-# G4 write-up — mechanic 1 (K raised): **the number is dominated by seed variance**
+# G4 write-up — mechanic 1 (K raised): **the number measured the economics, not K**
 
 > **Read §2.3 first.** This document was written when mechanic 1 reported and its §1 and §2 were
 > correct about what the run produced and wrong about what it meant. The economics diagnostic and
@@ -246,6 +246,56 @@ the economics and mechanic 1 never tested K at all.
 
 That run is the next thing G4 needs, ahead of mechanics 2 and 3 — a mechanic whose own result
 cannot be attributed is not a foundation for designing two more.
+
+## 2.8 G4-D1 ran. **Mechanic 1 measured the economics, not K.**
+
+The variant specified in §2.7 and G4-D1 is done: `hold="value"` holds `prep_value` at 1.0 and
+lowers `prep_fail` to 0.167 instead. Same K. Same mapping space, P(7,3) = 210. Same chance hit
+rate, 0.143. EV exactly zero in both. The **only** difference is which economic term absorbs the
+EV constraint.
+
+| | n | hardened content | compounding |
+|---|---:|---:|---:|
+| `hold="fail"` — reward rises to 1.5 | 5 | +0.037 (3/5 positive) | **+0.129** (4/5 positive) |
+| `hold="value"` — penalty falls to 0.167 | 4 | **−0.119** (1/4 positive) | −0.037 (1/4 positive) |
+| K=5 baseline, for reference | 5 | −0.082 | — |
+
+Paired on the four seeds both were run at:
+
+| seed | `hold="fail"` | `hold="value"` | difference |
+|---|---:|---:|---:|
+| 0 | +0.0350 | −0.2044 | +0.2395 |
+| 1 | +0.1943 | −0.2337 | +0.4279 |
+| 2 | +0.1012 | −0.0707 | +0.1719 |
+| 3 | −0.0065 | +0.0338 | −0.0403 |
+
+mean difference **+0.200**, positive in 3 of 4 (exact p = 0.125, the floor at n = 4 being 0.0625).
+
+**The content effect changes sign between two parameterisations of the same world.** Under
+`hold="value"` the K=7 content effect is **−0.119**, which is not smaller than the K=5 baseline of
+−0.082 — it is slightly larger. Holding the reward fixed, there is no hardening effect at all.
+
+So §2.6's compounding is an artifact of the parameterisation. Mechanic 1 raised K and the reward
+together, and **the reward was doing the work**. §2.1 named this as a worry, §2.3 wrongly withdrew
+it after a diagnostic that could not test it, and G4-D1 is the test that could.
+
+### 2.9 What G4 has established
+
+* **Mechanic 1 does not test what it was designed to test.** Its compounding number tracks
+  `prep_value`. Any restatement of it as a fact about mapping-space size is unsupported.
+* **`hold="value"` is the mechanic that isolates K**, and at four seeds it shows **no effect of
+  hardening on the record's value** — the K=7 content effect sits where the K=5 baseline sits.
+  That is a null result, not a positive one, and at n = 4 it cannot be significant anyway.
+* **B§2's second half — that the gain compounds — is not supported by any run in this project**,
+  and the run that appeared to support it has been withdrawn by its own control.
+* **Mechanics 2 and 3 must not be designed against §2.6's numbers.** `docs/G4_SPEC.md` §2–3 said
+  to settle their design questions against mechanic 1's results; those results are now known to
+  measure the economics, and building two more mechanics on them would propagate the error.
+
+The one methodological point worth carrying forward: the confound was found by asking what *else*
+satisfies the invariant. `prep_value = (K−1) × prep_fail` constrains a ratio, and treating it as
+though it named one term is what welded K to the reward. Any future mechanic should be checked the
+same way — what else would satisfy the constraint, and does the result survive that too.
 
 ## 3. What this does not license
 
