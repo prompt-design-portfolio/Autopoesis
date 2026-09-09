@@ -3,9 +3,10 @@
 > **Read §2.3 first.** This document was written when mechanic 1 reported and its §1 and §2 were
 > correct about what the run produced and wrong about what it meant. The economics diagnostic and
 > the seed-1 corroboration both landed afterwards and together they withdraw the finding: changing
-> nothing but the seed reproduces most of the effect this milestone measured. The original
-> sections are kept, not rewritten, because a write-up that quietly became right is worth less
-> than one that shows where it was wrong.
+> nothing but the seed reproduces most of the effect this milestone measured. Then a third seed
+> landed and pulled that correction back part way — see §2.5, which is the version to trust. The
+> original sections are kept, not rewritten, because a write-up that quietly became right is
+> worth less than one that shows where it was wrong.
 
     A record left by one population raises the competence of a population that never met it,
     **and the gain compounds.** (B§2)
@@ -162,11 +163,18 @@ move from 1.0 to 1.5 when K goes 5 → 7, and that genuinely does feed the genet
 this run does not show is that it *did*. It stays a hypothesis, and §2.2's diagnostic is not the
 instrument that can test it.
 
-### 2.5 The actual finding
+### 2.5 The actual finding — restated once three seeds were in
+
+This section first said the number *is* seed variance, on two seeds. Three seeds say that is too
+strong, and the correction matters more than the original claim.
+
+The aligned content effect across seeds 0, 1, 2 is −0.131, −0.005, −0.051: mean **−0.062**, sd
+**0.064**. So a one-seed paired difference carries a standard error of about `0.064 * sqrt(2)` =
+**0.090**, and mechanic 1's +0.166 is about **1.8 se**. That is suggestive and unresolved — not
+noise, and not a measurement either.
 
 **No one-seed paired comparison in this design can resolve an effect of this size.** The
-between-seed spread in content at a fixed world is ~0.13, which is the entire magnitude of the
-G3 effect and larger than every difference this milestone set out to measure. Before any
+between-seed spread in content at a fixed world is the same size as the effect being measured. Before any
 difference of differences means anything, the design needs an estimate of that spread —
 several seeds per condition, reported with their spread, not a paired direction check.
 
@@ -181,8 +189,8 @@ seed-1 corroboration, independently.
   confound in it. But nor is it evidence *for* B§2's second half, and after §2.3 it is not
   evidence about hardening at all — the compounding number is dominated by seed variance.
 * **It is not a measured magnitude.** §1's table stands as what the run produced and must be read
-  with §2.3 beside it. `+0.166` is not "the effect of hardening"; it is one draw's distance from
-  another draw, and the same distance appears with nothing changed but the seed.
+  with §2.3 and §2.5 beside it. `+0.166` is a one-seed difference at about 1.8 standard errors of
+  the seed-to-seed spread: not resolvable either way without seeds at K=7.
 * **It is not a reason to redesign mechanic 1 until it passes.** The number is recorded as it
   came. A corrected mechanic — one that enlarges the mapping space without enlarging the payoff —
   is a *different* mechanic and needs its own spec and its own claim line under B§5.3, written

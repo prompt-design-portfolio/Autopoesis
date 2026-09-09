@@ -247,7 +247,55 @@ This does not change mechanic 1's *diagnosis* — `fresh store` is better in the
 that does not depend on the baseline at all. It does mean the compounding number should not be
 quoted as a magnitude, and `docs/G4_WRITEUP.md` §1 should be read with this section next to it.
 
-### 5.2 What would settle it
+### 5.2 Seed 2 landed: **1 of 3. The gate is not met.**
+
+§5.2 pre-registered three readings before seed 2 ran. The second one is what happened: *seed 2
+fails → 1 of 3, and seed 0 is the outlier. G3's gate is not met, and the milestone should be
+reopened rather than carrying an acceptance its own campaign contradicts.* That is the finding.
+
+| seed | content | reading | controls gap (nfc) | controls gap (stale) | content right way | stale right way | controls agree |
+|---|---:|---:|---:|---:|---|---|---|
+| 0 | −0.131 | −0.119 | +0.011 | −0.047 | yes | yes | **yes** |
+| 1 | −0.005 | −0.008 | −0.003 | −0.138 | yes | **no** | **no** |
+| 2 | −0.051 | −0.119 | −0.068 | +0.279 | yes | yes | **no** |
+
+`acceptance` returns **`accepted: false`** at B§5.2's own bar of 3, and would at any bar. G3's
+gate is **not met**.
+
+### 5.3 What the three seeds do show, stated at the strength the evidence supports
+
+The failure is not on the content direction. It is on the coherence criteria — the two
+information-removing controls landing together, and the stale-mark ratio's direction. Content
+moved the right way in **3 of 3** aligned seeds:
+
+| | n | mean | sd | se | range |
+|---|---:|---:|---:|---:|---|
+| aligned content | 3 | **−0.062** | 0.064 | 0.037 | [−0.131, −0.005] |
+| misaligned content | 3 | **+0.005** | 0.022 | 0.013 | [−0.021, +0.018] |
+
+* **The alignment contrast is the result that survives.** Aligned is negative in all three seeds
+  and averages −0.062; misaligned is centred on zero. Separation −0.067 ± 0.039 (se), about 1.7
+  standard errors. The record helps only when it is true of B's world.
+* **It is not significant and is not claimed to be.** Three seeds, all negative, is p = 0.125 by
+  a sign test — the smallest p three seeds can produce. The direction is consistent; the effect
+  is not established.
+* **Seed 0 is high, not aberrant.** −0.131 against a mean of −0.062 and sd 0.064 is about 1.1 sd.
+  It is the largest of three draws from a distribution that is plausibly centred below zero, not
+  an outlier from a distribution centred at zero.
+* **The magnitude is unresolved.** A one-seed estimate carries a standard error of ~0.064; the
+  spread across seeds is the same size as the effect being measured.
+
+### 5.4 Correcting §5.1
+
+§5.1 said mechanic 1's +0.166 "is not a measurement of hardening; it is mostly the distance
+between one draw and zero", and `docs/G4_WRITEUP.md` §2.5 put it more strongly still. With three
+seeds in hand that is **too strong**. The standard error of a one-seed paired difference, given
+sd = 0.064, is 0.090, so +0.166 is about **1.8 se** — suggestive, unresolved, not noise. The
+correct statement is that mechanic 1 is a one-seed measurement of a quantity whose seed-to-seed
+spread is comparable to the effect, so it cannot be resolved either way, and needs seeds at K=7
+before it means anything. It is not established that the number *is* seed variance.
+
+### 5.5 What would settle it
 
 Seed 2 is running. Three outcomes and what each means:
 
